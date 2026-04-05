@@ -1,0 +1,201 @@
+23.74
+{"input": "What is Saltram's living situation?", "answers": ["He is a guest in the home of the Mulvilles."], "length": 22692, "dataset": "narrativeqa", "pred": "He lives in the Mulvilles' house."}
+{"input": "Why does Ann not return Mary's feelings of affection?", "answers": ["Because she is in unrequited love with someone else"], "length": 23316, "dataset": "narrativeqa", "pred": "Ann is not capable of loving anyone."}
+{"input": "Where does the witch live?", "answers": ["The Atlas Mountains"], "length": 5397, "dataset": "narrativeqa", "pred": "On Mount Atlas."}
+{"input": "What was the purpose of Crito's visit?", "answers": ["To smuggle Socrates out of prison and into a life of exile."], "length": 6592, "dataset": "narrativeqa", "pred": "To persuade Socrates to escape."}
+{"input": "Why didn't Baron Henry just kill Otto instead of cutting his hand off?", "answers": ["Otto was so young."], "length": 27745, "dataset": "narrativeqa", "pred": "He wanted to spare Otto's life."}
+{"input": "How long had Mortimer Trefinnis' sister been dead when the doctor examined the body?", "answers": ["Six hours."], "length": 10020, "dataset": "narrativeqa", "pred": "Three days"}
+{"input": "With whom does the entertainers' manager have an affair?", "answers": ["Lisa, the blacksmith's wife."], "length": 18054, "dataset": "narrativeqa", "pred": "Jof's wife"}
+{"input": "Who is the first person that falls under Vigo's spell?", "answers": ["Dr. Janosz Poha"], "length": 25090, "dataset": "narrativeqa", "pred": "Janosz Poha"}
+{"input": "What nationality is Ruth Anvoy?", "answers": ["She is an American."], "length": 22692, "dataset": "narrativeqa", "pred": "American"}
+{"input": "Who did the Witch want to have reveal their own lies?", "answers": ["The scribe."], "length": 5403, "dataset": "narrativeqa", "pred": "The Witch wanted to have Sprites and Gods reveal their own lies."}
+{"input": "Why do the bosses of Wilma's gang believe that Anthony Rogers will be useful to them in the current conflict?", "answers": ["Because he fought in the first world war."], "length": 27521, "dataset": "narrativeqa", "pred": "Because he knows about the 20th Century."}
+{"input": "Which descriptions of the future world does Soames provide upon his return?", "answers": ["ones that are vague"], "length": 11201, "dataset": "narrativeqa", "pred": "Soames describes a world where everyone wears sanitary woolen uniforms, has numbers on large disks attached to their wrists, and is clean-shaven or bald."}
+{"input": "How long after Madame de Merret dies before people are allowed inter manor?", "answers": ["50 years"], "length": 8147, "dataset": "narrativeqa", "pred": "Fifty years"}
+{"input": "Who doe the Vervelle couple believe Grassou is the perfect match for?", "answers": ["Their daughter, Virgine. "], "length": 7903, "dataset": "narrativeqa", "pred": "Virginie Vervelle"}
+{"input": "Who does Vervelle want his daughter to marry?", "answers": ["Grassou"], "length": 7899, "dataset": "narrativeqa", "pred": "Pierre Grassou"}
+{"input": "How does the slime get into Dana's apartment?", "answers": ["The slime gets into Dana's apartment from the bathtub."], "length": 25088, "dataset": "narrativeqa", "pred": "The Ghostbusters accidentally spill the slime while trying to clean up the mess in the museum."}
+{"input": "What does Elder Childers argue?", "answers": ["That a mule bone is very powerful and can be a weapon."], "length": 14760, "dataset": "narrativeqa", "pred": "That the town needs a jail and other improvements."}
+{"input": "Why do the bosses of Wilma's gang believe that Anthony Rogers will be useful to them in the current conflict?", "answers": ["Anthony Rogers has previous wartime and combatant experience."], "length": 27521, "dataset": "narrativeqa", "pred": "Because he knows about the 20th Century."}
+{"input": "What does Reiko see in the photograph that her ex-husband takes of her after she has seen the tape?", "answers": ["Her face is blurry"], "length": 17505, "dataset": "narrativeqa", "pred": "Sadako's hand."}
+{"input": "How many ethical arguments does Socrates propose?", "answers": ["Two"], "length": 6592, "dataset": "narrativeqa", "pred": "Two"}
+{"input": "Why was Mortimer Trefinnis once estranged from his siblings?", "answers": ["because of the division of proceeds from selling the family business."], "length": 10015, "dataset": "narrativeqa", "pred": "Money disputes."}
+{"input": "What year is it when Anthony Rogers finally disembarks from the coal mine?", "answers": ["2419."], "length": 27514, "dataset": "narrativeqa", "pred": "2419 A.D."}
+{"input": "Why did Bill run to Texas?", "answers": ["he murdered someone"], "length": 31692, "dataset": "narrativeqa", "pred": "To get away from the violence and start a new life."}
+{"input": "Who does Socrates compare going against the law to?", "answers": ["Your parents"], "length": 6594, "dataset": "narrativeqa", "pred": "going against one's parents"}
+{"input": "What relation to Ruth Anvoy is Lady Coxon?", "answers": ["Lady Coxon is Ruth's aunt."], "length": 22695, "dataset": "narrativeqa", "pred": "Aunt"}
+{"input": "What is Reiko's job?", "answers": ["Reiko is a reporter."], "length": 17490, "dataset": "narrativeqa", "pred": "teaching"}
+{"input": "Why does Socrates ultimately decide it is unjust to escape?", "answers": ["Because it violates his belief in the  laws of society."], "length": 6595, "dataset": "narrativeqa", "pred": "Because it would be breaking the covenants and agreements he made with Athens."}
+{"input": "How is Drexl killed?", "answers": ["he is shot"], "length": 29630, "dataset": "narrativeqa", "pred": "shot by Clarence"}
+{"input": "What did Anvoy do with the letter once she received it?", "answers": ["She declined to read it."], "length": 22698, "dataset": "narrativeqa", "pred": "She asked the narrator to destroy it."}
+{"input": "What was the description of the teens faces when they died?", "answers": ["Twisted in fear"], "length": 17497, "dataset": "narrativeqa", "pred": "Their faces were in a state of insane, frozen terror."}
+{"input": "Why does Soames get upset with Beerbohm?", "answers": ["Beerbohm wrote a fictional story about Soames."], "length": 11196, "dataset": "narrativeqa", "pred": "Because Beerbohm is not a true artist."}
+{"input": "How many days do viewers of the tape have to live after they watch it?", "answers": ["Seven days"], "length": 17501, "dataset": "narrativeqa", "pred": "One week."}
+{"input": "Who does not see death in the end?", "answers": ["all but Jof and the Juggler"], "length": 18053, "dataset": "narrativeqa", "pred": "The little girl"}
+{"input": "When Mary was younger, how did her mother fill her free time?", "answers": ["she was obsessed with novels."], "length": 23319, "dataset": "narrativeqa", "pred": "Reading and writing."}
+{"input": "What attratcs men to Anderson?", "answers": ["HER BEAUTY"], "length": 8721, "dataset": "narrativeqa", "pred": "Anderson's legs."}
+{"input": "Why was Falder worried about Ruth?", "answers": ["Her husband abused her"], "length": 22762, "dataset": "narrativeqa", "pred": "He was worried about her financial situation."}
+{"input": "How did Bill die?", "answers": ["He is killed by police."], "length": 31690, "dataset": "narrativeqa", "pred": "shot"}
+{"input": "Why are Holmes and Dr. Watson in Cornwall?", "answers": ["For Holmes' health."], "length": 10014, "dataset": "narrativeqa", "pred": "To relax and study Celtic roots."}
+{"input": "What ghost emerged from a painting at Dana's workplace?", "answers": ["Vigo"], "length": 25089, "dataset": "narrativeqa", "pred": "Vigo"}
+{"input": "How is Mary initially educated?", "answers": ["Nature and books"], "length": 23312, "dataset": "narrativeqa", "pred": "She is educated by her mother."}
+{"input": "Where does the slime attack Dana and Oscar?", "answers": ["museum"], "length": 25088, "dataset": "narrativeqa", "pred": "The slime attacks Dana and Oscar at the museum."}
+{"input": "Who made the original cursed videotape?", "answers": ["Sadako Yamamura made the tape psionically."], "length": 17492, "dataset": "narrativeqa", "pred": "Sadako."}
+{"input": "Where does this story take place?", "answers": ["In Socrates Cell?"], "length": 6591, "dataset": "narrativeqa", "pred": "The prison"}
+{"input": "How did Shizuko Yamamura die?", "answers": ["She committed suicide."], "length": 17491, "dataset": "narrativeqa", "pred": "She committed suicide."}
+{"input": "Why did Bennett Landsmann need to defend Seth Lazurus in court?", "answers": ["because he's a lawyer"], "length": 8727, "dataset": "narrativeqa", "pred": "To prevent Seth Lazurus from being deported."}
+{"input": "Which remarkable habit did Enoch Soames demonstrate with regard to choice of clothing?", "answers": ["always wore a grey waterproof cape and a soft black hat"], "length": 11202, "dataset": "narrativeqa", "pred": "He never took off his hat and coat."}
+{"input": "Who did Baron Conrad kill?", "answers": ["Baron Frederick"], "length": 27737, "dataset": "narrativeqa", "pred": "Henry of Roderburg"}
+{"input": "How is Mary initially educated?", "answers": ["She educates herself using books and the natural world."], "length": 23312, "dataset": "narrativeqa", "pred": "She is educated by her mother."}
+{"input": "What religion supported Dave during Jim's trial?", "answers": ["The Baptist's supported Dave. "], "length": 14762, "dataset": "narrativeqa", "pred": "Methodist"}
+{"input": "Who does Vane write about in her letter?", "answers": ["Louis Leverett"], "length": 13954, "dataset": "narrativeqa", "pred": "Miranda"}
+{"input": "What are some important themes mentioned in this story?", "answers": ["Be responsible,keep your word and be wise and peaceful."], "length": 27741, "dataset": "narrativeqa", "pred": "War, honor, redemption, and the struggle between good and evil."}
+{"input": "What happens to Tomoko?", "answers": ["Tomoko reveals that they watched a video tape with several friends a week ago and received a strange call after watching it. Tomoko is killed while Masami watches."], "length": 17490, "dataset": "narrativeqa", "pred": "She dies in a car crash."}
+{"input": "What was the description of the teens faces when they died?", "answers": ["Their faces twisted in fear."], "length": 17497, "dataset": "narrativeqa", "pred": "Their faces were in a state of insane, frozen terror."}
+{"input": "Who was the final raid in the story on?", "answers": ["The Sinsings"], "length": 27510, "dataset": "narrativeqa", "pred": "The Sinsing Gang."}
+{"input": "Who leaves Chicago with him?", "answers": ["His girlfriend Abby and her sister Linda."], "length": 31691, "dataset": "narrativeqa", "pred": "Abby"}
+{"input": "What do the Ghostbusters do to stop an argument between Ray and Winston?", "answers": ["Take their clothes off"], "length": 25093, "dataset": "narrativeqa", "pred": "They start singing the Ghostbusters theme song."}
+{"input": "What does Frank Saltram do for work?", "answers": ["He does not work."], "length": 22694, "dataset": "narrativeqa", "pred": "He is a philosopher."}
+{"input": "Who did Ruth Honeywill plan to escape with?", "answers": ["Falder"], "length": 22764, "dataset": "narrativeqa", "pred": "William Falder"}
+{"input": "What Medical school does Laura attend?", "answers": ["Laura attends Harvard Medical school."], "length": 8722, "dataset": "narrativeqa", "pred": "Harvard Medical School"}
+{"input": "What gift did the mayor give to the Ghostbusters?", "answers": ["key to the city"], "length": 25089, "dataset": "narrativeqa", "pred": "A check."}
+{"input": "Who does the Witch create?", "answers": ["Hermaphroditus."], "length": 5397, "dataset": "narrativeqa", "pred": "A boat"}
+{"input": "Where did the lover hide?", "answers": ["In a closet."], "length": 8139, "dataset": "narrativeqa", "pred": "Under the bed."}
+{"input": "Who greeted Jacob in his apartment after Jacob finally came to terms with his military ordeal?", "answers": ["His son Gabe"], "length": 36418, "dataset": "narrativeqa", "pred": "Gabriel"}
+{"input": "Where were Jim and Dave from?", "answers": ["Eatonville"], "length": 14761, "dataset": "narrativeqa", "pred": "Eatonville"}
+{"input": "Who discovered the Tregennis siblings the morning after the tragedy?", "answers": ["The housekeeper"], "length": 10016, "dataset": "narrativeqa", "pred": "Mortimer Tregennis"}
+{"input": "Who killed Jacob?", "answers": ["One of his fellow soldiers."], "length": 36405, "dataset": "narrativeqa", "pred": "The demons killed Jacob."}
+{"input": "What is Landsmann's ultimate profession?", "answers": ["A lawyer"], "length": 8721, "dataset": "narrativeqa", "pred": "Astronaut"}
+{"input": "What does Gravener want Ruth to do with the money?", "answers": ["Keep it to buy a house "], "length": 22697, "dataset": "narrativeqa", "pred": "Take the money and marry George."}
+{"input": "To whom does Miranda write her letters?", "answers": ["Her mother."], "length": 13953, "dataset": "narrativeqa", "pred": "Her mother"}
+{"input": "How many days do viewers of the tape have to live after they watch it?", "answers": ["7 days"], "length": 17501, "dataset": "narrativeqa", "pred": "One week."}
+{"input": "What was Grassou's wife's name?", "answers": ["Virginie."], "length": 7896, "dataset": "narrativeqa", "pred": "Madame de Fougeres"}
+{"input": "What does Reiko do differently that causes her not to die like the others?", "answers": ["She made a copy of the tape and gives it to her husband to study."], "length": 17500, "dataset": "narrativeqa", "pred": "She copies the cursed video and shows it to someone else."}
+{"input": "What is death disguised as?", "answers": ["A monk."], "length": 18050, "dataset": "narrativeqa", "pred": "a man"}
+{"input": "What does a citizen willingly do if they agree to live in Athens?", "answers": ["Comply with the laws"], "length": 6598, "dataset": "narrativeqa", "pred": "They agree to obey the laws and institutions of Athens."}
+{"input": "How does Falder break his neck?", "answers": ["He throws himself down the stairs"], "length": 22762, "dataset": "narrativeqa", "pred": "He jumps and his neck is broken."}
+{"input": "What does Reiko discover saves viewers of the tape from their imminent death?", "answers": ["Making a copy and showing it to someone else"], "length": 17499, "dataset": "narrativeqa", "pred": "Making a copy of the tape and showing it to someone else."}
+{"input": "What is the name of Mortimer Treginnis' sister?", "answers": ["Brenda."], "length": 10014, "dataset": "narrativeqa", "pred": "Brenda"}
+{"input": "What did Madam de Merret and her husband do after walling off the closet?", "answers": ["They stayed in the bedroom for a few days with the sounds of her lover trapped. "], "length": 8148, "dataset": "narrativeqa", "pred": "They waited for the jeweler to arrive."}
+{"input": "Prior to her brother's death, how did Mary spend most of her time outside of the home? ", "answers": ["With her charity"], "length": 23324, "dataset": "narrativeqa", "pred": "Reading and writing."}
+{"input": "What is Clifford's profession?", "answers": ["A security guard."], "length": 29630, "dataset": "narrativeqa", "pred": "ex-con"}
+{"input": "What was Rodgers exposed to while investigating?", "answers": ["Radioactive gas"], "length": 27508, "dataset": "narrativeqa", "pred": "Radioactive gas."}
+{"input": "Where is the rental cabin located that Reiko found the tape?", "answers": ["Izu Oshima Island"], "length": 17497, "dataset": "narrativeqa", "pred": "Izu"}
+{"input": "What does Clarence take from the apartment? ", "answers": ["A bag that contains cocaine"], "length": 29633, "dataset": "narrativeqa", "pred": "The suitcase."}
+{"input": "How many years into the future was Soames sent?", "answers": ["100."], "length": 11198, "dataset": "narrativeqa", "pred": "One hundred years"}
+{"input": "How did the housekeeper's feet get wet during Holmes' visit?", "answers": ["Holmes accidentally kicks over a water pot"], "length": 10016, "dataset": "narrativeqa", "pred": "Holmes accidentally knocked over a watering pot with his feet."}
+{"input": "What would Socrates turn into if he agreed to break out of prison?", "answers": ["He would turn into an outlaw."], "length": 6598, "dataset": "narrativeqa", "pred": "a flatterer"}
+{"input": "Who acts as Falder's lawyer?", "answers": ["Frome"], "length": 22761, "dataset": "narrativeqa", "pred": "Hector Frome"}
+{"input": "Who asks the Ghostbusters for help?", "answers": ["Dana"], "length": 25086, "dataset": "narrativeqa", "pred": "A woman named Dana."}
+{"input": "What is Soames unhappy about?", "answers": ["the his works are not recognized"], "length": 11194, "dataset": "narrativeqa", "pred": "Failure"}
+{"input": "What is Mary's mother's name?", "answers": ["Eliza"], "length": 23312, "dataset": "narrativeqa", "pred": "Eliza"}
+{"input": "What gang did Rodgers and the other humans fight while he was at the camp?", "answers": ["The Hans"], "length": 27516, "dataset": "narrativeqa", "pred": "The Bad Bloods gang."}
+{"input": "Where does Alabama meet Clarence for the first time? ", "answers": ["At a Detroit theater. "], "length": 29635, "dataset": "narrativeqa", "pred": "In a dingy hotel room."}
+{"input": "How is Oscar related to Dana?", "answers": ["It's her son"], "length": 25086, "dataset": "narrativeqa", "pred": "Oscar is Dana's baby"}
+{"input": "What does Socrates believe about being judged in the after life if he breaks out of prison?", "answers": ["It would have a negative effect"], "length": 6602, "dataset": "narrativeqa", "pred": "He will be judged as an enemy."}
+{"input": "Madame de Merret threatened to leave her husband if he did what?", "answers": ["Opened the closet"], "length": 8146, "dataset": "narrativeqa", "pred": "open the closet door."}
+{"input": "Who moved to Chicago to perform mercy killings?", "answers": ["Seth Lazarus"], "length": 8724, "dataset": "narrativeqa", "pred": "Dr. Nordenfeld"}
+{"input": "How does the art-dealer describe Grassou's skill level to Virginie's father?", "answers": ["A grand master."], "length": 7902, "dataset": "narrativeqa", "pred": "He says Grassou is Rubens, Rembrandt, Titian, Gerard Douw."}
+{"input": "What is Grassous biggest disappointment?", "answers": ["He doesn't feel he is a true artist."], "length": 7896, "dataset": "narrativeqa", "pred": "That artists laugh at his work."}
+{"input": "Who does Don Vincenzo Coccotti work for? ", "answers": ["A mobster named \"Blue Lou Boyle\". "], "length": 29633, "dataset": "narrativeqa", "pred": "Blue Lou Boyle."}
+{"input": "Why did the police come back for Falder after he left prison?", "answers": ["He failed to report"], "length": 22768, "dataset": "narrativeqa", "pred": "He failed to report his ticket-of-leave status."}
+{"input": "Who does Falder believe could be murdered by her husband?", "answers": ["Ruth Honeywill"], "length": 22766, "dataset": "narrativeqa", "pred": "Ruth Honeywill"}
+{"input": "Where is Alabama's son born?", "answers": ["Mexico."], "length": 29631, "dataset": "narrativeqa", "pred": "Waldorf"}
+{"input": "What does Eliza, on her death bed, request of her daughter Mary?", "answers": ["That she marry Charles"], "length": 23319, "dataset": "narrativeqa", "pred": "Eliza requests that Mary take care of her son."}
+{"input": "What does Death ask Antonius?", "answers": ["If Antonius has succeeded in his \"one meaningful deed.\""], "length": 18050, "dataset": "narrativeqa", "pred": "To play chess."}
+{"input": "Who defends Lazarus during his murder trial?", "answers": ["bennett landsmann"], "length": 8723, "dataset": "narrativeqa", "pred": "The judge"}
+{"input": "What is Mary taught after her brother dies?", "answers": ["accomplishments"], "length": 23315, "dataset": "narrativeqa", "pred": "Mary learns to be more responsible and caring for others."}
+{"input": "What is death disguised as?", "answers": ["a priest"], "length": 18050, "dataset": "narrativeqa", "pred": "a man"}
+{"input": "Why did Mary marry Charles?", "answers": ["Because her mother requested it on her deathbed."], "length": 23312, "dataset": "narrativeqa", "pred": "To save Ann's life."}
+{"input": "Who does Mortimer blame for the death of his sister?", "answers": ["the devil"], "length": 10016, "dataset": "narrativeqa", "pred": "Dr. Leon Sterndale"}
+{"input": "How does Jacob first meet Michael Newman?", "answers": ["He treated him in Vietnam."], "length": 36409, "dataset": "narrativeqa", "pred": "At a coffee shop."}
+{"input": "What nationality is Ruth Anvoy?", "answers": ["American"], "length": 22692, "dataset": "narrativeqa", "pred": "American"}
+{"input": "Rogers destroyed what gang's airship?", "answers": ["The Han gang."], "length": 27506, "dataset": "narrativeqa", "pred": "Bad Bloods"}
+{"input": "When does Reiko realize the curse is still unbroken?", "answers": ["After her husband calls her"], "length": 17495, "dataset": "narrativeqa", "pred": "September 22nd. Wednesday."}
+{"input": "Who traveled to Britain to visit her aunt?", "answers": ["Ruth Anvoy"], "length": 22695, "dataset": "narrativeqa", "pred": "Ruth Anvoy"}
+{"input": "Where do Jim and Dave go after seeing Daisy for the last time?", "answers": ["They both return to Eatonville, Florida. "], "length": 14768, "dataset": "narrativeqa", "pred": "To the store."}
+{"input": "What is the setting of the story?", "answers": ["Germany"], "length": 27739, "dataset": "narrativeqa", "pred": "The story is set in medieval Europe."}
+{"input": "What then happens to Reikos husband?", "answers": ["has a heart attack"], "length": 17492, "dataset": "narrativeqa", "pred": "He commits suicide."}
+{"input": "Where did Falder work after he got out of prison?", "answers": ["James How & Son "], "length": 22766, "dataset": "narrativeqa", "pred": "He worked in a factory."}
+{"input": "What is Saltram's living situation?", "answers": ["Lives with mulvilles "], "length": 22692, "dataset": "narrativeqa", "pred": "He lives in the Mulvilles' house."}
+{"input": "Where did the lover hide?", "answers": ["In the closet"], "length": 8139, "dataset": "narrativeqa", "pred": "Under the bed."}
+{"input": "Why is Grassou still resentful, despite his potentially advantageous marriage?", "answers": ["He feels as the he is still not a real artist."], "length": 7901, "dataset": "narrativeqa", "pred": "He feels artists laugh at his work."}
+{"input": "What is it that the teenagers were discussing?", "answers": ["A videotape which is cursed and is rumored to bear a curse that kills the viewer in seven days after watching."], "length": 17494, "dataset": "narrativeqa", "pred": "The cursed video."}
+{"input": "What was Alabama's profession?", "answers": ["Alabama was a call girl."], "length": 29630, "dataset": "narrativeqa", "pred": "Actress"}
+{"input": "Who was Jezzie?", "answers": ["The woman he dated and lived with after the war."], "length": 36405, "dataset": "narrativeqa", "pred": "Jezebel Pipkin"}
+{"input": "What does Louis tell Jacob that hell burns away?", "answers": ["Your memories and attachments."], "length": 36411, "dataset": "narrativeqa", "pred": "Jacob's life"}
+{"input": "What contract would be broken if he had escaped?", "answers": ["The social contract."], "length": 6594, "dataset": "narrativeqa", "pred": "the agreement with the Athenian laws"}
+{"input": "How does the art-dealer describe Grassou's skill level to Virginie's father?", "answers": ["he calls Grassou a grand master"], "length": 7902, "dataset": "narrativeqa", "pred": "He says Grassou is Rubens, Rembrandt, Titian, Gerard Douw."}
+{"input": "Who argues on behalf of Dave?", "answers": ["Elder Childers"], "length": 14761, "dataset": "narrativeqa", "pred": "Dave"}
+{"input": "What was Jim's punishment for being found guilty?", "answers": ["Jim was banished from his town for two years."], "length": 14763, "dataset": "narrativeqa", "pred": "Jim was sentenced to be locked up in the barn for the next trial."}
+{"input": "Which of her children does Eliza favor over the other?", "answers": ["Eliza favors her son over her daughter."], "length": 23317, "dataset": "narrativeqa", "pred": "The son"}
+{"input": "Upon his upbringing, what is Otto known for?", "answers": ["His wise counsel and peaceful nature"], "length": 27740, "dataset": "narrativeqa", "pred": "Otto of the Silver Hand"}
+{"input": "Who is Eliza's favorite?", "answers": ["Her son"], "length": 23311, "dataset": "narrativeqa", "pred": "Eliza's favorite is her husband."}
+{"input": "Where in Pennsylvania was Buck Rodgers investigating reports of phenomena?", "answers": ["Wyoming Valley"], "length": 27511, "dataset": "narrativeqa", "pred": "Wyoming Valley"}
+{"input": "What did T.K. Nupton think of Soames' existance?", "answers": ["He thought he was a fictional character."], "length": 11197, "dataset": "narrativeqa", "pred": "T.K. Nupton thought that Soames was a fictional character created by Max Beerbohm."}
+{"input": "Why was Mortimer Trefinnis once estranged from his siblings?", "answers": ["The matter of the division of the proceeds from selling the family business."], "length": 10015, "dataset": "narrativeqa", "pred": "Money disputes."}
+{"input": "Where does Dwyer open his in vitro clinic?", "answers": ["Hawaii"], "length": 8724, "dataset": "narrativeqa", "pred": "New York City"}
+{"input": "Who does Monsieur  Vervelle want his child to wed?", "answers": ["Pierre Grassou."], "length": 7900, "dataset": "narrativeqa", "pred": "Pierre Grassou"}
+{"input": "What did Madam de Merret's husband discover about her?", "answers": ["That she was having an affair. "], "length": 8143, "dataset": "narrativeqa", "pred": "She had been unfaithful."}
+{"input": "What hidden message does Reiko find within the video?", "answers": ["Frolic in brine, goblins be thine"], "length": 17495, "dataset": "narrativeqa", "pred": "Sadako's face."}
+{"input": "What is La Grande Breteche?", "answers": ["The ruins of an abandoned manor. "], "length": 8139, "dataset": "narrativeqa", "pred": "An abandoned mansion."}
+{"input": "What happened as a result of Anvoy and her fiance discussing giving the money to Saltram?", "answers": ["They broke off their engagement."], "length": 22703, "dataset": "narrativeqa", "pred": "Anvoy decided against giving the money to Saltram."}
+{"input": "What is the name of the character who is from New York?", "answers": ["Violet Ray."], "length": 13958, "dataset": "narrativeqa", "pred": "The young lady from New York"}
+{"input": "Who encourages the farmer to marry the girl he falls in love with?", "answers": ["Bill"], "length": 31699, "dataset": "narrativeqa", "pred": "Chuck"}
+{"input": "What are the names of the two teenagers of this story? ", "answers": ["Masami and Tomoko"], "length": 17497, "dataset": "narrativeqa", "pred": "Yoichi and Asakawa"}
+{"input": "In what war did Rogers learn his battle knowledge?", "answers": ["World War 1, or The Great War"], "length": 27510, "dataset": "narrativeqa", "pred": "The First World War"}
+{"input": "When invited to Vervelle's home, what does Grassou discover?", "answers": ["A number of his own forgeries."], "length": 7900, "dataset": "narrativeqa", "pred": "Grassou discovers that the pictures in Vervelle's gallery are his own works, sold to Elie Magus for a fraction of their actual value."}
+{"input": "What event reunites Jacob with the other men from his platoon?", "answers": ["Paul's death."], "length": 36413, "dataset": "narrativeqa", "pred": "The explosion of a grenade."}
+{"input": "What analogy does socrates compare citizens and the law to?", "answers": ["Citizens are bound to laws the same as children are bound to parents."], "length": 6595, "dataset": "narrativeqa", "pred": "parents and children"}
+{"input": "What did the Witch throw into a ditch?", "answers": ["A coffin."], "length": 5400, "dataset": "narrativeqa", "pred": "A dead body."}
+{"input": "In what year did Rogers awaken from his deep slumber?", "answers": ["2419"], "length": 27511, "dataset": "narrativeqa", "pred": "2424"}
+{"input": "What happens shortly after Otto returns to his father's castle?", "answers": ["The nephew of Baron Frederick storms the castle and kidnaps Otto"], "length": 27742, "dataset": "narrativeqa", "pred": "Otto is captured by the Trutz-Drachen lords."}
+{"input": "What happens before the shoot-out begins? ", "answers": ["Elliot accidentally reveals himself as an informant."], "length": 29632, "dataset": "narrativeqa", "pred": "Alabama breaks down and starts crying."}
+{"input": "What town did Daisy encounter Jim in?", "answers": ["Story did not mention"], "length": 14762, "dataset": "narrativeqa", "pred": "Maitland"}
+{"input": "Who is the owner of the manor in the story?", "answers": ["Madame de Merret"], "length": 8144, "dataset": "narrativeqa", "pred": "Monsieur de Merret"}
+{"input": "What was Gravener urging Anvoy to do?", "answers": ["Keep the money."], "length": 22694, "dataset": "narrativeqa", "pred": "Help Mr. Saltram."}
+{"input": "According to the deal Soames made, how would he find out whether his poetic talent would have been recognized in the future? ", "answers": ["By selling his soul to the devil."], "length": 11211, "dataset": "narrativeqa", "pred": "By being projected into the reading room of the British Museum on June 30, 1997."}
+{"input": "Who is the Bull god?", "answers": ["Apis"], "length": 5397, "dataset": "narrativeqa", "pred": "Pan"}
+{"input": "How many people fainted after seeing Brenda's dead body?", "answers": ["2"], "length": 10015, "dataset": "narrativeqa", "pred": "Two"}
+{"input": "Who does Clarence marry?", "answers": ["Alabama Whitman"], "length": 29630, "dataset": "narrativeqa", "pred": "Alabama"}
+{"input": "Who kills the farmer with a screwdriver?", "answers": ["Bill"], "length": 31693, "dataset": "narrativeqa", "pred": "Bill"}
+{"input": "Who does Grassou paint the forgeries for?", "answers": ["The greats"], "length": 7898, "dataset": "narrativeqa", "pred": "The Vervelles"}
+{"input": "What song does the crowd outside sing that weakens Vigo?", "answers": ["Auld Lang Syne"], "length": 25090, "dataset": "narrativeqa", "pred": "Auld Lang Syne"}
+{"input": "What is the fatal thought that Grassou is believed unable to remove from his heart?", "answers": ["That artists laugh at and ridicule his work."], "length": 7906, "dataset": "narrativeqa", "pred": "That artists laugh at his work."}
+{"input": "Who does Mary marry?", "answers": ["Charles"], "length": 23311, "dataset": "narrativeqa", "pred": "Charles"}
+{"input": "What is La Grande Breteche?", "answers": ["Abandon manor"], "length": 8139, "dataset": "narrativeqa", "pred": "An abandoned mansion."}
+{"input": "When the Ghostbusters go to the museum on New Years' Eve, what song are the people singing?", "answers": ["Auld Lang Saye"], "length": 25097, "dataset": "narrativeqa", "pred": "Auld Lang Syne"}
+{"input": "Where is the abandoned manor located?", "answers": ["Near the town Vendome"], "length": 8140, "dataset": "narrativeqa", "pred": "On the banks of the Loire River."}
+{"input": "Why did Jim and Dave fight?", "answers": ["For Daisy's affection. "], "length": 14761, "dataset": "narrativeqa", "pred": "Jealousy over Daisy."}
+{"input": "Who created \"The Ladder\"?", "answers": ["The US Army chemical weapons division."], "length": 36406, "dataset": "narrativeqa", "pred": "Bruce Joel Rubin"}
+{"input": "Why did Baroness Matillda went into premature labor?", "answers": ["Because she saw her husband's battle wounds"], "length": 27740, "dataset": "narrativeqa", "pred": "She was frightened and upset by her husband's plans."}
+{"input": "What did the less beautiful receive from the Witch?", "answers": ["Strange dreams."], "length": 5401, "dataset": "narrativeqa", "pred": "Strange dreams"}
+{"input": "Where do Mr. and Mrs. Vervelle live?", "answers": ["In a mansion in Ville-d'Avray. "], "length": 7898, "dataset": "narrativeqa", "pred": "Ville d'Avray"}
+{"input": "Why does Baron Henry attack Castle Drachenhausen?", "answers": ["Baron Conrad killed his uncle, Baron Frederick."], "length": 27739, "dataset": "narrativeqa", "pred": "To avenge the death of his father and reclaim his family's lands."}
+{"input": "How did Bill die?", "answers": ["he was killed by the police"], "length": 31690, "dataset": "narrativeqa", "pred": "shot"}
+{"input": "Who represents Jim in the trial?", "answers": ["Elder Simms"], "length": 14761, "dataset": "narrativeqa", "pred": "Daisy"}
+{"input": "How did Soames's presence in the future affect others? ", "answers": ["It caused a stir."], "length": 11198, "dataset": "narrativeqa", "pred": "They stared at him and followed him around."}
+{"input": "Who does the wealthy farmer marry?", "answers": ["Abby"], "length": 31692, "dataset": "narrativeqa", "pred": "Ursula"}
+{"input": "What job does the mayor want to have?", "answers": ["Governor"], "length": 25088, "dataset": "narrativeqa", "pred": "Governor"}
+{"input": "What is unique about the phonetic spelling of the 'future' article that discussed Beerbohm's story? ", "answers": ["The English lanuage has evolved."], "length": 11204, "dataset": "narrativeqa", "pred": "The phonetic spelling uses a mix of American and British spellings."}
+{"input": "What does the drug that Micheal created do?", "answers": ["It makes people crazy and homicidal"], "length": 36410, "dataset": "narrativeqa", "pred": "It heals Jacob."}
+{"input": "Who do Mary and Ann meet is Lisbon?", "answers": ["The duo meet Henry on their travels to Lisbon."], "length": 23315, "dataset": "narrativeqa", "pred": "Three fashionable ladies"}
+{"input": "Where does Virgil die?", "answers": ["In the hotel."], "length": 29630, "dataset": "narrativeqa", "pred": "on the floor"}
+{"input": "What did the lawyer discover about Jacob and his unit regarding their service in the war?", "answers": ["They were never deployed and were discharged for psychological reasons."], "length": 36418, "dataset": "narrativeqa", "pred": "They served in Vietnam."}
+{"input": "What does Madame de Merret ask the mason to do before walling off the closet with bricks?", "answers": ["Break a piece of the door that she may look on her lover one last time"], "length": 8151, "dataset": "narrativeqa", "pred": "Leave a crack at the bottom."}
+{"input": "Where does the Witch live?", "answers": ["Witch lives in cave on Atlas Mountains"], "length": 5397, "dataset": "narrativeqa", "pred": "On Mount Atlas."}
+{"input": "After escaping from Baron Henry, where does Otto take refuge?", "answers": ["The monastery where he grew up."], "length": 27742, "dataset": "narrativeqa", "pred": "The White Cross on the Hill"}
+{"input": "What would Socrates turn into if he agreed to break out of prison?", "answers": ["An outlaw"], "length": 6598, "dataset": "narrativeqa", "pred": "a flatterer"}
+{"input": "What does Leon focus on in writing his letters?", "answers": ["The beauty of the women"], "length": 13955, "dataset": "narrativeqa", "pred": "The well-being of Prosper."}
+{"input": "What of mankind was the Witch able to perceive?", "answers": ["The fears and desires of mankind."], "length": 5401, "dataset": "narrativeqa", "pred": "The beauty of their souls."}
+{"input": "Where did Bill work when he lived in Chicago?", "answers": ["Bill worked in a steel mill."], "length": 31695, "dataset": "narrativeqa", "pred": "In a mill."}
+{"input": "Which boarder realizes that none of the boarders like each other?", "answers": ["the German professor"], "length": 13957, "dataset": "narrativeqa", "pred": "The German gentleman"}
+{"input": "How much was the check that was issued by Robert Cokeson forged for?", "answers": ["Ninety pounds"], "length": 22769, "dataset": "narrativeqa", "pred": "Nine pounds."}
+{"input": "How did the housekeeper's feet get wet during Holmes' visit?", "answers": ["Sherlock had wet the floor by overturning a water-filled pot."], "length": 10016, "dataset": "narrativeqa", "pred": "Holmes accidentally knocked over a watering pot with his feet."}
+{"input": "What then happens to Reikos husband?", "answers": ["He watches the video and dies of Cardiac arrest."], "length": 17492, "dataset": "narrativeqa", "pred": "He commits suicide."}
+{"input": "What town did Daisy encounter Jim in?", "answers": ["outside town"], "length": 14762, "dataset": "narrativeqa", "pred": "Maitland"}
+{"input": "Who died in this story?", "answers": ["Brenda Tregennis"], "length": 10011, "dataset": "narrativeqa", "pred": "Mortimer Tregennis"}
+{"input": "What does Holmes observe in the fireplace?", "answers": ["The remains of afire in the fireplace."], "length": 10013, "dataset": "narrativeqa", "pred": "The fireplace is empty."}
+{"input": "What kind of business was Anthony Rogers working for in 1927?", "answers": ["Radioactive gas"], "length": 27512, "dataset": "narrativeqa", "pred": "Anthony Rogers was working for the American Radio Gas Company."}
+{"input": "Who does not see death in the end?", "answers": ["Everyone except for Jof"], "length": 18053, "dataset": "narrativeqa", "pred": "The little girl"}
+{"input": "When does Reiko realize the curse is still unbroken?", "answers": ["She received a call from Ryuji during his last minutes alive."], "length": 17495, "dataset": "narrativeqa", "pred": "September 22nd. Wednesday."}
