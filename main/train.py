@@ -2,17 +2,20 @@
 
 import logging
 import time
+import os
+import inspect
 import torch
 from transformers import HfArgumentParser, Trainer, TrainerCallback
 
 from slimkv import (
-    Data,
     DefaultDataCollator,
     ModelArgs,
     FileLogger,
+    StrideGroupedSampler,
     get_model_and_tokenizer,
     makedirs,
     format_numel_str,
+    get_data_class,
 )
 from slimkv.args import TrainingArgs
 
@@ -27,23 +30,37 @@ class SlimKVTrainer(Trainer):
         self.model_args = model_args
         self.file_logger = file_logger
 
-    def _get_train_sampler(self):
+    def _get_train_sampler(self, train_dataset=None):
         """Group samples by stride count so all ranks in a step iterate the same
         number of chunks, matching activation_beacon's behaviour."""
-        from src.trainer import StrideGroupedSampler
+        dataset = train_dataset if train_dataset is not None else self.train_dataset
         if self.args.group_by_stride is not None:
-            lengths = self.train_dataset["length"] if "length" in self.train_dataset.column_names else None
-            return StrideGroupedSampler(
+            try:
+                ds_len = len(dataset)
+            except Exception:
+                ds_len = "unknown"
+            logger.info(
+                f"rank={self.args.process_index} building StrideGroupedSampler "
+                f"(group={self.args.group_by_stride}, dataset_size={ds_len})..."
+            )
+            lengths = dataset["length"] if "length" in dataset.column_names else None
+            sampler = StrideGroupedSampler(
                 batch_size=self.args.train_batch_size * self.args.world_size,
                 window=self.model.memory.window,
                 stride=self.model.memory.stride,
                 group=self.args.group_by_stride,
-                dataset=self.train_dataset,
+                dataset=dataset,
                 lengths=lengths,
             )
-        return super()._get_train_sampler()
+            logger.info(f"rank={self.args.process_index} StrideGroupedSampler ready.")
+            return sampler
+        # Keep compatibility with old/new transformers signatures.
+        try:
+            return super()._get_train_sampler(dataset)
+        except TypeError:
+            return super()._get_train_sampler()
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         inputs.pop("length", None)
         inputs.pop("index", None)
 
@@ -53,14 +70,41 @@ class SlimKVTrainer(Trainer):
         if hasattr(model, "memory"):
             model.memory.reset()
 
-        return super().compute_loss(model, inputs, return_outputs)
+        # Keep compatibility with old/new transformers signatures.
+        try:
+            return super().compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+            )
+        except TypeError:
+            return super().compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+            )
 
 
 def main():
     parser = HfArgumentParser([ModelArgs, TrainingArgs])
     model_args, training_args = parser.parse_args_into_dataclasses()
 
-    model, tokenizer = get_model_and_tokenizer(model_args, device="cuda", evaluation_mode=False)
+    # torchrun starts one process per GPU. Explicitly bind each process to its
+    # local GPU to avoid all ranks loading the model on cuda:0.
+    if torch.cuda.is_available():
+        local_rank = int(os.environ.get("LOCAL_RANK", training_args.local_rank))
+        if local_rank >= 0:
+            torch.cuda.set_device(local_rank)
+            load_device = f"cuda:{local_rank}"
+        else:
+            load_device = "cuda"
+    else:
+        load_device = "cpu"
+        local_rank = -1
+
+    logger.info(f"rank={training_args.process_index} local_rank={local_rank} load_device={load_device}")
+    model, tokenizer = get_model_and_tokenizer(model_args, device=load_device, evaluation_mode=False)
 
     # Freeze all non-anchor parameters
     if training_args.only_train_anchor:
@@ -75,7 +119,9 @@ def main():
     logger.info(f"Anchor params (trainable): {format_numel_str(anchor_trainable)}")
     logger.info(f"All trainable params: {format_numel_str(trainable_all)}")
 
+    logger.info(f"rank={training_args.process_index} preparing train dataset...")
     with training_args.main_process_first():
+        Data = get_data_class()
         train_dataset = Data.prepare_train_data(
             model_args.train_data,
             tokenizer=tokenizer,
@@ -85,19 +131,28 @@ def main():
             seed=training_args.seed,
             cache_dir=model_args.dataset_cache_dir,
         )
+    logger.info(f"rank={training_args.process_index} train dataset ready, size={len(train_dataset)}")
 
     log_path = training_args.log_path or training_args.output_dir
+    trainer_processing_kwargs = {}
+    trainer_init_params = inspect.signature(Trainer.__init__).parameters
+    if "processing_class" in trainer_init_params:
+        trainer_processing_kwargs["processing_class"] = tokenizer
+    elif "tokenizer" in trainer_init_params:
+        trainer_processing_kwargs["tokenizer"] = tokenizer
+
     trainer = SlimKVTrainer(
         model=model,
-        tokenizer=tokenizer,
         args=training_args,
         model_args=model_args,
         train_dataset=train_dataset,
         eval_dataset=None,
         data_collator=DefaultDataCollator(tokenizer),
         file_logger=FileLogger(makedirs(log_path)),
+        **trainer_processing_kwargs,
     )
 
+    logger.info(f"rank={training_args.process_index} starting trainer.train()")
     trainer.train()
     trainer.save_model(training_args.output_dir)
 

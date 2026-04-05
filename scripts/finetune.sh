@@ -13,6 +13,8 @@ fi
 
 export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-/tmp/${USER}/triton_autotune}"
 mkdir -p "${TRITON_CACHE_DIR}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-${SCRIPT_DIR}/../config/deepspeed/stage2.json}"
 
 # ========= Config =========
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-4,5,6,7}"
@@ -39,6 +41,10 @@ fi
 LOG_DIR="${OUTPUT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/finetune_$(date +%Y%m%d_%H%M%S).log"
+if [[ ! -f "${DEEPSPEED_CONFIG}" ]]; then
+  echo "Cannot find deepspeed config: ${DEEPSPEED_CONFIG}" >&2
+  exit 1
+fi
 
 torchrun --nproc_per_node "${NPROC_PER_NODE}" -m main.train \
 --output_dir "${OUTPUT_DIR}" \
@@ -66,6 +72,6 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" -m main.train \
 --logging_dir "${LOG_DIR}" \
 --logging_steps 50 \
 --bf16 \
---deepspeed ../activation_beacon/data/deepspeed/stage2.json \
+--deepspeed "${DEEPSPEED_CONFIG}" \
 --chat_template qwen \
 2>&1 | tee "${LOG_FILE}"

@@ -1,14 +1,22 @@
 """SlimKV – Load model and apply monkey-patch for anchor-token KV compression."""
 
-import sys
-import os
 import logging
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from .args import ModelArgs
+from .data import Data, StrideGroupedSampler
 from .memory import Memory
 from .patch import patch_model
+
+# Standalone utilities (no external dependency)
+from .utils import (
+    DefaultDataCollator,
+    FileLogger,
+    makedirs,
+    format_numel_str,
+    apply_chat_template,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,20 +24,9 @@ logging.basicConfig(
     datefmt="%m/%d/%Y %H:%M:%S",
 )
 
-# Re-export Data utilities from activation_beacon.
-# Since our package is now "slimkv" (not "src"), there is no naming conflict.
-_AB_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../activation_beacon"))
-if _AB_ROOT not in sys.path:
-    sys.path.insert(0, _AB_ROOT)
-
-from src.data import Data  # noqa: E402 – activation_beacon's Data
-from src.utils import (  # noqa: E402
-    DefaultDataCollator,
-    FileLogger,
-    makedirs,
-    format_numel_str,
-)
-from src.chat import apply_chat_template  # noqa: E402
+def get_data_class():
+    """Return built-in SlimKV Data class (no external repo dependency)."""
+    return Data
 
 
 def get_model_and_tokenizer(model_args: ModelArgs, device="cpu", evaluation_mode=True):

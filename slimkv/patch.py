@@ -28,26 +28,30 @@ def _build_lowrank_layers(in_features, out_features, latent_dim, bias=False):
     return down, up
 
 
-def inject_anchor_params(attn, hidden_size, num_kv_heads, head_dim, num_heads,
-                         anchor_kv_type, latent_dim, shared_kv_down):
+def inject_anchor_params(attn, anchor_kv_type, latent_dim, shared_kv_down):
     """Attach anchor projections to one attention layer."""
-    kv_dim = num_kv_heads * head_dim
-    q_dim = num_heads * head_dim
+    # Derive dimensions from actual module weights instead of config-level
+    # assumptions. This keeps the patch compatible with models like Qwen3
+    # where hidden_size != num_attention_heads * head_dim.
+    in_features = attn.q_proj.in_features
+    q_dim = attn.q_proj.out_features
+    k_dim = attn.k_proj.out_features
+    v_dim = attn.v_proj.out_features
 
     # Anchor Q – always full rank, initialised from base q_proj
-    attn.anchor_q_proj = nn.Linear(hidden_size, q_dim, bias=attn.q_proj.bias is not None)
+    attn.anchor_q_proj = nn.Linear(in_features, q_dim, bias=attn.q_proj.bias is not None)
     attn.anchor_q_proj.weight.data.copy_(attn.q_proj.weight.data)
     if attn.q_proj.bias is not None:
         attn.anchor_q_proj.bias.data.copy_(attn.q_proj.bias.data)
 
     if anchor_kv_type == "full":
         # Full-rank: separate K/V with same shape as base, initialised from base weights
-        attn.anchor_k_proj = nn.Linear(hidden_size, kv_dim, bias=attn.k_proj.bias is not None)
+        attn.anchor_k_proj = nn.Linear(in_features, k_dim, bias=attn.k_proj.bias is not None)
         attn.anchor_k_proj.weight.data.copy_(attn.k_proj.weight.data)
         if attn.k_proj.bias is not None:
             attn.anchor_k_proj.bias.data.copy_(attn.k_proj.bias.data)
 
-        attn.anchor_v_proj = nn.Linear(hidden_size, kv_dim, bias=attn.v_proj.bias is not None)
+        attn.anchor_v_proj = nn.Linear(in_features, v_dim, bias=attn.v_proj.bias is not None)
         attn.anchor_v_proj.weight.data.copy_(attn.v_proj.weight.data)
         if attn.v_proj.bias is not None:
             attn.anchor_v_proj.bias.data.copy_(attn.v_proj.bias.data)
@@ -55,23 +59,23 @@ def inject_anchor_params(attn, hidden_size, num_kv_heads, head_dim, num_heads,
     elif anchor_kv_type == "lowrank":
         if shared_kv_down:
             # Shared down projection for K and V
-            shared_down = nn.Linear(hidden_size, latent_dim, bias=False)
+            shared_down = nn.Linear(in_features, latent_dim, bias=False)
             shared_down.weight.data.zero_()
             shared_down._is_hf_initialized = True
             attn.anchor_kv_down = shared_down
             # Separate up projections
             _, attn.anchor_k_up = _build_lowrank_layers(
-                hidden_size, kv_dim, latent_dim, bias=attn.k_proj.bias is not None,
+                in_features, k_dim, latent_dim, bias=attn.k_proj.bias is not None,
             )
             _, attn.anchor_v_up = _build_lowrank_layers(
-                hidden_size, kv_dim, latent_dim, bias=attn.v_proj.bias is not None,
+                in_features, v_dim, latent_dim, bias=attn.v_proj.bias is not None,
             )
         else:
             attn.anchor_k_down, attn.anchor_k_up = _build_lowrank_layers(
-                hidden_size, kv_dim, latent_dim, bias=attn.k_proj.bias is not None,
+                in_features, k_dim, latent_dim, bias=attn.k_proj.bias is not None,
             )
             attn.anchor_v_down, attn.anchor_v_up = _build_lowrank_layers(
-                hidden_size, kv_dim, latent_dim, bias=attn.v_proj.bias is not None,
+                in_features, v_dim, latent_dim, bias=attn.v_proj.bias is not None,
             )
     else:
         raise ValueError(f"Unknown anchor_kv_type: {anchor_kv_type}")
@@ -132,12 +136,6 @@ def patch_model(model, memory, anchor_token_id,
                 anchor_kv_type="full", latent_dim=64,
                 skip_anchor_rope_k=False, shared_kv_down=False):
     """Apply all SlimKV patches. Currently supports Qwen2."""
-    config = model.config
-    hidden_size = config.hidden_size
-    num_heads = config.num_attention_heads
-    num_kv_heads = getattr(config, "num_key_value_heads", num_heads)
-    head_dim = hidden_size // num_heads
-
     # Store config on model for attention forward to read
     model._slimkv_config = {
         "anchor_kv_type": anchor_kv_type,
@@ -148,11 +146,13 @@ def patch_model(model, memory, anchor_token_id,
     # ---- Inject anchor parameters ----
     for layer in model.model.layers:
         inject_anchor_params(
-            layer.self_attn, hidden_size, num_kv_heads, head_dim, num_heads,
-            anchor_kv_type, latent_dim, shared_kv_down,
+            layer.self_attn, anchor_kv_type, latent_dim, shared_kv_down,
         )
         # Store config ref on each attention module
         layer.self_attn._slimkv_config = model._slimkv_config
+        # Qwen3 keeps rotary embedding at model-level instead of attention-level.
+        if not hasattr(layer.self_attn, "rotary_emb") and hasattr(model.model, "rotary_emb"):
+            layer.self_attn._slimkv_model_rotary_emb = model.model.rotary_emb
 
     # ---- Move new params to model device / dtype ----
     device = next(model.parameters()).device

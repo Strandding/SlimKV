@@ -72,6 +72,13 @@ def patched_attn_forward(
     """Qwen2 attention forward with anchor-token aware projection + optional RoPE skip."""
     bsz, q_len, _ = hidden_states.size()
     past_key, past_value, anchor_size, anchor_indices = past_key_value
+    head_dim = self.head_dim
+    num_heads = getattr(self, "num_heads", None)
+    if num_heads is None:
+        num_heads = self.q_proj.out_features // head_dim
+    num_kv_heads = getattr(self, "num_key_value_heads", None)
+    if num_kv_heads is None:
+        num_kv_heads = self.k_proj.out_features // head_dim
 
     kv_seq_len = q_len
     if past_key is not None:
@@ -98,9 +105,19 @@ def patched_attn_forward(
         value_states = self.v_proj(hidden_states)
 
     # ---- 2. Reshape ----
-    query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-    key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-    value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+    query_states = query_states.view(bsz, q_len, num_heads, head_dim)
+    key_states = key_states.view(bsz, q_len, num_kv_heads, head_dim)
+    value_states = value_states.view(bsz, q_len, num_kv_heads, head_dim)
+
+    # Qwen3 applies per-head RMSNorm before RoPE.
+    if hasattr(self, "q_norm"):
+        query_states = self.q_norm(query_states)
+    if hasattr(self, "k_norm"):
+        key_states = self.k_norm(key_states)
+
+    query_states = query_states.transpose(1, 2)
+    key_states = key_states.transpose(1, 2)
+    value_states = value_states.transpose(1, 2)
 
     # ---- 3. Cache pre-RoPE KV (incremental) ----
     new_past_key_value = (key_states, value_states, anchor_size, anchor_indices)
@@ -114,15 +131,27 @@ def patched_attn_forward(
     # We cache pre-RoPE KV and re-apply RoPE after concat, so Q and K have different seq_lens.
     # Q: [bsz, heads, q_len, head_dim], K: [bsz, kv_heads, kv_seq_len, head_dim]
     # position_ids: [bsz, kv_seq_len] — last q_len entries correspond to Q positions.
-    cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+    if hasattr(self, "rotary_emb"):
+        # Qwen2-style rotary module on attention layer.
+        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+        # [seq_len, head_dim] -> [bsz, kv_seq_len, head_dim]
+        cos = cos[position_ids]
+        sin = sin[position_ids]
+    elif hasattr(self, "_slimkv_model_rotary_emb"):
+        # Qwen3-style rotary module on model.
+        cos, sin = self._slimkv_model_rotary_emb(value_states, position_ids)
+    else:
+        raise AttributeError("No rotary embedding module found for SlimKV patched attention.")
 
-    # cos/sin: [seq_len, head_dim] → index by position_ids → [bsz, kv_seq_len, head_dim]
-    k_cos = cos[position_ids].unsqueeze(1)  # [bsz, 1, kv_seq_len, head_dim]
-    k_sin = sin[position_ids].unsqueeze(1)
+    k_cos = cos.unsqueeze(1)  # [bsz, 1, kv_seq_len, head_dim]
+    k_sin = sin.unsqueeze(1)
     q_cos = k_cos[:, :, -q_len:, :]  # Q positions are the last q_len
     q_sin = k_sin[:, :, -q_len:, :]
 
-    query_states = _apply_rope(query_states, q_cos, q_sin)
+    if hasattr(self, "rotary_fn"):
+        query_states, _ = self.rotary_fn(query_states, query_states, cos[:, -q_len:, :], sin[:, -q_len:, :])
+    else:
+        query_states = _apply_rope(query_states, q_cos, q_sin)
 
     cfg = self._slimkv_config
     if cfg["skip_anchor_rope_k"] and anchor_size > 0:
@@ -135,13 +164,21 @@ def patched_attn_forward(
             full_indices = anchor_indices
         anchor_k_mask = (full_indices == 1)
         beacon_k_backup = key_states[:, :, anchor_k_mask].clone()
-        key_states = _apply_rope(key_states, k_cos, k_sin)
+        if hasattr(self, "rotary_fn"):
+            _, key_states = self.rotary_fn(key_states, key_states, cos, sin)
+        else:
+            key_states = _apply_rope(key_states, k_cos, k_sin)
         key_states[:, :, anchor_k_mask] = beacon_k_backup
     else:
-        key_states = _apply_rope(key_states, k_cos, k_sin)
+        if hasattr(self, "rotary_fn"):
+            _, key_states = self.rotary_fn(key_states, key_states, cos, sin)
+        else:
+            key_states = _apply_rope(key_states, k_cos, k_sin)
 
     # ---- 6. GQA repeat ----
-    num_groups = self.num_heads // self.num_key_value_heads
+    num_groups = getattr(self, "num_key_value_groups", None)
+    if num_groups is None:
+        num_groups = num_heads // num_kv_heads
     key_states = repeat_kv(key_states, num_groups)
     value_states = repeat_kv(value_states, num_groups)
 
