@@ -24,11 +24,6 @@ logging.basicConfig(
     datefmt="%m/%d/%Y %H:%M:%S",
 )
 
-def get_data_class():
-    """Return built-in SlimKV Data class (no external repo dependency)."""
-    return Data
-
-
 def get_model_and_tokenizer(model_args: ModelArgs, device="cpu", evaluation_mode=True):
     """Load a pretrained model and apply SlimKV patches."""
     dtype = {"bf16": torch.bfloat16, "fp16": torch.float16}.get(model_args.dtype, torch.float32)

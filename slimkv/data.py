@@ -15,12 +15,8 @@ import datasets
 import torch
 from torch.utils.data import Sampler, Dataset
 from transformers.tokenization_utils_base import BatchEncoding
-from transformers.trainer import is_datasets_available
-from transformers.utils import logging
 
 from .utils import apply_chat_template
-
-logger = logging.get_logger(__name__)
 
 
 def _add_eos(encoded, eos_token_id: int):
@@ -45,6 +41,34 @@ def _add_eos(encoded, eos_token_id: int):
 
 
 class Data:
+    @staticmethod
+    def _select_process_fn(columns, tokenizer, min_length, max_length, chat_template, eval_mode=False):
+        if "text" in columns:
+            return partial(
+                Data._process_language_modeling,
+                tokenizer=tokenizer,
+                min_length=min_length,
+                max_length=max_length,
+            )
+        if "conversations" in columns:
+            return partial(
+                Data._process_instruction_tuning,
+                tokenizer=tokenizer,
+                chat_template=chat_template,
+                min_length=min_length,
+                max_length=max_length,
+                eval_mode=eval_mode,
+            )
+        raise ValueError("Found neither 'text' nor 'conversations' in data.")
+
+    @staticmethod
+    def _drop_optional_columns(dataset, ignore_index=False, ignore_length=False):
+        if "index" in dataset.column_names and ignore_index:
+            dataset = dataset.remove_columns(["index"])
+        if "length" in dataset.column_names and ignore_length:
+            dataset = dataset.remove_columns(["length"])
+        return dataset
+
     @staticmethod
     def _process_pretrain_data(data, indices):
         outputs = {"labels": [], "index": [], "length": []}
@@ -169,24 +193,14 @@ class Data:
                 )
             else:
                 dataset = datasets.load_dataset("json", data_files=data_file, split="train", cache_dir=cache_dir)
-                columns = dataset.column_names
-                if "text" in columns:
-                    process_fn = partial(
-                        Data._process_language_modeling,
-                        tokenizer=tokenizer,
-                        min_length=min_length,
-                        max_length=max_length,
-                    )
-                elif "conversations" in columns:
-                    process_fn = partial(
-                        Data._process_instruction_tuning,
-                        tokenizer=tokenizer,
-                        chat_template=chat_template,
-                        min_length=min_length,
-                        max_length=max_length,
-                    )
-                else:
-                    raise ValueError("Found neither 'text' nor 'conversations' in training data.")
+                process_fn = Data._select_process_fn(
+                    columns=dataset.column_names,
+                    tokenizer=tokenizer,
+                    min_length=min_length,
+                    max_length=max_length,
+                    chat_template=chat_template,
+                    eval_mode=False,
+                )
 
                 dataset = dataset.map(
                     process_fn,
@@ -201,10 +215,11 @@ class Data:
             if max_sample_num is not None and len(dataset) > max_sample_num:
                 dataset = dataset.train_test_split(max_sample_num, seed=seed)["test"]
 
-            if "index" in dataset.column_names and ignore_index:
-                dataset = dataset.remove_columns(["index"])
-            if "length" in dataset.column_names and ignore_length:
-                dataset = dataset.remove_columns(["length"])
+            dataset = Data._drop_optional_columns(
+                dataset,
+                ignore_index=ignore_index,
+                ignore_length=ignore_length,
+            )
 
             train_datasets.append(dataset)
 
@@ -233,25 +248,14 @@ class Data:
         else:
             dataset = datasets.load_dataset("json", data_files=data_files, split="train", cache_dir=cache_dir)
 
-        columns = dataset.column_names
-        if "text" in columns:
-            process_fn = partial(
-                Data._process_language_modeling,
-                tokenizer=tokenizer,
-                min_length=min_length,
-                max_length=max_length,
-            )
-        elif "conversations" in columns:
-            process_fn = partial(
-                Data._process_instruction_tuning,
-                tokenizer=tokenizer,
-                chat_template=chat_template,
-                min_length=min_length,
-                max_length=max_length,
-                eval_mode=True,
-            )
-        else:
-            raise ValueError("Found neither 'text' nor 'conversations' in eval data.")
+        process_fn = Data._select_process_fn(
+            columns=dataset.column_names,
+            tokenizer=tokenizer,
+            min_length=min_length,
+            max_length=max_length,
+            chat_template=chat_template,
+            eval_mode=True,
+        )
 
         dataset = dataset.map(
             process_fn,
@@ -261,20 +265,19 @@ class Data:
             remove_columns=dataset.column_names,
             load_from_cache_file=load_from_cache_file,
         )
-        if "index" in dataset.column_names and ignore_index:
-            dataset = dataset.remove_columns(["index"])
-        if "length" in dataset.column_names and ignore_length:
-            dataset = dataset.remove_columns(["length"])
-        return dataset
+        return Data._drop_optional_columns(
+            dataset,
+            ignore_index=ignore_index,
+            ignore_length=ignore_length,
+        )
 
 
 class StrideGroupedSampler(Sampler):
-    """Group samples with similar stride counts to stabilize memory usage."""
+    """Group samples with similar chunk counts (fixed stride mode)."""
 
     def __init__(
         self,
         batch_size: int,
-        window: int,
         stride: int,
         group: str,
         sort: Optional[str] = None,
@@ -301,7 +304,9 @@ class StrideGroupedSampler(Sampler):
             lengths = lengths.tolist()
 
         indices = list(range(len(lengths)))
-        num_strides = [math.ceil((length - window) / stride) + 1 for length in lengths]
+        # SlimKV training uses fixed stride==window semantics, so the number of
+        # forward chunks for one sample is ceil(length / stride).
+        num_strides = [max(1, math.ceil(length / stride)) for length in lengths]
         index_stride_pairs = list(zip(indices, num_strides))
         random.shuffle(index_stride_pairs)
         index_stride_pairs = sorted(index_stride_pairs, key=lambda x: x[1])

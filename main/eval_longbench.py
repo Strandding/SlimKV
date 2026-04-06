@@ -125,6 +125,17 @@ _LOCAL_SEARCH_PATHS = [
 TASKS_WITH_NEWLINE_EOS = {"samsum"}
 
 
+def _normalize_eos_token_ids(eos_token_id, default_eos_id=None):
+    """Normalize EOS config to a flat list[int] with None removed."""
+    if eos_token_id is None:
+        eos_ids = [default_eos_id] if default_eos_id is not None else []
+    elif isinstance(eos_token_id, int):
+        eos_ids = [eos_token_id]
+    else:
+        eos_ids = list(eos_token_id)
+    return [x for x in eos_ids if x is not None]
+
+
 def _find_or_download_longbench(eval_data: str, tasks: List[str], cache_dir: Optional[str]) -> str:
     """Return the path to a directory containing ``{task}.jsonl`` files.
 
@@ -190,13 +201,12 @@ def process_longbench(
             prompt_context = ""
         prompt = prompt_template.format(input=input_text, context=prompt_context)
 
+        tokenized_prompt = tokenizer.encode(prompt)
         if truncate_from_middle:
-            tokenized_prompt = tokenizer.encode(prompt)
             if len(tokenized_prompt) > max_length:
                 half = int(max_length / 2)
                 prompt = tokenizer.decode(tokenized_prompt[:half], skip_special_tokens=True) + tokenizer.decode(tokenized_prompt[-half:], skip_special_tokens=True)
         else:
-            tokenized_prompt = tokenizer.encode(prompt)
             prompt = tokenizer.decode(tokenized_prompt[-max_length:], skip_special_tokens=True)
 
         # Apply chat template for most tasks, except Few-Shot Learning and Code Completion
@@ -268,12 +278,7 @@ def slimkv_generate(model, input_ids, attention_mask, max_new_tokens, eos_token_
     dtype = model.config.torch_dtype if hasattr(model.config, "torch_dtype") and model.config.torch_dtype is not None else torch.bfloat16
 
     # Normalise eos_token_id to a list
-    if eos_token_id is None:
-        _eos_list = []
-    elif isinstance(eos_token_id, int):
-        _eos_list = [eos_token_id]
-    else:
-        _eos_list = list(eos_token_id)
+    _eos_list = _normalize_eos_token_ids(eos_token_id)
 
     # === Phase 1: Windowed prefill ===
     memory.prepare(input_ids, attention_mask, labels=None)
@@ -307,14 +312,11 @@ def slimkv_generate(model, input_ids, attention_mask, max_new_tokens, eos_token_
     if _eos_list and all(next_token[b, 0].item() in _eos_list for b in range(bsz)):
         return torch.cat([input_ids, torch.cat(generated, dim=1)], dim=1)
 
-    # === Phase 2: Build decode cache from memory state ===
+    # === Phase 2: Build decode cache from memory state (anchor KV only) ===
     decode_cache = []
     for layer_idx in range(memory.num_layers):
         ak, av = memory.anchor_kv[layer_idx]
-        rk, rv = memory.raw_kv[layer_idx]
-        k = _cat_kv(ak, rk, dim=2)
-        v = _cat_kv(av, rv, dim=2)
-        decode_cache.append((k, v))
+        decode_cache.append((ak, av))
 
     base_cache_len = decode_cache[0][0].shape[2] if decode_cache[0][0] is not None else 0
 
@@ -346,8 +348,7 @@ def slimkv_generate(model, input_ids, attention_mask, max_new_tokens, eos_token_
 
         # Update decode cache with the new token's KV
         new_decode_cache = []
-        for layer_idx, (new_k, new_v, _, _) in enumerate(outputs.past_key_values):
-            old_k, old_v = decode_cache[layer_idx]
+        for (old_k, old_v), (new_k, new_v, _, _) in zip(decode_cache, outputs.past_key_values):
             new_decode_cache.append((
                 _cat_kv(old_k, new_k, dim=2),
                 _cat_kv(old_v, new_v, dim=2),
@@ -533,11 +534,7 @@ def main():
         eos_token_id = model.generation_config.eos_token_id
     else:
         eos_token_id = tokenizer.eos_token_id
-    if isinstance(eos_token_id, int):
-        eos_token_id = [eos_token_id]
-    elif eos_token_id is None:
-        eos_token_id = [tokenizer.eos_token_id]
-    eos_token_id = [x for x in eos_token_id if x is not None]
+    eos_token_id = _normalize_eos_token_ids(eos_token_id, default_eos_id=tokenizer.eos_token_id)
     if not eos_token_id and tokenizer.eos_token_id is not None:
         eos_token_id = [tokenizer.eos_token_id]
     if args.newline_as_eos:
@@ -607,7 +604,7 @@ def main():
     length_distributions = {}
     task_metric_names = {}
 
-    stat_window_size = args.window_size if use_slimkv else None
+    stat_window_size = model.memory.stride if use_slimkv else None
 
     for i, task in enumerate(all_datasets.keys()):
         if accelerator.process_index == 0:

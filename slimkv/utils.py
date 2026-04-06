@@ -6,7 +6,6 @@ import time
 import torch
 import dataclasses
 from typing import List, Dict, Any, Optional
-from copy import deepcopy
 from transformers.tokenization_utils import PreTrainedTokenizer
 
 
@@ -48,46 +47,37 @@ class FileLogger:
 
 
 # ---------------------------------------------------------------------------
-# DefaultDataCollator  (dynamic padding)
+# DefaultDataCollator  (micro-batch size = 1, no dynamic padding)
 # ---------------------------------------------------------------------------
 
 class DefaultDataCollator:
-    """Collate variable-length lists into padded tensors."""
+    """Collate a single sample into batched tensors.
+
+    SlimKV training is configured with micro-batch size 1, so dynamic padding
+    is unnecessary here.
+    """
 
     def __init__(self, tokenizer):
         self.tokenizer = tokenizer
-        self.pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
-        self.padding_side = getattr(tokenizer, "padding_side", "left")
 
     def __call__(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+        assert len(batch) == 1, (
+            "DefaultDataCollator expects micro-batch size 1. "
+            "Please set per_device_train_batch_size=1 (and eval batch_size=1 if reused)."
+        )
+
+        sample = batch[0]
         result = {}
-        keys = batch[0].keys()
 
-        for key in keys:
-            values = [item[key] for item in batch]
-
-            if isinstance(values[0], list):
-                # Pad sequences
-                max_len = max(len(v) for v in values)
-                if key == "attention_mask":
-                    pad_val = 0
-                elif key == "labels":
-                    pad_val = -100
-                else:
-                    pad_val = self.pad_token_id
-
-                padded = []
-                for v in values:
-                    pad_len = max_len - len(v)
-                    if self.padding_side == "left":
-                        padded.append([pad_val] * pad_len + v)
-                    else:
-                        padded.append(v + [pad_val] * pad_len)
-                result[key] = torch.tensor(padded, dtype=torch.long)
-            elif isinstance(values[0], (int, float)):
-                result[key] = torch.tensor(values)
+        for key, value in sample.items():
+            if isinstance(value, list):
+                result[key] = torch.tensor(value, dtype=torch.long).unsqueeze(0)
+            elif torch.is_tensor(value):
+                result[key] = value.unsqueeze(0)
+            elif isinstance(value, (int, float)):
+                result[key] = torch.tensor([value])
             else:
-                result[key] = values
+                result[key] = [value]
 
         return result
 

@@ -1,21 +1,18 @@
 """SlimKV – Training entry point."""
 
 import logging
-import time
 import os
 import inspect
 import torch
-from transformers import HfArgumentParser, Trainer, TrainerCallback
+from transformers import HfArgumentParser, Trainer
 
 from slimkv import (
     DefaultDataCollator,
+    Data,
     ModelArgs,
-    FileLogger,
     StrideGroupedSampler,
     get_model_and_tokenizer,
-    makedirs,
     format_numel_str,
-    get_data_class,
 )
 from slimkv.args import TrainingArgs
 
@@ -25,10 +22,30 @@ logger = logging.getLogger(__name__)
 class SlimKVTrainer(Trainer):
     """Trainer that resets Memory before each forward and produces labels on the fly."""
 
-    def __init__(self, *args, model_args=None, file_logger=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.model_args = model_args
-        self.file_logger = file_logger
+    @staticmethod
+    def _call_super_get_train_sampler(super_obj, dataset):
+        """Compatibility wrapper for old/new transformers sampler signatures."""
+        try:
+            return super_obj._get_train_sampler(dataset)
+        except TypeError:
+            return super_obj._get_train_sampler()
+
+    @staticmethod
+    def _call_super_compute_loss(super_obj, model, inputs, return_outputs, num_items_in_batch):
+        """Compatibility wrapper for old/new transformers compute_loss signatures."""
+        try:
+            return super_obj.compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+            )
+        except TypeError:
+            return super_obj.compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+            )
 
     def _get_train_sampler(self, train_dataset=None):
         """Group samples by stride count so all ranks in a step iterate the same
@@ -46,19 +63,15 @@ class SlimKVTrainer(Trainer):
             lengths = dataset["length"] if "length" in dataset.column_names else None
             sampler = StrideGroupedSampler(
                 batch_size=self.args.train_batch_size * self.args.world_size,
-                window=self.model.memory.window,
                 stride=self.model.memory.stride,
                 group=self.args.group_by_stride,
+                sort=self.args.sort_by_stride,
                 dataset=dataset,
                 lengths=lengths,
             )
             logger.info(f"rank={self.args.process_index} StrideGroupedSampler ready.")
             return sampler
-        # Keep compatibility with old/new transformers signatures.
-        try:
-            return super()._get_train_sampler(dataset)
-        except TypeError:
-            return super()._get_train_sampler()
+        return self._call_super_get_train_sampler(super(), dataset)
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         inputs.pop("length", None)
@@ -70,25 +83,24 @@ class SlimKVTrainer(Trainer):
         if hasattr(model, "memory"):
             model.memory.reset()
 
-        # Keep compatibility with old/new transformers signatures.
-        try:
-            return super().compute_loss(
-                model,
-                inputs,
-                return_outputs=return_outputs,
-                num_items_in_batch=num_items_in_batch,
-            )
-        except TypeError:
-            return super().compute_loss(
-                model,
-                inputs,
-                return_outputs=return_outputs,
-            )
+        return self._call_super_compute_loss(
+            super(),
+            model=model,
+            inputs=inputs,
+            return_outputs=return_outputs,
+            num_items_in_batch=num_items_in_batch,
+        )
 
 
 def main():
     parser = HfArgumentParser([ModelArgs, TrainingArgs])
     model_args, training_args = parser.parse_args_into_dataclasses()
+
+    if training_args.per_device_train_batch_size != 1:
+        raise ValueError(
+            "SlimKV currently assumes per_device_train_batch_size=1 "
+            "to avoid unnecessary padding logic."
+        )
 
     # torchrun starts one process per GPU. Explicitly bind each process to its
     # local GPU to avoid all ranks loading the model on cuda:0.
@@ -121,7 +133,6 @@ def main():
 
     logger.info(f"rank={training_args.process_index} preparing train dataset...")
     with training_args.main_process_first():
-        Data = get_data_class()
         train_dataset = Data.prepare_train_data(
             model_args.train_data,
             tokenizer=tokenizer,
@@ -133,7 +144,6 @@ def main():
         )
     logger.info(f"rank={training_args.process_index} train dataset ready, size={len(train_dataset)}")
 
-    log_path = training_args.log_path or training_args.output_dir
     trainer_processing_kwargs = {}
     trainer_init_params = inspect.signature(Trainer.__init__).parameters
     if "processing_class" in trainer_init_params:
@@ -144,11 +154,9 @@ def main():
     trainer = SlimKVTrainer(
         model=model,
         args=training_args,
-        model_args=model_args,
         train_dataset=train_dataset,
         eval_dataset=None,
         data_collator=DefaultDataCollator(tokenizer),
-        file_logger=FileLogger(makedirs(log_path)),
         **trainer_processing_kwargs,
     )
 

@@ -8,7 +8,6 @@ Configurable options:
 """
 
 import types
-import torch
 import torch.nn as nn
 
 from .models.qwen2 import patched_attn_forward, patched_causal_lm_forward
@@ -44,6 +43,7 @@ def inject_anchor_params(attn, anchor_kv_type, latent_dim, shared_kv_down):
     if attn.q_proj.bias is not None:
         attn.anchor_q_proj.bias.data.copy_(attn.q_proj.bias.data)
 
+    # Anchor K/V
     if anchor_kv_type == "full":
         # Full-rank: separate K/V with same shape as base, initialised from base weights
         attn.anchor_k_proj = nn.Linear(in_features, k_dim, bias=attn.k_proj.bias is not None)
@@ -88,25 +88,6 @@ def inject_anchor_params(attn, anchor_kv_type, latent_dim, shared_kv_down):
 def _slimkv_forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
     memory = self.memory
 
-    # Synchronize sequence lengths across all ranks so every rank iterates
-    # the same number of chunks.  Without this, ranks with shorter sequences
-    # finish the while-loop earlier and the subsequent DeepSpeed gradient
-    # allreduce deadlocks.
-    if torch.distributed.is_initialized():
-        import math
-        local_steps = math.ceil(input_ids.shape[1] / memory.stride)
-        steps_tensor = torch.tensor([local_steps], device=input_ids.device)
-        torch.distributed.all_reduce(steps_tensor, op=torch.distributed.ReduceOp.MAX)
-        target_len = int(steps_tensor.item()) * memory.stride
-
-        pad_len = target_len - input_ids.shape[1]
-        if pad_len > 0:
-            input_ids = torch.nn.functional.pad(input_ids, (0, pad_len), value=0)
-            if attention_mask is not None:
-                attention_mask = torch.nn.functional.pad(attention_mask, (0, pad_len), value=0)
-            if labels is not None:
-                labels = torch.nn.functional.pad(labels, (0, pad_len), value=-100)
-
     memory.prepare(input_ids, attention_mask, labels)
 
     outputs = None
@@ -135,7 +116,7 @@ def _slimkv_forward(self, input_ids=None, attention_mask=None, labels=None, **kw
 def patch_model(model, memory, anchor_token_id,
                 anchor_kv_type="full", latent_dim=64,
                 skip_anchor_rope_k=False, shared_kv_down=False):
-    """Apply all SlimKV patches. Currently supports Qwen2."""
+    """Apply SlimKV patches (Qwen2/Qwen3 HF implementations)."""
     # Store config on model for attention forward to read
     model._slimkv_config = {
         "anchor_kv_type": anchor_kv_type,
