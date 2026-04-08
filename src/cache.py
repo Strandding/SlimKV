@@ -5,8 +5,8 @@ import argparse
 
 def occupy_gpu():
     parser = argparse.ArgumentParser(description="GPU 显存占用工具")
-    parser.add_argument('--gpus', type=str, default='4,5,6,7', help='指定 GPU 编号，用逗号分隔 (例如: 0,1,2)')
-    parser.add_argument('--mem', type=float, default=25, help='每张显卡占用的显存大小 (单位: GB)')
+    parser.add_argument('--gpus', type=str, default='0,5,6,7', help='指定 GPU 编号，用逗号分隔 (例如: 0,1,2)')
+    parser.add_argument('--mem', type=float, default=8, help='每张显卡占用的显存大小 (单位: GB)')
     
     args = parser.parse_args()
     

@@ -17,7 +17,7 @@ export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-/tmp/${USER}/triton_autotune}"
 mkdir -p "${TRITON_CACHE_DIR}"
 
 # ========= 主要可调参数，集中放这里 =========
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1,3,4}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-3}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
 SAVE_STEPS="${SAVE_STEPS:-500}"
@@ -88,7 +88,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --beacon_attn full-coverage \
 --beacon_attend_prev True \
 --beacon_sink_size 0 \
---beacon_ratio 4 8 16 32 \
+--beacon_ratio 8 \
 --beacon_ratio_mix step-random \
 --beacon_param q k v \
 --beacon_pos interleave \
@@ -96,7 +96,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --beacon_shared_kv_down_proj "${BEACON_SHARED_KV_DOWN_PROJ}" \
 "${beacon_kv_args[@]}" \
 --beacon_loss_mode weighted_after_beacon \
---beacon_loss_weight 4.0 \
+--beacon_loss_weight 1.0 \
 --attn_impl flash_attention_2 \
 --per_device_train_batch_size 1 \
 --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \

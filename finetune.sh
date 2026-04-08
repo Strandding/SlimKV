@@ -124,7 +124,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" $DDP -m main.train \
 --gradient_checkpointing \
 --use_reentrant False \
 --save_only_model \
---num_train_epochs 3 \
+--num_train_epochs 1 \
 --save_strategy steps \
 --save_steps "${SAVE_STEPS}" \
 --save_total_limit "${SAVE_TOTAL_LIMIT}" \
