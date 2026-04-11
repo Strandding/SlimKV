@@ -16,7 +16,8 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
     import torch
     import transformers
     from dataclasses import asdict
-    from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, BitsAndBytesConfig
+    from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+    from transformers.configuration_utils import PretrainedConfig
     from transformers.utils import logging
     from transformers.integrations import is_deepspeed_zero3_enabled
     from packaging import version
@@ -98,14 +99,22 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
         if k.startswith("beacon") and v is not None:
             beacon_kwargs[k] = v
 
-    # use architecture attribute to distinguish different models
-    probe_config = AutoConfig.from_pretrained(
-        model_name_or_path, 
-        cache_dir=cache_dir, 
-        token=access_token, 
-        trust_remote_code=True
+    # read raw config dict first to avoid strict AutoConfig validation on older transformers
+    probe_config_dict, _ = PretrainedConfig.get_config_dict(
+        model_name_or_path,
+        cache_dir=cache_dir,
+        token=access_token,
+        trust_remote_code=True,
     )
-    architecture = probe_config.architectures[0]
+    architectures = probe_config_dict.get("architectures", None)
+    if not architectures:
+        raise ValueError(f"Cannot determine model architecture from config: {model_name_or_path}")
+    architecture = architectures[0]
+    rope_scaling_probe = probe_config_dict.get("rope_scaling", None)
+    rope_type_probe = None
+    if isinstance(rope_scaling_probe, dict):
+        rope_type_probe = rope_scaling_probe.get("rope_type", rope_scaling_probe.get("type", None))
+    is_llama3_model = architecture == "LlamaForCausalLM" and rope_type_probe == "llama3"
 
     # Check if any lowrank beacon compression is requested
     lowrank_requested = False
@@ -134,16 +143,27 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
         )
         device_map = None
 
+    llama_config_class = None
+    llama_model_class = None
+    if architecture == "LlamaForCausalLM":
+        if is_llama3_model:
+            from .llama3 import LlamaForCausalLM as LlamaModelClass, LlamaConfig as LlamaConfigClass
+        else:
+            from .llama import LlamaForCausalLM as LlamaModelClass, LlamaConfig as LlamaConfigClass
+        llama_config_class = LlamaConfigClass
+        llama_model_class = LlamaModelClass
+
     if model_args_dict["enable_beacon"]:
-        from .llama import LlamaForCausalLM, LlamaConfig
         from .mistral import MistralForCausalLM, MistralConfig
         from .qwen2 import Qwen2ForCausalLM, Qwen2Config
         ARCHITECTURE_TO_CLASS = {
-            'LlamaForCausalLM': (LlamaConfig, LlamaForCausalLM),
+            'LlamaForCausalLM': (llama_config_class, llama_model_class),
             'MistralForCausalLM': (MistralConfig, MistralForCausalLM),
             'Qwen2ForCausalLM': (Qwen2Config, Qwen2ForCausalLM),
         }
 
+        if ARCHITECTURE_TO_CLASS.get(architecture, (None, None))[0] is None:
+            raise ValueError(f"Architecture {architecture} is not supported.")
         config_class, model_class = ARCHITECTURE_TO_CLASS[architecture]
 
         config = config_class.from_pretrained(
@@ -193,19 +213,39 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
             )
 
         else:
-            model = AutoModelForCausalLM.from_pretrained(
-                model_name_or_path, 
-                cache_dir=cache_dir, 
-                torch_dtype=dtype,
-                device_map=device_map,
-                token=access_token,
-                trust_remote_code=True,
+            if architecture == "LlamaForCausalLM":
+                config = llama_config_class.from_pretrained(
+                    model_name_or_path,
+                    cache_dir=cache_dir,
+                    token=access_token,
+                    torch_dtype=dtype,
+                    **rope_kwargs,
+                    **attn_kwargs,
+                    **extra_kwargs,
+                )
+                model = llama_model_class.from_pretrained(
+                    model_name_or_path,
+                    config=config,
+                    cache_dir=cache_dir,
+                    torch_dtype=dtype,
+                    device_map=device_map,
+                    token=access_token,
+                )
+                model._enable_beacon = False
+            else:
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_name_or_path, 
+                    cache_dir=cache_dir, 
+                    torch_dtype=dtype,
+                    device_map=device_map,
+                    token=access_token,
+                    trust_remote_code=True,
 
-                # NOTE: do not destroy the default rope_scaling of the model
-                **rope_kwargs,
-                **attn_kwargs,
-                **extra_kwargs,
-            )
+                    # NOTE: do not destroy the default rope_scaling of the model
+                    **rope_kwargs,
+                    **attn_kwargs,
+                    **extra_kwargs,
+                )
 
     # load lora
     if model_args_dict["lora"] is not None:

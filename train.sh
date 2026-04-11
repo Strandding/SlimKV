@@ -17,9 +17,9 @@ export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-/tmp/${USER}/triton_autotune}"
 mkdir -p "${TRITON_CACHE_DIR}"
 
 # ========= 主要可调参数，集中放这里 =========
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2}"
-NPROC_PER_NODE="${NPROC_PER_NODE:-3}"
-GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
+NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
+GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-1}"
 SAVE_STEPS="${SAVE_STEPS:-500}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-2}"
 DATA_ROOT="${DATA_ROOT:-/dataset/common/tzh/.dataset/long-llm}"
@@ -75,6 +75,24 @@ mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/train_$(date +%Y%m%d_%H%M%S).log"
 export MASTER_PORT=29502
 
+echo "========== Run Summary =========="
+echo "script: train.sh"
+echo "mode: train (beacon + optional lowrank kv)"
+echo "model_or_ckpt: ${MODEL_NAME_OR_PATH}"
+if [[ -n "${RESUME_FROM_CHECKPOINT}" ]]; then
+  echo "resume_from: ${RESUME_FROM_CHECKPOINT}"
+else
+  echo "resume_from: none"
+fi
+echo "train_data: ${TRAIN_DATA}"
+echo "output_dir: ${OUTPUT_DIR}"
+echo "gpus: ${CUDA_VISIBLE_DEVICES} (nproc=${NPROC_PER_NODE})"
+echo "beacon: window=2048 stride=2048 ratio='8' param='q k v' skip_k_rope=True shared_down=${BEACON_SHARED_KV_DOWN_PROJ}"
+echo "kv_compression: ${BEACON_KV_COMPRESSION} (k_dim=${BEACON_K_LATENT_HEAD_DIM}, v_dim=${BEACON_V_LATENT_HEAD_DIM})"
+echo "attn_impl: flash_attention_2 | dtype: bf16"
+echo "log_file: ${LOG_FILE}"
+echo "================================="
+
 torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m main.train \
 --output_dir "${OUTPUT_DIR}" \
 --model_name_or_path "${MODEL_NAME_OR_PATH}" \
@@ -113,3 +131,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --bf16 \
 --deepspeed data/deepspeed/stage2.json \
 "${resume_args[@]}" 2>&1 | tee "${LOG_FILE}"
+
+# Training finished — occupy GPUs to hold the cards.
+echo "Training complete. Occupying GPUs to hold resources..."
+python -m src.cache

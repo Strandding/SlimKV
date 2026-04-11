@@ -91,6 +91,24 @@ LOG_DIR="${OUTPUT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/finetune_$(date +%Y%m%d_%H%M%S).log"
 
+echo "========== Run Summary =========="
+echo "script: finetune.sh"
+echo "mode: finetune (beacon + optional lowrank kv)"
+echo "model_or_ckpt: ${MODEL_NAME_OR_PATH}"
+if [[ -n "${RESUME_FROM_CHECKPOINT}" ]]; then
+  echo "resume_from: ${RESUME_FROM_CHECKPOINT}"
+else
+  echo "resume_from: none"
+fi
+echo "data_root: ${data_root}"
+echo "output_dir: ${OUTPUT_DIR}"
+echo "gpus: ${CUDA_VISIBLE_DEVICES} (nproc=${NPROC_PER_NODE})"
+echo "beacon: window=2048 stride=2048 ratio='4 8' param='q k v' skip_k_rope=True shared_down=${BEACON_SHARED_KV_DOWN_PROJ}"
+echo "kv_compression: ${BEACON_KV_COMPRESSION} (k_dim=${BEACON_K_LATENT_HEAD_DIM}, v_dim=${BEACON_V_LATENT_HEAD_DIM})"
+echo "attn_impl: flash_attention_2 | dtype: bf16 | lr: 1e-5"
+echo "log_file: ${LOG_FILE}"
+echo "================================="
+
 torchrun --nproc_per_node "${NPROC_PER_NODE}" $DDP -m main.train \
 --output_dir "${OUTPUT_DIR}" \
 --model_name_or_path "${MODEL_NAME_OR_PATH}" \
@@ -134,3 +152,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" $DDP -m main.train \
 --deepspeed data/deepspeed/stage2.json \
 --chat_template qwen \
 "${resume_args[@]}" 2>&1 | tee "${LOG_FILE}"
+
+# Finetuning finished — occupy GPUs to hold the cards.
+echo "Finetuning complete. Occupying GPUs to hold resources..."
+python -m src.cache

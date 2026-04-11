@@ -115,21 +115,30 @@ case "${EVAL_MODE}" in
 esac
 
 export CUDA_VISIBLE_DEVICES
+RESULT_DIR_FINAL="${RESULT_DIR:-${OUTPUT_NAME}-${mode_suffix}}"
 
 echo "=========================================="
 echo " LongBench Evaluation"
 echo "=========================================="
-echo "  MODEL : ${MODEL_NAME_OR_PATH}"
-echo "  MODE  : ${EVAL_MODE} (${mode_suffix})"
-echo "  GPUS  : ${CUDA_VISIBLE_DEVICES}"
-echo "  TASKS : ${TASKS[*]}"
+echo "  MODEL      : ${MODEL_NAME_OR_PATH}"
+echo "  MODE       : ${EVAL_MODE} (${mode_suffix})"
+echo "  EVAL_DATA  : ${EVAL_DATA}"
+echo "  RESULT_DIR : ${RESULT_ROOT}/${RESULT_DIR_FINAL}"
+echo "  GPUS       : ${CUDA_VISIBLE_DEVICES} (nproc=${NPROC_PER_NODE}, port=${MASTER_PORT})"
+if [[ "${EVAL_MODE}" == "no_beacon" ]]; then
+  echo "  BEACON     : disabled"
+else
+  echo "  BEACON     : ratio=${BEACON_RATIO} mix=${BEACON_RATIO_MIX}"
+fi
+echo "  RUNTIME    : attn=${ATTN_IMPL}, dtype=${DTYPE}, batch=${BATCH_SIZE}, max_len=${MAX_LENGTH}"
+echo "  TASKS      : ${TASKS[*]}"
 echo "=========================================="
 
 torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" $DDP -m main.eval_longbench \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --eval_data "${EVAL_DATA}" \
   --output_dir "${RESULT_ROOT}" \
-  --result_dir "${RESULT_DIR:-${OUTPUT_NAME}-${mode_suffix}}" \
+  --result_dir "${RESULT_DIR_FINAL}" \
   --tasks "${TASKS[@]}" \
   "${mode_args[@]}" \
   --attn_impl "${ATTN_IMPL}" \
