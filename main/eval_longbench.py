@@ -20,6 +20,37 @@ from .longbench_utils import DATASET2PROMPT, DATASET2MAXNEWTOKENS, DATASET2CATEG
 logger = logging.get_logger(__name__)
 
 
+def _format_metric(metric):
+    if isinstance(metric, dict):
+        return json.dumps(metric, ensure_ascii=False, sort_keys=True)
+    if isinstance(metric, float):
+        return f"{metric:.2f}"
+    return str(metric)
+
+
+def print_task_score_table(tasks: List[str], metrics: Dict):
+    rows = []
+    for task in tasks:
+        if task in metrics:
+            rows.append((task, _format_metric(metrics[task])))
+    if "avg" in metrics:
+        rows.append(("avg", _format_metric(metrics["avg"])))
+    if not rows:
+        return
+
+    task_w = max(len("task"), max(len(task) for task, _ in rows))
+    score_w = max(len("score"), max(len(score) for _, score in rows))
+    border = f"+-{'-' * task_w}-+-{'-' * score_w}-+"
+
+    print("\n[score_table] LongBench task scores", flush=True)
+    print(border, flush=True)
+    print(f"| {'task'.ljust(task_w)} | {'score'.ljust(score_w)} |", flush=True)
+    print(border, flush=True)
+    for task, score in rows:
+        print(f"| {task.ljust(task_w)} | {score.ljust(score_w)} |", flush=True)
+    print(border, flush=True)
+
+
 def build_window_length_distribution(input_ids_list, window_size: Optional[int]):
     if window_size is None or window_size <= 0:
         return None
@@ -115,6 +146,18 @@ class Args(ModelArgs):
         default=False,
         metadata={'help': 'Drop context and keep only question input in the prompt.'}
     )
+    max_samples_per_task: Optional[int] = field(
+        default=None,
+        metadata={'help': 'Maximum number of evaluation samples per LongBench task.'}
+    )
+    sample_seed: int = field(
+        default=42,
+        metadata={'help': 'Random seed used when sub-sampling evaluation data.'}
+    )
+    sample_shuffle: bool = field(
+        default=True,
+        metadata={'help': 'Shuffle before applying max_samples_per_task.'}
+    )
 
     do_sample: bool = False
 
@@ -173,6 +216,17 @@ def main():
     if args.newline_as_eos:
         eos_token_id.append(tokenizer.encode("\n", add_special_tokens=False)[-1])
 
+    if hasattr(model, "generation_config"):
+        pad_token_id = model.generation_config.pad_token_id
+    else:
+        pad_token_id = None
+    if pad_token_id is None:
+        pad_token_id = tokenizer.pad_token_id
+    if pad_token_id is None:
+        pad_token_id = eos_token_id[0]
+    if hasattr(model, "generation_config") and model.generation_config.pad_token_id is None:
+        model.generation_config.pad_token_id = pad_token_id
+
     if args.tasks == ["all"]:
         tasks = list(DATASET2PROMPT.keys())
     else:
@@ -194,6 +248,10 @@ def main():
 
             path = os.path.join(args.eval_data, f"{task}.jsonl")
             raw_dataset = datasets.load_dataset("json", data_files=path, cache_dir=args.dataset_cache_dir, split="train")
+            if args.max_samples_per_task is not None and len(raw_dataset) > args.max_samples_per_task:
+                if args.sample_shuffle:
+                    raw_dataset = raw_dataset.shuffle(seed=args.sample_seed)
+                raw_dataset = raw_dataset.select(range(args.max_samples_per_task))
             map_num_proc = int(os.environ.get("MAP_NUM_PROC", "32"))
             map_batch_size = int(os.environ.get("MAP_BATCH_SIZE", "10"))
             map_load_from_cache_file_env = os.environ.get("MAP_LOAD_FROM_CACHE_FILE", "")
@@ -305,7 +363,7 @@ def main():
                 if hasattr(model, "memory"):
                     model.memory.reset()
 
-                kwargs = {"max_new_tokens": max_new_tokens}
+                kwargs = {"max_new_tokens": max_new_tokens, "pad_token_id": pad_token_id}
                 if task in ["2wikimqa", "hotpotqa", "musique", "multifieldqa_en", "qasper", "narrativeqa", "samsum"]:
                     kwargs["eos_token_id"] = eos_token_id
 
@@ -421,6 +479,8 @@ def main():
             else:
                 avg = round(sum(task_metrics.values()) / len(task_metrics), 2)
             metrics["avg"] = avg
+
+        print_task_score_table(tasks, metrics)
 
         file_logger = FileLogger(makedirs(os.path.join(args.output_dir, "metrics.log")))
         file_logger.log(metrics, Args=asdict(args), Category_Metrics=category_metrics, Length_Distributions=length_distributions)

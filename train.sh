@@ -19,6 +19,7 @@ mkdir -p "${TRITON_CACHE_DIR}"
 # ========= 主要可调参数，集中放这里 =========
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
+PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-1}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-1}"
 SAVE_STEPS="${SAVE_STEPS:-500}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-2}"
@@ -33,6 +34,8 @@ MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-${default_lowrank_dir}}"
 output_name="${OUTPUT_NAME:-beacon-qwen2-pretrain-lowrank-nokrope-shared-down-kv${BEACON_K_LATENT_HEAD_DIM}-train}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 OUTPUT_DIR="data/outputs/${output_name}"
+TOTAL_TRAIN_SAMPLES="${TOTAL_TRAIN_SAMPLES:-}"
+GROUP_BY_STRIDE="${GROUP_BY_STRIDE:-strict}"
 # ==========================================
 
 if [[ ! -f "${TRAIN_DATA}" ]]; then
@@ -70,6 +73,32 @@ case "${BEACON_KV_COMPRESSION}" in
     ;;
 esac
 
+train_length_args=()
+group_by_stride_args=()
+if [[ -n "${GROUP_BY_STRIDE}" && "${GROUP_BY_STRIDE}" != "none" ]]; then
+  group_by_stride_args+=(--group_by_stride "${GROUP_BY_STRIDE}")
+fi
+GLOBAL_BATCH_SIZE=$(( PER_DEVICE_TRAIN_BATCH_SIZE * NPROC_PER_NODE * GRADIENT_ACCUMULATION_STEPS ))
+MAX_STEPS=""
+if [[ -n "${TOTAL_TRAIN_SAMPLES}" ]]; then
+  if ! [[ "${TOTAL_TRAIN_SAMPLES}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Invalid TOTAL_TRAIN_SAMPLES: ${TOTAL_TRAIN_SAMPLES}" >&2
+    exit 1
+  fi
+  if (( TOTAL_TRAIN_SAMPLES % GLOBAL_BATCH_SIZE != 0 )); then
+    echo "TOTAL_TRAIN_SAMPLES (${TOTAL_TRAIN_SAMPLES}) must be divisible by global_batch_size (${GLOBAL_BATCH_SIZE})." >&2
+    exit 1
+  fi
+  MAX_STEPS=$(( TOTAL_TRAIN_SAMPLES / GLOBAL_BATCH_SIZE ))
+  if (( MAX_STEPS < 1 )); then
+    echo "Computed MAX_STEPS is < 1. Check TOTAL_TRAIN_SAMPLES and batch settings." >&2
+    exit 1
+  fi
+  train_length_args+=(--max_steps "${MAX_STEPS}")
+else
+  train_length_args+=(--num_train_epochs 1)
+fi
+
 LOG_DIR="${OUTPUT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/train_$(date +%Y%m%d_%H%M%S).log"
@@ -87,6 +116,13 @@ fi
 echo "train_data: ${TRAIN_DATA}"
 echo "output_dir: ${OUTPUT_DIR}"
 echo "gpus: ${CUDA_VISIBLE_DEVICES} (nproc=${NPROC_PER_NODE})"
+echo "batch: per_device=${PER_DEVICE_TRAIN_BATCH_SIZE} grad_acc=${GRADIENT_ACCUMULATION_STEPS} -> global_batch=${GLOBAL_BATCH_SIZE}"
+if [[ -n "${TOTAL_TRAIN_SAMPLES}" ]]; then
+  echo "train_budget: total_samples=${TOTAL_TRAIN_SAMPLES} -> max_steps=${MAX_STEPS}"
+else
+  echo "train_budget: total_samples=all (1 epoch)"
+fi
+echo "group_by_stride: ${GROUP_BY_STRIDE}"
 echo "beacon: window=2048 stride=2048 ratio='8' param='q k v' skip_k_rope=True shared_down=${BEACON_SHARED_KV_DOWN_PROJ}"
 echo "kv_compression: ${BEACON_KV_COMPRESSION} (k_dim=${BEACON_K_LATENT_HEAD_DIM}, v_dim=${BEACON_V_LATENT_HEAD_DIM})"
 echo "attn_impl: flash_attention_2 | dtype: bf16"
@@ -99,7 +135,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --train_data "${TRAIN_DATA}" \
 --min_length 2400 \
 --max_length 20000 \
---group_by_stride strict \
+"${group_by_stride_args[@]}" \
 --enable_beacon \
 --beacon_window 2048 \
 --beacon_stride 2048 \
@@ -116,7 +152,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --beacon_loss_mode weighted_after_beacon \
 --beacon_loss_weight 1.0 \
 --attn_impl flash_attention_2 \
---per_device_train_batch_size 1 \
+--per_device_train_batch_size "${PER_DEVICE_TRAIN_BATCH_SIZE}" \
 --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \
 --gradient_checkpointing \
 --use_reentrant False \
@@ -125,7 +161,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --save_steps "${SAVE_STEPS}" \
 --save_total_limit "${SAVE_TOTAL_LIMIT}" \
 --evaluation_strategy steps \
---num_train_epochs 1 \
+"${train_length_args[@]}" \
 --logging_dir "${LOG_DIR}" \
 --logging_steps 50 \
 --bf16 \

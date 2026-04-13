@@ -216,8 +216,16 @@ def main():
         evaluation_mode=True,
     )
 
-    if getattr(model.config, "model_type", None) != "qwen2":
-        raise NotImplementedError("Only Qwen2 beacon models are supported by this converter.")
+    attn_layers = [layer.self_attn for layer in model.model.layers]
+    supports_lowrank_conversion = all(
+        hasattr(layer, "convert_beacon_k_proj_to_lowrank") and hasattr(layer, "convert_beacon_v_proj_to_lowrank")
+        for layer in attn_layers
+    )
+    if not supports_lowrank_conversion:
+        raise NotImplementedError(
+            "This model does not expose beacon KV low-rank conversion methods. "
+            "Currently supported by Qwen2 and Llama3 beacon models in this repository."
+        )
 
     beacon_param = getattr(model.config, "beacon_param", [])
     if conversion_args.svd_device.startswith("cuda") and not torch.cuda.is_available():
@@ -226,7 +234,6 @@ def main():
         )
 
     return_sv = conversion_args.save_svd_spectra or conversion_args.save_svd_spectra_data
-    attn_layers = [layer.self_attn for layer in model.model.layers]
 
     start_time = time.time()
 

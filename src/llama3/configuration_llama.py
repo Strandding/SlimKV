@@ -149,6 +149,14 @@ class LlamaConfig(PretrainedConfig):
         beacon_attend_prev=True,
         beacon_pos="interleave",
         beacon_parallel_window=1,
+        beacon_skip_rope_for_beacon_k=False,
+        beacon_shared_kv_down_proj=False,
+        beacon_k_compression="none",
+        beacon_v_compression="none",
+        beacon_k_latent_head_dim=64,
+        beacon_v_latent_head_dim=64,
+        # convenience: set both at once
+        beacon_kv_compression=None,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -194,6 +202,16 @@ class LlamaConfig(PretrainedConfig):
         self.beacon_attend_prev = beacon_attend_prev
         self.beacon_pos = beacon_pos
         self.beacon_parallel_window = beacon_parallel_window
+        self.beacon_skip_rope_for_beacon_k = beacon_skip_rope_for_beacon_k
+        self.beacon_shared_kv_down_proj = beacon_shared_kv_down_proj
+        # convenience: beacon_kv_compression overrides both k and v
+        if beacon_kv_compression is not None:
+            beacon_k_compression = beacon_kv_compression
+            beacon_v_compression = beacon_kv_compression
+        self.beacon_k_compression = beacon_k_compression
+        self.beacon_v_compression = beacon_v_compression
+        self.beacon_k_latent_head_dim = beacon_k_latent_head_dim
+        self.beacon_v_latent_head_dim = beacon_v_latent_head_dim
 
         super().__init__(
             pad_token_id=pad_token_id,

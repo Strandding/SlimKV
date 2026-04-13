@@ -144,12 +144,20 @@ class LlamaAttention(nn.Module):
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
         self.is_causal = True
+        self.beacon_k_compression = getattr(config, "beacon_k_compression", "none")
+        self.beacon_v_compression = getattr(config, "beacon_v_compression", "none")
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
             raise ValueError(
                 f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
                 f" and `num_heads`: {self.num_heads})."
             )
+        for _name, _val in [("beacon_k_compression", self.beacon_k_compression),
+                            ("beacon_v_compression", self.beacon_v_compression)]:
+            if _val not in ["none", "lowrank_svd"]:
+                raise ValueError(
+                    f"Unsupported {_name}: {_val}. Expected one of ['none', 'lowrank_svd']."
+                )
 
         self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=config.attention_bias)
         self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=config.attention_bias)
@@ -166,17 +174,256 @@ class LlamaAttention(nn.Module):
             self.beacon_q_proj.weight.data.zero_()
             self.beacon_q_proj._is_hf_initialized = True
         if "k" in config.beacon_param:
-            self.beacon_k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=self.k_proj.bias is not None)
-            self.beacon_k_proj.weight.data.zero_()
-            self.beacon_k_proj._is_hf_initialized = True
+            if self._use_lowrank_beacon_k():
+                if self._use_shared_kv_down_proj():
+                    # shared down_proj will be created in the V block below
+                    _, self.beacon_k_up_proj = self._build_lowrank_beacon_k_layers()
+                else:
+                    self.beacon_k_down_proj, self.beacon_k_up_proj = self._build_lowrank_beacon_k_layers()
+            else:
+                self.beacon_k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=self.k_proj.bias is not None)
+                self.beacon_k_proj.weight.data.zero_()
+                self.beacon_k_proj._is_hf_initialized = True
         if "v" in config.beacon_param:
-            self.beacon_v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=self.v_proj.bias is not None)
-            self.beacon_v_proj.weight.data.zero_()
-            self.beacon_v_proj._is_hf_initialized = True
+            if self._use_lowrank_beacon_v():
+                if self._use_shared_kv_down_proj():
+                    # create ONE shared down_proj for both K and V
+                    self.beacon_kv_down_proj, self.beacon_v_up_proj = self._build_lowrank_beacon_v_layers()
+                else:
+                    self.beacon_v_down_proj, self.beacon_v_up_proj = self._build_lowrank_beacon_v_layers()
+            else:
+                self.beacon_v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=self.v_proj.bias is not None)
+                self.beacon_v_proj.weight.data.zero_()
+                self.beacon_v_proj._is_hf_initialized = True
         if "o" in config.beacon_param:
             self.beacon_o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=self.o_proj.bias is not None)
             self.beacon_o_proj.weight.data.zero_()
             self.beacon_o_proj._is_hf_initialized = True
+
+    # ---- shared KV down-proj helper ----
+
+    def _use_shared_kv_down_proj(self):
+        return (
+            getattr(self.config, "beacon_shared_kv_down_proj", False)
+            and self._use_lowrank_beacon_k()
+            and self._use_lowrank_beacon_v()
+            and self._get_beacon_k_latent_head_dim() == self._get_beacon_v_latent_head_dim()
+            and getattr(self.config, "beacon_skip_rope_for_beacon_k", False)
+        )
+
+    # ---- K low-rank helpers ----
+
+    def _use_lowrank_beacon_k(self):
+        return "k" in self.config.beacon_param and self.beacon_k_compression == "lowrank_svd"
+
+    def _get_beacon_k_latent_head_dim(self):
+        latent_head_dim = getattr(self.config, "beacon_k_latent_head_dim", None)
+        if latent_head_dim is None:
+            latent_head_dim = self.head_dim
+        if latent_head_dim <= 0:
+            raise ValueError(f"beacon_k_latent_head_dim must be positive, found {latent_head_dim}.")
+        if latent_head_dim > self.head_dim:
+            raise ValueError(
+                f"beacon_k_latent_head_dim must be <= head_dim ({self.head_dim}), found {latent_head_dim}."
+            )
+        return latent_head_dim
+
+    def _build_lowrank_beacon_k_layers(self, latent_head_dim=None, dtype=None, device=None):
+        if latent_head_dim is None:
+            latent_head_dim = self._get_beacon_k_latent_head_dim()
+        if latent_head_dim <= 0:
+            raise ValueError(f"beacon_k_latent_head_dim must be positive, found {latent_head_dim}.")
+        if latent_head_dim > self.head_dim:
+            raise ValueError(
+                f"beacon_k_latent_head_dim must be <= head_dim ({self.head_dim}), found {latent_head_dim}."
+            )
+
+        global_rank = self.num_key_value_heads * latent_head_dim
+        out_features = self.num_key_value_heads * self.head_dim
+        if global_rank > min(self.hidden_size, out_features):
+            raise ValueError(
+                f"Global rank {global_rank} exceeds the maximum feasible rank "
+                f"{min(self.hidden_size, out_features)} for beacon_k_proj."
+            )
+
+        down_proj = nn.Linear(self.hidden_size, global_rank, bias=False, dtype=dtype, device=device)
+        up_proj = nn.Linear(global_rank, out_features, bias=self.k_proj.bias is not None, dtype=dtype, device=device)
+        down_proj.weight.data.zero_()
+        up_proj.weight.data.zero_()
+        if up_proj.bias is not None:
+            up_proj.bias.data.zero_()
+        down_proj._is_hf_initialized = True
+        up_proj._is_hf_initialized = True
+        return down_proj, up_proj
+
+    def _project_beacon_key(self, hidden_states):
+        if self._use_lowrank_beacon_k():
+            if self._use_shared_kv_down_proj():
+                return self.beacon_k_up_proj(self.beacon_kv_down_proj(hidden_states))
+            return self.beacon_k_up_proj(self.beacon_k_down_proj(hidden_states))
+        return self.beacon_k_proj(hidden_states)
+
+    # ---- V low-rank helpers ----
+
+    def _use_lowrank_beacon_v(self):
+        return "v" in self.config.beacon_param and self.beacon_v_compression == "lowrank_svd"
+
+    def _get_beacon_v_latent_head_dim(self):
+        latent_head_dim = getattr(self.config, "beacon_v_latent_head_dim", None)
+        if latent_head_dim is None:
+            latent_head_dim = self.head_dim
+        if latent_head_dim <= 0:
+            raise ValueError(f"beacon_v_latent_head_dim must be positive, found {latent_head_dim}.")
+        if latent_head_dim > self.head_dim:
+            raise ValueError(
+                f"beacon_v_latent_head_dim must be <= head_dim ({self.head_dim}), found {latent_head_dim}."
+            )
+        return latent_head_dim
+
+    def _build_lowrank_beacon_v_layers(self, latent_head_dim=None, dtype=None, device=None):
+        if latent_head_dim is None:
+            latent_head_dim = self._get_beacon_v_latent_head_dim()
+        if latent_head_dim <= 0:
+            raise ValueError(f"beacon_v_latent_head_dim must be positive, found {latent_head_dim}.")
+        if latent_head_dim > self.head_dim:
+            raise ValueError(
+                f"beacon_v_latent_head_dim must be <= head_dim ({self.head_dim}), found {latent_head_dim}."
+            )
+
+        global_rank = self.num_key_value_heads * latent_head_dim
+        out_features = self.num_key_value_heads * self.head_dim
+        if global_rank > min(self.hidden_size, out_features):
+            raise ValueError(
+                f"Global rank {global_rank} exceeds the maximum feasible rank "
+                f"{min(self.hidden_size, out_features)} for beacon_v_proj."
+            )
+
+        down_proj = nn.Linear(self.hidden_size, global_rank, bias=False, dtype=dtype, device=device)
+        up_proj = nn.Linear(global_rank, out_features, bias=self.v_proj.bias is not None, dtype=dtype, device=device)
+        down_proj.weight.data.zero_()
+        up_proj.weight.data.zero_()
+        if up_proj.bias is not None:
+            up_proj.bias.data.zero_()
+        down_proj._is_hf_initialized = True
+        up_proj._is_hf_initialized = True
+        return down_proj, up_proj
+
+    def _project_beacon_value(self, hidden_states):
+        if self._use_lowrank_beacon_v():
+            if self._use_shared_kv_down_proj():
+                return self.beacon_v_up_proj(self.beacon_kv_down_proj(hidden_states))
+            return self.beacon_v_up_proj(self.beacon_v_down_proj(hidden_states))
+        return self.beacon_v_proj(hidden_states)
+
+    # ---- SVD conversion: K ----
+
+    def convert_beacon_k_proj_to_lowrank(self, latent_head_dim, svd_device="cpu", return_singular_values=False):
+        if "k" not in self.config.beacon_param:
+            raise ValueError("Cannot convert beacon K projection because `k` is not enabled in beacon_param.")
+        if self._use_lowrank_beacon_k():
+            raise ValueError("beacon_k_proj is already using low-rank parameterization.")
+        if not hasattr(self, "beacon_k_proj"):
+            raise ValueError("Dense beacon_k_proj was not found on the source checkpoint.")
+
+        svd_device = torch.device(svd_device)
+        dense_weight = self.beacon_k_proj.weight.detach().float().to(svd_device)
+        global_rank = self.num_key_value_heads * latent_head_dim
+        max_rank = min(dense_weight.shape)
+        if global_rank > max_rank:
+            raise ValueError(
+                f"Requested global rank {global_rank} exceeds the maximum feasible rank {max_rank}."
+            )
+
+        u, s, vh = torch.linalg.svd(dense_weight, full_matrices=False)
+        singular_values = s.detach().cpu()
+        u = u[:, :global_rank]
+        s = s[:global_rank]
+        vh = vh[:global_rank, :]
+        sqrt_s = s.sqrt()
+        up_weight = u * sqrt_s.unsqueeze(0)
+        down_weight = sqrt_s.unsqueeze(1) * vh
+
+        down_proj, up_proj = self._build_lowrank_beacon_k_layers(
+            latent_head_dim=latent_head_dim,
+            dtype=self.beacon_k_proj.weight.dtype,
+            device=self.beacon_k_proj.weight.device,
+        )
+        down_proj.weight.data.copy_(down_weight.to(dtype=down_proj.weight.dtype, device=down_proj.weight.device))
+        up_proj.weight.data.copy_(up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
+        if up_proj.bias is not None and self.beacon_k_proj.bias is not None:
+            up_proj.bias.data.copy_(self.beacon_k_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device))
+
+        del dense_weight, u, s, vh, sqrt_s, up_weight, down_weight
+        if svd_device.type == "cuda":
+            torch.cuda.empty_cache()
+
+        del self.beacon_k_proj
+        self.config.beacon_k_compression = "lowrank_svd"
+        self.config.beacon_k_latent_head_dim = latent_head_dim
+        self.beacon_k_compression = "lowrank_svd"
+        self.beacon_k_down_proj = down_proj
+        self.beacon_k_up_proj = up_proj
+        if return_singular_values:
+            return {
+                "global_rank": global_rank,
+                "singular_values": singular_values,
+            }
+        return global_rank
+
+    # ---- SVD conversion: V ----
+
+    def convert_beacon_v_proj_to_lowrank(self, latent_head_dim, svd_device="cpu", return_singular_values=False):
+        if "v" not in self.config.beacon_param:
+            raise ValueError("Cannot convert beacon V projection because `v` is not enabled in beacon_param.")
+        if self._use_lowrank_beacon_v():
+            raise ValueError("beacon_v_proj is already using low-rank parameterization.")
+        if not hasattr(self, "beacon_v_proj"):
+            raise ValueError("Dense beacon_v_proj was not found on the source checkpoint.")
+
+        svd_device = torch.device(svd_device)
+        dense_weight = self.beacon_v_proj.weight.detach().float().to(svd_device)
+        global_rank = self.num_key_value_heads * latent_head_dim
+        max_rank = min(dense_weight.shape)
+        if global_rank > max_rank:
+            raise ValueError(
+                f"Requested global rank {global_rank} exceeds the maximum feasible rank {max_rank}."
+            )
+
+        u, s, vh = torch.linalg.svd(dense_weight, full_matrices=False)
+        singular_values = s.detach().cpu()
+        u = u[:, :global_rank]
+        s = s[:global_rank]
+        vh = vh[:global_rank, :]
+        sqrt_s = s.sqrt()
+        up_weight = u * sqrt_s.unsqueeze(0)
+        down_weight = sqrt_s.unsqueeze(1) * vh
+
+        down_proj, up_proj = self._build_lowrank_beacon_v_layers(
+            latent_head_dim=latent_head_dim,
+            dtype=self.beacon_v_proj.weight.dtype,
+            device=self.beacon_v_proj.weight.device,
+        )
+        down_proj.weight.data.copy_(down_weight.to(dtype=down_proj.weight.dtype, device=down_proj.weight.device))
+        up_proj.weight.data.copy_(up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
+        if up_proj.bias is not None and self.beacon_v_proj.bias is not None:
+            up_proj.bias.data.copy_(self.beacon_v_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device))
+
+        del dense_weight, u, s, vh, sqrt_s, up_weight, down_weight
+        if svd_device.type == "cuda":
+            torch.cuda.empty_cache()
+
+        del self.beacon_v_proj
+        self.config.beacon_v_compression = "lowrank_svd"
+        self.config.beacon_v_latent_head_dim = latent_head_dim
+        self.beacon_v_compression = "lowrank_svd"
+        self.beacon_v_down_proj = down_proj
+        self.beacon_v_up_proj = up_proj
+        if return_singular_values:
+            return {
+                "global_rank": global_rank,
+                "singular_values": singular_values,
+            }
+        return global_rank
 
     def _init_beacon_proj(self, missing_keys):
         """Initialize the beacon projection weight with that of the ordinal projection."""
@@ -198,7 +445,7 @@ class LlamaAttention(nn.Module):
                         self.beacon_q_proj.weight.data[:] = self.q_proj.weight.data
                         if self.q_proj.bias is not None:
                             self.beacon_q_proj.bias.data[:] = self.q_proj.bias.data
-            if "k" in beacon_param:
+            if "k" in beacon_param and not self._use_lowrank_beacon_k():
                 params = [self.beacon_k_proj.weight, self.k_proj.weight]
                 if self.k_proj.bias is not None:
                     params.extend([self.beacon_k_proj.bias, self.k_proj.bias])
@@ -208,7 +455,7 @@ class LlamaAttention(nn.Module):
                         self.beacon_k_proj.weight.data[:] = self.k_proj.weight.data
                         if self.k_proj.bias is not None:
                             self.beacon_k_proj.bias.data[:] = self.k_proj.bias.data
-            if "v" in beacon_param:
+            if "v" in beacon_param and not self._use_lowrank_beacon_v():
                 params = [self.beacon_v_proj.weight, self.v_proj.weight]
                 if self.v_proj.bias is not None:
                     params.extend([self.beacon_v_proj.bias, self.v_proj.bias])
@@ -236,12 +483,12 @@ class LlamaAttention(nn.Module):
                     self.beacon_q_proj.weight.data[:] = self.q_proj.weight.data
                     if self.q_proj.bias is not None:
                         self.beacon_q_proj.bias.data[:] = self.q_proj.bias.data
-            if "k" in beacon_param and any("beacon_k_proj" in missing_key for missing_key in missing_keys):
+            if "k" in beacon_param and not self._use_lowrank_beacon_k() and any("beacon_k_proj" in missing_key for missing_key in missing_keys):
                 # if (self.beacon_k_proj.weight == 0).all():
                     self.beacon_k_proj.weight.data[:] = self.k_proj.weight.data
                     if self.k_proj.bias is not None:
                         self.beacon_k_proj.bias.data[:] = self.k_proj.bias.data
-            if "v" in beacon_param and any("beacon_v_proj" in missing_key for missing_key in missing_keys):
+            if "v" in beacon_param and not self._use_lowrank_beacon_v() and any("beacon_v_proj" in missing_key for missing_key in missing_keys):
                 # if (self.beacon_v_proj.weight == 0).all():
                     self.beacon_v_proj.weight.data[:] = self.v_proj.weight.data
                     if self.v_proj.bias is not None:
@@ -254,6 +501,44 @@ class LlamaAttention(nn.Module):
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
+
+    def _apply_rotary_with_beacon(self, query_states, key_states, position_ids, beacon_size, beacon_indices):
+        """Apply RoPE to Q and K. When beacon_skip_rope_for_beacon_k is enabled,
+        beacon token keys are excluded from RoPE (their K values stay as-is)."""
+        if (
+            not getattr(self.config, "beacon_skip_rope_for_beacon_k", False)
+            or beacon_size <= 0
+            or beacon_indices is None
+        ):
+            return self.rotary_emb(query_states, key_states, position_ids)
+
+        # key_states shape: [bsz, num_kv_heads, kv_seq_len, head_dim]
+        # beacon_indices covers [raw_cache, current_input] but key_states is
+        # [sink, beacon_history, raw_cache, current_input].
+        # We need to build a full-length mask aligned with key_states.
+        kv_seq_len = key_states.shape[2]
+        prefix_len = kv_seq_len - len(beacon_indices)
+        if prefix_len > 0:
+            # prefix = [sink (0), beacon_history (1)]
+            sink_size = getattr(self.config, "beacon_sink_size", 0)
+            beacon_history_size = prefix_len - sink_size
+            prefix_indices = torch.cat([
+                beacon_indices.new_zeros(sink_size),
+                beacon_indices.new_ones(beacon_history_size),
+            ])
+            full_beacon_indices = torch.cat([prefix_indices, beacon_indices])
+        else:
+            full_beacon_indices = beacon_indices
+
+        beacon_mask = torch.logical_or(full_beacon_indices == 1, full_beacon_indices == 2)
+        beacon_k_backup = key_states[:, :, beacon_mask].clone()
+
+        # Apply standard RoPE once, then restore beacon-key slots.
+        # This keeps raw-token K RoPE unchanged and only skips RoPE for beacon K.
+        query_states, key_states = self.rotary_emb(query_states, key_states, position_ids)
+        key_states[:, :, beacon_mask] = beacon_k_backup
+
+        return query_states, key_states
     
     # def qkv_proj_with_beacon(self, hidden_states, beacon_size, beacon_indices):
     #     if beacon_size > 0:
@@ -347,7 +632,7 @@ class LlamaAttention(nn.Module):
 
             if "k" in self.config.beacon_param:
                 ordinal_key_states = self.k_proj(hidden_states)
-                beacon_key_states = self.beacon_k_proj(hidden_states)
+                beacon_key_states = self._project_beacon_key(hidden_states)
                 key_states = torch.where((cur_beacon_indices == 0)[:, None], ordinal_key_states, beacon_key_states)
                 if (cur_beacon_indices == 2).any():
                     # beacon_indices == 2 means the beacon token is used to replicate the ones in previous window for parallel encoding
@@ -358,7 +643,7 @@ class LlamaAttention(nn.Module):
 
             if "v" in self.config.beacon_param:
                 ordinal_value_states = self.v_proj(hidden_states)
-                beacon_value_states = self.beacon_v_proj(hidden_states)
+                beacon_value_states = self._project_beacon_value(hidden_states)
                 value_states = torch.where((cur_beacon_indices == 0)[:, None], ordinal_value_states, beacon_value_states)
                 if (cur_beacon_indices == 2).any():
                     # beacon_indices == 2 means the beacon token is used to replicate the ones in previous window for parallel encoding
@@ -421,15 +706,26 @@ class LlamaAttention(nn.Module):
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
         # return keys and values before rope
-        # NOTE: incrementally return keys and values for efficiency 
+        # NOTE: incrementally return keys and values for beacon efficiency
         past_key_value = (key_states, value_states, beacon_size, beacon_indices)
 
         if past_key is not None:
             # reuse k, v, self_attention
             key_states = torch.cat([past_key, key_states], dim=2)
             value_states = torch.cat([past_value, value_states], dim=2)
+
+        # In no-beacon native generation, `generate()` expects an accumulated KV cache.
+        # Beacon path keeps using incremental cache and is updated by Memory.update_memory.
+        if beacon_indices is None:
+            past_key_value = (key_states, value_states, beacon_size, beacon_indices)
         
-        query_states, key_states = self.rotary_emb(query_states, key_states, position_ids)
+        query_states, key_states = self._apply_rotary_with_beacon(
+            query_states,
+            key_states,
+            position_ids,
+            beacon_size,
+            beacon_indices,
+        )
 
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
@@ -519,15 +815,26 @@ class LlamaSdpaAttention(LlamaAttention):
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
         # return keys and values before rope
-        # NOTE: incrementally return keys and values for efficiency 
+        # NOTE: incrementally return keys and values for beacon efficiency
         past_key_value = (key_states, value_states, beacon_size, beacon_indices)
 
         if past_key is not None:
             # reuse k, v, self_attention
             key_states = torch.cat([past_key, key_states], dim=2)
             value_states = torch.cat([past_value, value_states], dim=2)
+
+        # In no-beacon native generation, `generate()` expects an accumulated KV cache.
+        # Beacon path keeps using incremental cache and is updated by Memory.update_memory.
+        if beacon_indices is None:
+            past_key_value = (key_states, value_states, beacon_size, beacon_indices)
         
-        query_states, key_states = self.rotary_emb(query_states, key_states, position_ids)
+        query_states, key_states = self._apply_rotary_with_beacon(
+            query_states,
+            key_states,
+            position_ids,
+            beacon_size,
+            beacon_indices,
+        )
 
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
@@ -605,7 +912,7 @@ class LlamaFlashAttention2(LlamaAttention):
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
         # return keys and values before rope
-        # NOTE: incrementally return keys and values for efficiency 
+        # NOTE: incrementally return keys and values for beacon efficiency
         past_key_value = (key_states, value_states, beacon_size, beacon_indices)
 
         if past_key is not None:
@@ -613,7 +920,18 @@ class LlamaFlashAttention2(LlamaAttention):
             key_states = torch.cat([past_key, key_states], dim=2)
             value_states = torch.cat([past_value, value_states], dim=2)
 
-        query_states, key_states = self.rotary_emb(query_states, key_states, position_ids)
+        # In no-beacon native generation, `generate()` expects an accumulated KV cache.
+        # Beacon path keeps using incremental cache and is updated by Memory.update_memory.
+        if beacon_indices is None:
+            past_key_value = (key_states, value_states, beacon_size, beacon_indices)
+
+        query_states, key_states = self._apply_rotary_with_beacon(
+            query_states,
+            key_states,
+            position_ids,
+            beacon_size,
+            beacon_indices,
+        )
 
         # TODO: These transpose are quite inefficient but Flash Attention requires the layout [batch_size, sequence_length, num_heads, head_dim]. We would need to refactor the KV cache
         # to be able to avoid many of these transpose/reshape/view.
@@ -1176,6 +1494,134 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
     def get_decoder(self):
         return self.model
 
+    @staticmethod
+    def _validate_lowrank_beacon_kv_loading(config, loading_info):
+        beacon_param = getattr(config, "beacon_param", [])
+        missing_keys = loading_info.get("missing_keys", [])
+        unexpected_keys = loading_info.get("unexpected_keys", [])
+
+        # validate K
+        shared_kv = getattr(config, "beacon_shared_kv_down_proj", False)
+        if "k" in beacon_param and getattr(config, "beacon_k_compression", "none") == "lowrank_svd":
+            if shared_kv:
+                # shared mode: K uses beacon_kv_down_proj (validated in V block) + beacon_k_up_proj
+                missing_lowrank_keys = [
+                    k for k in missing_keys if "beacon_k_up_proj" in k
+                ]
+            else:
+                missing_lowrank_keys = [
+                    k for k in missing_keys
+                    if "beacon_k_down_proj" in k or "beacon_k_up_proj" in k
+                ]
+            if missing_lowrank_keys:
+                unexpected_dense_keys = [k for k in unexpected_keys if "beacon_k_proj" in k]
+                message = (
+                    "Low-rank beacon K mode requires a converted checkpoint. "
+                    f"Missing low-rank weights: {missing_lowrank_keys[:8]}"
+                )
+                if unexpected_dense_keys:
+                    message += (
+                        f". Dense beacon_k_proj weights were found instead: {unexpected_dense_keys[:8]}. "
+                        "Run the offline conversion script before training or finetuning."
+                    )
+                else:
+                    message += ". Run the offline conversion script before training or finetuning."
+                raise ValueError(message)
+
+        # validate V
+        if "v" in beacon_param and getattr(config, "beacon_v_compression", "none") == "lowrank_svd":
+            if shared_kv:
+                # shared mode: V uses beacon_kv_down_proj + beacon_v_up_proj
+                missing_lowrank_keys = [
+                    k for k in missing_keys
+                    if "beacon_kv_down_proj" in k or "beacon_v_up_proj" in k
+                ]
+            else:
+                missing_lowrank_keys = [
+                    k for k in missing_keys
+                    if "beacon_v_down_proj" in k or "beacon_v_up_proj" in k
+                ]
+            if missing_lowrank_keys:
+                unexpected_dense_keys = [k for k in unexpected_keys if "beacon_v_proj" in k]
+                message = (
+                    "Low-rank beacon V mode requires a converted checkpoint. "
+                    f"Missing low-rank weights: {missing_lowrank_keys[:8]}"
+                )
+                if unexpected_dense_keys:
+                    message += (
+                        f". Dense beacon_v_proj weights were found instead: {unexpected_dense_keys[:8]}. "
+                        "Run the offline conversion script before training or finetuning."
+                    )
+                else:
+                    message += ". Run the offline conversion script before training or finetuning."
+                raise ValueError(message)
+
+    @staticmethod
+    def _auto_merge_kv_down_proj(model, loading_info):
+        """When beacon_shared_kv_down_proj is enabled but the checkpoint has
+        separate beacon_k_down_proj / beacon_v_down_proj, automatically merge
+        them into beacon_kv_down_proj by averaging."""
+        missing_keys = loading_info.get("missing_keys", [])
+        unexpected_keys = loading_info.get("unexpected_keys", [])
+
+        has_separate_k = any("beacon_k_down_proj" in k for k in unexpected_keys)
+        has_separate_v = any("beacon_v_down_proj" in k for k in unexpected_keys)
+        needs_shared = any("beacon_kv_down_proj" in k for k in missing_keys)
+
+        if not (has_separate_k and has_separate_v and needs_shared):
+            return
+
+        logger.info("Auto-merging beacon_k_down_proj + beacon_v_down_proj -> beacon_kv_down_proj (averaged)")
+
+        from safetensors.torch import load_file as _load_file
+        import os
+        import glob
+
+        model_path = model.config._name_or_path
+        if not os.path.isdir(model_path):
+            return
+
+        k_weights = {}
+        v_weights = {}
+        st_files = sorted(glob.glob(os.path.join(model_path, "*.safetensors")))
+        for st_file in st_files:
+            sd = _load_file(st_file)
+            for key, tensor in sd.items():
+                if "beacon_k_down_proj" in key:
+                    k_weights[key] = tensor
+                elif "beacon_v_down_proj" in key:
+                    v_weights[key] = tensor
+
+        if not k_weights or not v_weights:
+            logger.warning("Could not find separate K/V down_proj weights in checkpoint; skipping auto-merge.")
+            return
+
+        merged_count = 0
+        for v_key, v_tensor in v_weights.items():
+            k_key = v_key.replace("beacon_v_down_proj", "beacon_k_down_proj")
+            shared_key = v_key.replace("beacon_v_down_proj", "beacon_kv_down_proj")
+            if k_key in k_weights:
+                avg_weight = (k_weights[k_key].to(v_tensor.dtype) + v_tensor) / 2
+                parts = shared_key.split(".")
+                obj = model
+                for part in parts[:-1]:
+                    if part.isdigit():
+                        obj = obj[int(part)]
+                    else:
+                        obj = getattr(obj, part)
+                param_name = parts[-1]
+                getattr(obj, param_name).data.copy_(avg_weight)
+                merged_count += 1
+
+        loading_info["missing_keys"] = [
+            k for k in loading_info["missing_keys"] if "beacon_kv_down_proj" not in k
+        ]
+        loading_info["unexpected_keys"] = [
+            k for k in loading_info["unexpected_keys"]
+            if "beacon_k_down_proj" not in k and "beacon_v_down_proj" not in k
+        ]
+        logger.info(f"Auto-merged {merged_count} beacon_kv_down_proj weights from separate K/V down_proj.")
+
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
         """Override the default from_pretrained to extend vocab size according to beacon_size."""
@@ -1190,6 +1636,12 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             v_seq_dim=2,
         )
 
+        # Auto-merge separate K/V down_proj into shared beacon_kv_down_proj
+        # when beacon_shared_kv_down_proj is enabled but checkpoint has separate weights.
+        if getattr(config, "beacon_shared_kv_down_proj", False):
+            cls._auto_merge_kv_down_proj(model, loading_info)
+
+        cls._validate_lowrank_beacon_kv_loading(config, loading_info)
         missing_keys = loading_info["missing_keys"]
         # NOTE: the beacon parameters may or may not be loaded from the checkpoint
         # if it is loaded from the checkpoint, we should not re-initilize it
@@ -1375,7 +1827,11 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             # create position_ids on the fly for batch generation
             position_ids = attention_mask.long().cumsum(-1) - 1
             position_ids.masked_fill_(attention_mask == 0, 1)
-            if past_key_values:
+            # NOTE:
+            # - no_beacon/native path in this repository keeps unrotated KV and applies RoPE on concatenated K,
+            #   so it requires full-length position_ids during generation.
+            # - beacon path follows the existing incremental behavior and only needs the last position id.
+            if past_key_values and not (hasattr(self, "_enable_beacon") and self._enable_beacon is False):
                 position_ids = position_ids[:, -1].unsqueeze(-1)
 
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step

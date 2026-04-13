@@ -34,6 +34,12 @@ CHAT_TEMPLATE="${CHAT_TEMPLATE:-qwen}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 MAX_LENGTH="${MAX_LENGTH:-31500}"
 DTYPE="${DTYPE:-bf16}"
+MAX_SAMPLES_PER_TASK="${MAX_SAMPLES_PER_TASK:-}"
+EVAL_SAMPLE_SEED="${EVAL_SAMPLE_SEED:-42}"
+EVAL_SAMPLE_SHUFFLE="${EVAL_SAMPLE_SHUFFLE:-True}"
+OCCUPY_AFTER_EVAL="${OCCUPY_AFTER_EVAL:-True}"
+OCCUPY_MEM_GB="${OCCUPY_MEM_GB:-}"
+OCCUPY_NO_COMPUTE="${OCCUPY_NO_COMPUTE:-False}"
 
 # --- LongBench 子任务 ---
 TASKS=(
@@ -116,6 +122,12 @@ esac
 
 export CUDA_VISIBLE_DEVICES
 RESULT_DIR_FINAL="${RESULT_DIR:-${OUTPUT_NAME}-${mode_suffix}}"
+eval_sample_args=()
+if [[ -n "${MAX_SAMPLES_PER_TASK}" ]]; then
+  eval_sample_args+=(--max_samples_per_task "${MAX_SAMPLES_PER_TASK}")
+  eval_sample_args+=(--sample_seed "${EVAL_SAMPLE_SEED}")
+  eval_sample_args+=(--sample_shuffle "${EVAL_SAMPLE_SHUFFLE}")
+fi
 
 echo "=========================================="
 echo " LongBench Evaluation"
@@ -131,6 +143,11 @@ else
   echo "  BEACON     : ratio=${BEACON_RATIO} mix=${BEACON_RATIO_MIX}"
 fi
 echo "  RUNTIME    : attn=${ATTN_IMPL}, dtype=${DTYPE}, batch=${BATCH_SIZE}, max_len=${MAX_LENGTH}"
+if [[ -n "${MAX_SAMPLES_PER_TASK}" ]]; then
+  echo "  SAMPLE_CAP : per_task=${MAX_SAMPLES_PER_TASK}, shuffle=${EVAL_SAMPLE_SHUFFLE}, seed=${EVAL_SAMPLE_SEED}"
+else
+  echo "  SAMPLE_CAP : full dataset"
+fi
 echo "  TASKS      : ${TASKS[*]}"
 echo "=========================================="
 
@@ -145,4 +162,18 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" $DD
   --chat_template "${CHAT_TEMPLATE}" \
   --batch_size "${BATCH_SIZE}" \
   --max_length "${MAX_LENGTH}" \
-  --dtype "${DTYPE}"
+  --dtype "${DTYPE}" \
+  "${eval_sample_args[@]}"
+
+occupy_args=()
+if [[ -n "${OCCUPY_MEM_GB}" ]]; then
+  occupy_args+=(--mem "${OCCUPY_MEM_GB}")
+fi
+if [[ "${OCCUPY_NO_COMPUTE}" == "True" ]]; then
+  occupy_args+=(--no-compute)
+fi
+
+if [[ "${OCCUPY_AFTER_EVAL}" == "True" ]]; then
+  echo "Evaluation complete. Occupying GPUs to hold resources..."
+  python -m src.cache "${occupy_args[@]}"
+fi

@@ -31,6 +31,8 @@ GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
 SAVE_STEPS="${SAVE_STEPS:-500}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-2}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
+TOTAL_FINETUNE_SAMPLES="${TOTAL_FINETUNE_SAMPLES:-}"
+GROUP_BY_STRIDE="${GROUP_BY_STRIDE:-strict}"
 
 if [[ -z "${MODEL_NAME_OR_PATH:-}" ]]; then
   if compgen -G "${default_pretrain_dir}/checkpoint-*" > /dev/null; then
@@ -84,8 +86,34 @@ case "${BEACON_KV_COMPRESSION}" in
     ;;
 esac
 
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-4,5,6,7}"
 # export MODEL_NAME_OR_PATH="/dataset/common/tzh/model/Qwen2-7B-Instruct"
+
+train_length_args=()
+group_by_stride_args=()
+if [[ -n "${GROUP_BY_STRIDE}" && "${GROUP_BY_STRIDE}" != "none" ]]; then
+  group_by_stride_args+=(--group_by_stride "${GROUP_BY_STRIDE}")
+fi
+GLOBAL_BATCH_SIZE=$(( PER_DEVICE_TRAIN_BATCH_SIZE * NPROC_PER_NODE * GRADIENT_ACCUMULATION_STEPS ))
+MAX_STEPS=""
+if [[ -n "${TOTAL_FINETUNE_SAMPLES}" ]]; then
+  if ! [[ "${TOTAL_FINETUNE_SAMPLES}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Invalid TOTAL_FINETUNE_SAMPLES: ${TOTAL_FINETUNE_SAMPLES}" >&2
+    exit 1
+  fi
+  if (( TOTAL_FINETUNE_SAMPLES % GLOBAL_BATCH_SIZE != 0 )); then
+    echo "TOTAL_FINETUNE_SAMPLES (${TOTAL_FINETUNE_SAMPLES}) must be divisible by global_batch_size (${GLOBAL_BATCH_SIZE})." >&2
+    exit 1
+  fi
+  MAX_STEPS=$(( TOTAL_FINETUNE_SAMPLES / GLOBAL_BATCH_SIZE ))
+  if (( MAX_STEPS < 1 )); then
+    echo "Computed MAX_STEPS is < 1. Check TOTAL_FINETUNE_SAMPLES and batch settings." >&2
+    exit 1
+  fi
+  train_length_args+=(--max_steps "${MAX_STEPS}")
+else
+  train_length_args+=(--num_train_epochs 1)
+fi
 
 LOG_DIR="${OUTPUT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
@@ -103,6 +131,13 @@ fi
 echo "data_root: ${data_root}"
 echo "output_dir: ${OUTPUT_DIR}"
 echo "gpus: ${CUDA_VISIBLE_DEVICES} (nproc=${NPROC_PER_NODE})"
+echo "batch: per_device=${PER_DEVICE_TRAIN_BATCH_SIZE} grad_acc=${GRADIENT_ACCUMULATION_STEPS} -> global_batch=${GLOBAL_BATCH_SIZE}"
+if [[ -n "${TOTAL_FINETUNE_SAMPLES}" ]]; then
+  echo "finetune_budget: total_samples=${TOTAL_FINETUNE_SAMPLES} -> max_steps=${MAX_STEPS}"
+else
+  echo "finetune_budget: total_samples=all (1 epoch)"
+fi
+echo "group_by_stride: ${GROUP_BY_STRIDE}"
 echo "beacon: window=2048 stride=2048 ratio='4 8' param='q k v' skip_k_rope=True shared_down=${BEACON_SHARED_KV_DOWN_PROJ}"
 echo "kv_compression: ${BEACON_KV_COMPRESSION} (k_dim=${BEACON_K_LATENT_HEAD_DIM}, v_dim=${BEACON_V_LATENT_HEAD_DIM})"
 echo "attn_impl: flash_attention_2 | dtype: bf16 | lr: 1e-5"
@@ -121,7 +156,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" $DDP -m main.train \
 "${data_root}/redpajama/train.json[5000]" \
 --max_length 20000 \
 --min_length 7200 \
---group_by_stride strict \
+"${group_by_stride_args[@]}" \
 --enable_beacon \
 --beacon_window 2048 \
 --beacon_stride 2048 \
@@ -142,7 +177,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" $DDP -m main.train \
 --gradient_checkpointing \
 --use_reentrant False \
 --save_only_model \
---num_train_epochs 1 \
+"${train_length_args[@]}" \
 --save_strategy steps \
 --save_steps "${SAVE_STEPS}" \
 --save_total_limit "${SAVE_TOTAL_LIMIT}" \

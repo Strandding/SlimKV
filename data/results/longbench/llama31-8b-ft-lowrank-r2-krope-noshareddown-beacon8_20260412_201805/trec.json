@@ -1,0 +1,201 @@
+65.5
+{"input": "Question: Where was the first golf course in the United States ?\nType:", "answers": ["Other location"], "length": 3806, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What was J.F.K. 's wife 's name ?\nType:", "answers": ["Individual"], "length": 7727, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What color is indigo ?\nType:", "answers": ["Color"], "length": 4183, "dataset": "trec", "pred": " Color\n"}
+{"input": "Question: When was President Kennedy shot ?\nType:", "answers": ["Date"], "length": 6104, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What currency does Argentina use ?\nType:", "answers": ["Currency name"], "length": 5463, "dataset": "trec", "pred": " Other entity\n"}
+{"input": "Question: What is a biosphere ?\nType:", "answers": ["Definition of something"], "length": 8428, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What river runs through Rowe , Italy ?\nType:", "answers": ["Other location"], "length": 2106, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What does `` Sitting Shiva '' mean ?\nType:", "answers": ["Definition of something"], "length": 4479, "dataset": "trec", "pred": " Description of something\n"}
+{"input": "Question: What currency do they use in Brazil ?\nType:", "answers": ["Currency name"], "length": 4841, "dataset": "trec", "pred": " Other entity\n"}
+{"input": "Question: What is the effect of volcanoes on the climate ?\nType:", "answers": ["Description of something"], "length": 2621, "dataset": "trec", "pred": " Description of something\n"}
+{"input": "Question: What is Valentine 's Day ?\nType:", "answers": ["Definition of something"], "length": 5425, "dataset": "trec", "pred": " Event\n"}
+{"input": "Question: When was the Boston tea party ?\nType:", "answers": ["Date"], "length": 5389, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What is the rainiest place on Earth ?\nType:", "answers": ["Other location"], "length": 5051, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: Who was the first woman killed in the Vietnam War ?\nType:", "answers": ["Individual"], "length": 7874, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: When was Abraham Lincoln born ?\nType:", "answers": ["Date"], "length": 5457, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What date was Dwight D. Eisenhower born ?\nType:", "answers": ["Date"], "length": 4438, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What monastery was raided by Vikings in the late eighth century ?\nType:", "answers": ["Other entity"], "length": 4713, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: How many feet in a mile ?\nType:", "answers": ["Number of something"], "length": 5533, "dataset": "trec", "pred": " Distance, linear measure\n"}
+{"input": "Question: Where is the Eiffel Tower ?\nType:", "answers": ["Other location"], "length": 1524, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is nepotism ?\nType:", "answers": ["Definition of something"], "length": 2329, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is the sales tax rate in New York ?\nType:", "answers": ["Other number"], "length": 8376, "dataset": "trec", "pred": " Price\n"}
+{"input": "Question: What is autism ?\nType:", "answers": ["Definition of something"], "length": 2784, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: How tall is the Gateway Arch in St. Louis , MO ?\nType:", "answers": ["Distance, linear measure"], "length": 3646, "dataset": "trec", "pred": " Distance, linear measure\n"}
+{"input": "Question: What does CPR stand for ?\nType:", "answers": ["Expression abbreviated"], "length": 3775, "dataset": "trec", "pred": " Expression abbreviated\n"}
+{"input": "Question: What is Susan B. Anthony 's birthday ?\nType:", "answers": ["Date"], "length": 1893, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What is the esophagus used for ?\nType:", "answers": ["Reason"], "length": 6709, "dataset": "trec", "pred": " Organ of body\n"}
+{"input": "Question: What does a defibrillator do ?\nType:", "answers": ["Description of something"], "length": 7580, "dataset": "trec", "pred": " Other entity\n"}
+{"input": "Question: What planet has the strongest magnetic field of all the planets ?\nType:", "answers": ["Other location"], "length": 4837, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is the major fault line near Kentucky ?\nType:", "answers": ["Other entity"], "length": 4032, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What year did the Titanic sink ?\nType:", "answers": ["Date"], "length": 6125, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: Who founded American Red Cross ?\nType:", "answers": ["Individual"], "length": 2543, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What precious stone is a form of pure carbon ?\nType:", "answers": ["Element and substance"], "length": 6514, "dataset": "trec", "pred": " Element and substance\n"}
+{"input": "Question: What is the average body temperature ?\nType:", "answers": ["Temperature"], "length": 2296, "dataset": "trec", "pred": " Number of something\n"}
+{"input": "Question: Where are the National Archives ?\nType:", "answers": ["Other location"], "length": 7327, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What city has the zip code of 35824 ?\nType:", "answers": ["City"], "length": 1893, "dataset": "trec", "pred": " City\n"}
+{"input": "Question: When was the first liver transplant ?\nType:", "answers": ["Date"], "length": 3753, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What instrument did Glenn Miller play ?\nType:", "answers": ["Musical instrument"], "length": 1947, "dataset": "trec", "pred": " Musical instrument\n"}
+{"input": "Question: Who won Ms. American in 1989 ?\nType:", "answers": ["Individual"], "length": 4815, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: How long did Rip Van Winkle sleep ?\nType:", "answers": ["Lasting time of somethin"], "length": 3259, "dataset": "trec", "pred": " Lasting time of somethin\n"}
+{"input": "Question: What is foot and mouth disease ?\nType:", "answers": ["Disease and medicine"], "length": 5615, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: What is semolina ?\nType:", "answers": ["Definition of something"], "length": 7664, "dataset": "trec", "pred": " Equivalent term\n"}
+{"input": "Question: How tall is the Sears Building ?\nType:", "answers": ["Distance, linear measure"], "length": 7872, "dataset": "trec", "pred": " Distance, linear measure\n"}
+{"input": "Question: How far is a nautical mile ?\nType:", "answers": ["Distance, linear measure"], "length": 6796, "dataset": "trec", "pred": " Distance, linear measure\n"}
+{"input": "Question: When did John F. Kennedy get elected as President ?\nType:", "answers": ["Date"], "length": 2807, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What is ozone depletion ?\nType:", "answers": ["Definition of something"], "length": 6094, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: Who invented the calculator ?\nType:", "answers": ["Individual"], "length": 3102, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What do you call a word that is spelled the same backwards and forwards ?\nType:", "answers": ["Equivalent term"], "length": 6978, "dataset": "trec", "pred": " Word with a special property\n"}
+{"input": "Question: When is Father 's Day ?\nType:", "answers": ["Date"], "length": 6902, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What did Jesse Jackson organize ?\nType:", "answers": ["Group or organization of person"], "length": 3176, "dataset": "trec", "pred": " Group or organization of person\n"}
+{"input": "Question: What does I.V. stand for ?\nType:", "answers": ["Expression abbreviated"], "length": 2071, "dataset": "trec", "pred": " Expression abbreviated\n"}
+{"input": "Question: When was the first kidney transplant ?\nType:", "answers": ["Date"], "length": 3276, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What year did the Titanic start on its journey ?\nType:", "answers": ["Date"], "length": 6512, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What is a group of turkeys called ?\nType:", "answers": ["Animal"], "length": 4670, "dataset": "trec", "pred": " Equivalent term\n"}
+{"input": "Question: What are coral reefs ?\nType:", "answers": ["Definition of something"], "length": 6950, "dataset": "trec", "pred": " Other entity\n"}
+{"input": "Question: What currency is used in Algeria ?\nType:", "answers": ["Currency name"], "length": 4252, "dataset": "trec", "pred": " Currency\n"}
+{"input": "Question: Who was the first US President to ride in an automobile to his inauguration ?\nType:", "answers": ["Individual"], "length": 1467, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What peninsula is Spain part of ?\nType:", "answers": ["Other location"], "length": 4936, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is the width of a football field ?\nType:", "answers": ["Distance, linear measure"], "length": 2868, "dataset": "trec", "pred": " Distance, linear measure\n"}
+{"input": "Question: What county is Phoenix , AZ in ?\nType:", "answers": ["City"], "length": 1435, "dataset": "trec", "pred": " State\n"}
+{"input": "Question: What is foreclosure ?\nType:", "answers": ["Definition of something"], "length": 7555, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What does a barometer measure ?\nType:", "answers": ["Other entity"], "length": 2168, "dataset": "trec", "pred": " Other entity\n"}
+{"input": "Question: What is the depth of the Nile river ?\nType:", "answers": ["Distance, linear measure"], "length": 2075, "dataset": "trec", "pred": " Number of something\n"}
+{"input": "Question: What is the gestation period for a cat ?\nType:", "answers": ["Lasting time of somethin"], "length": 8414, "dataset": "trec", "pred": " Lasting time of somethin\n"}
+{"input": "Question: How many pounds in a ton ?\nType:", "answers": ["Number of something"], "length": 2032, "dataset": "trec", "pred": " Number of something\n"}
+{"input": "Question: What was the first satellite to go into space ?\nType:", "answers": ["Product"], "length": 8316, "dataset": "trec", "pred": " Vehicle\n"}
+{"input": "Question: What metal has the highest melting point ?\nType:", "answers": ["Element and substance"], "length": 1507, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is caffeine ?\nType:", "answers": ["Definition of something"], "length": 3744, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What color are crickets ?\nType:", "answers": ["Color"], "length": 6150, "dataset": "trec", "pred": " Color\n"}
+{"input": "Question: What is the fourth highest mountain in the world ?\nType:", "answers": ["Mountain"], "length": 3089, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is Australia 's national flower ?\nType:", "answers": ["Plant"], "length": 4247, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is the capital of Ethiopia ?\nType:", "answers": ["City"], "length": 7033, "dataset": "trec", "pred": " City\n"}
+{"input": "Question: What is leukemia ?\nType:", "answers": ["Definition of something"], "length": 8062, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: What is the street address of the White House ?\nType:", "answers": ["Other location"], "length": 4825, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is metabolism ?\nType:", "answers": ["Definition of something"], "length": 7711, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: Which country has the most water pollution ?\nType:", "answers": ["Country"], "length": 2348, "dataset": "trec", "pred": " Country\n"}
+{"input": "Question: What is the earth 's diameter ?\nType:", "answers": ["Distance, linear measure"], "length": 2891, "dataset": "trec", "pred": " Description of something\n"}
+{"input": "Question: What is bipolar disorder ?\nType:", "answers": ["Definition of something"], "length": 8251, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: What city 's newspaper is called `` The Star '' ?\nType:", "answers": ["City"], "length": 8626, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What year did the Andy Griffith show begin ?\nType:", "answers": ["Date"], "length": 3311, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: Where do apple snails live ?\nType:", "answers": ["Other location"], "length": 5416, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: When were William Shakespeare 's twins born ?\nType:", "answers": ["Date"], "length": 8029, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What continent is Egypt on ?\nType:", "answers": ["Other location"], "length": 4289, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What Canadian city has the largest population ?\nType:", "answers": ["City"], "length": 5916, "dataset": "trec", "pred": " City\n"}
+{"input": "Question: What is nicotine ?\nType:", "answers": ["Definition of something"], "length": 5868, "dataset": "trec", "pred": " Element and substance\n"}
+{"input": "Question: What is the National Park in Utah ?\nType:", "answers": ["Other location"], "length": 8430, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What are the two houses of the Legislative branch ?\nType:", "answers": ["Other entity"], "length": 3781, "dataset": "trec", "pred": " Group or organization of person\n"}
+{"input": "Question: Who wrote `` The Divine Comedy '' ?\nType:", "answers": ["Individual"], "length": 8510, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: Who was the first vice president of the U.S. ?\nType:", "answers": ["Individual"], "length": 7933, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What is fibromyalgia ?\nType:", "answers": ["Definition of something"], "length": 2389, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is acetaminophen ?\nType:", "answers": ["Definition of something"], "length": 3065, "dataset": "trec", "pred": " Expression abbreviated\n"}
+{"input": "Question: Where are the British crown jewels kept ?\nType:", "answers": ["Other location"], "length": 5939, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What are Quaaludes ?\nType:", "answers": ["Definition of something"], "length": 4307, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: What are platelets ?\nType:", "answers": ["Definition of something"], "length": 8077, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is the Moulin Rouge ?\nType:", "answers": ["Definition of something"], "length": 6090, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: When was Lyndon B. Johnson born ?\nType:", "answers": ["Date"], "length": 7859, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: Who discovered America ?\nType:", "answers": ["Individual"], "length": 8140, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: Who is the actress known for her role in the movie `` Gypsy '' ?\nType:", "answers": ["Individual"], "length": 7081, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: Which mountain range in North America stretches from Maine to Georgia ?\nType:", "answers": ["Mountain"], "length": 8431, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What 's the easiest way to remove wallpaper ?\nType:", "answers": ["Techniques and method"], "length": 8265, "dataset": "trec", "pred": " Manner of an action\n"}
+{"input": "Question: Where is the Lourve ?\nType:", "answers": ["Other location"], "length": 4224, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: Who is a German philosopher ?\nType:", "answers": ["Individual"], "length": 8430, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: When was Rosa Parks born ?\nType:", "answers": ["Date"], "length": 8016, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What are polymers ?\nType:", "answers": ["Definition of something"], "length": 1543, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: Name a stimulant .\nType:", "answers": ["Disease and medicine"], "length": 7133, "dataset": "trec", "pred": " Other entity\n"}
+{"input": "Question: Where is Milan ?\nType:", "answers": ["City"], "length": 3012, "dataset": "trec", "pred": " City\n"}
+{"input": "Question: Who was the first governor of Alaska ?\nType:", "answers": ["Individual"], "length": 6644, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What is the oldest university in the US ?\nType:", "answers": ["Group or organization of person"], "length": 1794, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What does NASA stand for ?\nType:", "answers": ["Expression abbreviated"], "length": 3100, "dataset": "trec", "pred": " Expression abbreviated\n"}
+{"input": "Question: What do you call a professional map drawer ?\nType:", "answers": ["Equivalent term"], "length": 3493, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is the capital of Yugoslavia ?\nType:", "answers": ["City"], "length": 2750, "dataset": "trec", "pred": " City\n"}
+{"input": "Question: Who is the Prime Minister of Canada ?\nType:", "answers": ["Individual"], "length": 7874, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: Who is the governor of Alaska ?\nType:", "answers": ["Individual"], "length": 5312, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: Who painted the ceiling of the Sistine Chapel ?\nType:", "answers": ["Individual"], "length": 2610, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What is the elevation of St. Louis , MO ?\nType:", "answers": ["Distance, linear measure"], "length": 5862, "dataset": "trec", "pred": " Distance, linear measure\n"}
+{"input": "Question: What are semiconductors ?\nType:", "answers": ["Definition of something"], "length": 4438, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is the murder rate in Windsor , Ontario ?\nType:", "answers": ["Percent, fraction"], "length": 8068, "dataset": "trec", "pred": " Number of something\n"}
+{"input": "Question: What is the deepest lake in the US ?\nType:", "answers": ["Other location"], "length": 8714, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is pilates ?\nType:", "answers": ["Definition of something"], "length": 4643, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is hybridization ?\nType:", "answers": ["Definition of something"], "length": 7131, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is a parasite ?\nType:", "answers": ["Definition of something"], "length": 1911, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is the name of Roy Roger 's dog ?\nType:", "answers": ["Animal"], "length": 2129, "dataset": "trec", "pred": " Other entity\n"}
+{"input": "Question: What is the world 's population ?\nType:", "answers": ["Other number"], "length": 5450, "dataset": "trec", "pred": " Number of something\n"}
+{"input": "Question: What does cc in engines mean ?\nType:", "answers": ["Definition of something"], "length": 8500, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is an atom ?\nType:", "answers": ["Definition of something"], "length": 6285, "dataset": "trec", "pred": " Element and substance\n"}
+{"input": "Question: What is a thyroid ?\nType:", "answers": ["Definition of something"], "length": 3327, "dataset": "trec", "pred": " Organ of body\n"}
+{"input": "Question: What is a panic disorder ?\nType:", "answers": ["Definition of something"], "length": 1889, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: What is Shakespeare 's nickname ?\nType:", "answers": ["Individual"], "length": 6862, "dataset": "trec", "pred": " Equivalent term\n"}
+{"input": "Question: What is the atomic weight of silver ?\nType:", "answers": ["Weight"], "length": 1988, "dataset": "trec", "pred": " Element and substance\n"}
+{"input": "Question: Who killed John F. Kennedy ?\nType:", "answers": ["Individual"], "length": 7107, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What is a mirror made out of ?\nType:", "answers": ["Element and substance"], "length": 5401, "dataset": "trec", "pred": " Element and substance\n"}
+{"input": "Question: What is the sales tax in Minnesota ?\nType:", "answers": ["Other entity"], "length": 7629, "dataset": "trec", "pred": " Price\n"}
+{"input": "Question: Which country gave New York the Statue of Liberty ?\nType:", "answers": ["Country"], "length": 2427, "dataset": "trec", "pred": " Country\n"}
+{"input": "Question: What is the capital of Mongolia ?\nType:", "answers": ["City"], "length": 3220, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is the name of the chocolate company in San Francisco ?\nType:", "answers": ["Group or organization of person"], "length": 2796, "dataset": "trec", "pred": " Group or organization of person\n"}
+{"input": "Question: When was Ulysses S. Grant born ?\nType:", "answers": ["Date"], "length": 5946, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What is amitriptyline ?\nType:", "answers": ["Definition of something"], "length": 6674, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: Why does the moon turn orange ?\nType:", "answers": ["Reason"], "length": 7481, "dataset": "trec", "pred": " Reason\n"}
+{"input": "Question: What is the name of the leader of Ireland ?\nType:", "answers": ["Individual"], "length": 8206, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What is compounded interest ?\nType:", "answers": ["Definition of something"], "length": 5456, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: How much was a ticket for the Titanic ?\nType:", "answers": ["Price"], "length": 6487, "dataset": "trec", "pred": " Price\n"}
+{"input": "Question: What does the word fortnight mean ?\nType:", "answers": ["Definition of something"], "length": 6446, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: How old was Joan of Arc when she died ?\nType:", "answers": ["Lasting time of somethin"], "length": 7969, "dataset": "trec", "pred": " Lasting time of somethin\n"}
+{"input": "Question: What colors need to be mixed to get the color pink ?\nType:", "answers": ["Color"], "length": 4471, "dataset": "trec", "pred": " Color\n"}
+{"input": "Question: What is an antigen ?\nType:", "answers": ["Definition of something"], "length": 7704, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: Who was the first person to reach the North Pole ?\nType:", "answers": ["Individual"], "length": 2058, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What New York City structure is also known as the Twin Towers ?\nType:", "answers": ["Other location"], "length": 5841, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What chain store is headquartered in Bentonville , Arkansas ?\nType:", "answers": ["Group or organization of person"], "length": 4670, "dataset": "trec", "pred": " Group or organization of person\n"}
+{"input": "Question: What are the spots on dominoes called ?\nType:", "answers": ["Equivalent term"], "length": 7382, "dataset": "trec", "pred": " Other entity\n"}
+{"input": "Question: Where is Perth ?\nType:", "answers": ["Other location"], "length": 6307, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What state is the geographic center of the lower 48 states ?\nType:", "answers": ["State"], "length": 5793, "dataset": "trec", "pred": " State\n"}
+{"input": "Question: What is the Ohio state bird ?\nType:", "answers": ["Animal"], "length": 6788, "dataset": "trec", "pred": " Other number\n"}
+{"input": "Question: What is the brightest star ?\nType:", "answers": ["Other location"], "length": 7466, "dataset": "trec", "pred": " Other entity\n"}
+{"input": "Question: Who was Abraham Lincoln ?\nType:", "answers": ["Description of a person"], "length": 2324, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What is viscosity ?\nType:", "answers": ["Definition of something"], "length": 2892, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: Where is the Shawnee National Forest ?\nType:", "answers": ["Other location"], "length": 4544, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is the population of China ?\nType:", "answers": ["Other number"], "length": 4307, "dataset": "trec", "pred": " Number of something\n"}
+{"input": "Question: What are sunspots ?\nType:", "answers": ["Definition of something"], "length": 8039, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is the capital of Persia ?\nType:", "answers": ["City"], "length": 7482, "dataset": "trec", "pred": " City\n"}
+{"input": "Question: How much does the human adult female brain weigh ?\nType:", "answers": ["Weight"], "length": 1717, "dataset": "trec", "pred": " Size, area, volume and weight\n"}
+{"input": "Question: When did the Hindenberg crash ?\nType:", "answers": ["Date"], "length": 4978, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What is phenylalanine ?\nType:", "answers": ["Definition of something"], "length": 6764, "dataset": "trec", "pred": " Element and substance\n"}
+{"input": "Question: What causes gray hair ?\nType:", "answers": ["Reason"], "length": 7174, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: What is a carcinogen ?\nType:", "answers": ["Definition of something"], "length": 3161, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: Who was the first man to fly across the Pacific Ocean ?\nType:", "answers": ["Individual"], "length": 5606, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: Who developed the Macintosh computer ?\nType:", "answers": ["Individual"], "length": 3708, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What is neurology ?\nType:", "answers": ["Definition of something"], "length": 6780, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: What does Phi Beta Kappa mean ?\nType:", "answers": ["Definition of something"], "length": 4458, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is fungus ?\nType:", "answers": ["Definition of something"], "length": 6642, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: How far is the service line from the net in tennis ?\nType:", "answers": ["Distance, linear measure"], "length": 5303, "dataset": "trec", "pred": " Distance, linear measure\n"}
+{"input": "Question: What was the last year that the Chicago Cubs won the World Series ?\nType:", "answers": ["Date"], "length": 5161, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: Who invented the slinky ?\nType:", "answers": ["Individual"], "length": 4806, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What is cerebral palsy ?\nType:", "answers": ["Definition of something"], "length": 6382, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: What is the most common eye color ?\nType:", "answers": ["Color"], "length": 7308, "dataset": "trec", "pred": " Color\n"}
+{"input": "Question: What is a fuel cell ?\nType:", "answers": ["Definition of something"], "length": 3034, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is the money they use in Zambia ?\nType:", "answers": ["Currency name"], "length": 7447, "dataset": "trec", "pred": " Currency name\n"}
+{"input": "Question: What is the statue of liberty made of ?\nType:", "answers": ["Element and substance"], "length": 4766, "dataset": "trec", "pred": " Description of something\n"}
+{"input": "Question: What is the location of Lake Champlain ?\nType:", "answers": ["Other location"], "length": 2818, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is dianetics ?\nType:", "answers": ["Definition of something"], "length": 7338, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is genocide ?\nType:", "answers": ["Definition of something"], "length": 1694, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is acetic acid ?\nType:", "answers": ["Definition of something"], "length": 2647, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What French ruler was defeated at the battle of Waterloo ?\nType:", "answers": ["Individual"], "length": 4590, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: How often does Old Faithful erupt at Yellowstone National Park ?\nType:", "answers": ["Other number"], "length": 2897, "dataset": "trec", "pred": " Number of something\n"}
+{"input": "Question: What hemisphere is the Philippines in ?\nType:", "answers": ["Other location"], "length": 8084, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is the primary language in Iceland ?\nType:", "answers": ["Language"], "length": 7901, "dataset": "trec", "pred": " Language\n"}
+{"input": "Question: Where is the tallest roller coaster located ?\nType:", "answers": ["Other location"], "length": 5198, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: Who was the first U.S. president to appear on TV ?\nType:", "answers": ["Individual"], "length": 4157, "dataset": "trec", "pred": " Individual\n"}
+{"input": "Question: What day and month did John Lennon die ?\nType:", "answers": ["Date"], "length": 5797, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What is the location of the Sea of Tranquility ?\nType:", "answers": ["Other location"], "length": 3942, "dataset": "trec", "pred": " Other location\n"}
+{"input": "Question: What is the most popular sport in Japan ?\nType:", "answers": ["Sport"], "length": 2428, "dataset": "trec", "pred": " Sport\n"}
+{"input": "Question: What does the acronym NASA stand for ?\nType:", "answers": ["Expression abbreviated"], "length": 5190, "dataset": "trec", "pred": " Expression abbreviated\n"}
+{"input": "Question: What is mold ?\nType:", "answers": ["Definition of something"], "length": 8556, "dataset": "trec", "pred": " Disease and medicine\n"}
+{"input": "Question: When is the official first day of summer ?\nType:", "answers": ["Date"], "length": 4569, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: How long is the Columbia River in miles ?\nType:", "answers": ["Distance, linear measure"], "length": 6932, "dataset": "trec", "pred": " Number of something\n"}
+{"input": "Question: How many gallons of water are there in a cubic foot ?\nType:", "answers": ["Number of something"], "length": 7855, "dataset": "trec", "pred": " Other number\n"}
+{"input": "Question: What do you call a newborn kangaroo ?\nType:", "answers": ["Equivalent term"], "length": 4876, "dataset": "trec", "pred": " Animal\n"}
+{"input": "Question: When is hurricane season in the Caribbean ?\nType:", "answers": ["Date"], "length": 3997, "dataset": "trec", "pred": " Date\n"}
+{"input": "Question: What is carbon dioxide ?\nType:", "answers": ["Definition of something"], "length": 6770, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: In which state would you find the Catskill Mountains ?\nType:", "answers": ["State"], "length": 2175, "dataset": "trec", "pred": " State\n"}
+{"input": "Question: What is home equity ?\nType:", "answers": ["Definition of something"], "length": 4685, "dataset": "trec", "pred": " Definition of something\n"}
+{"input": "Question: What is the active ingredient in baking soda ?\nType:", "answers": ["Food"], "length": 3329, "dataset": "trec", "pred": " Definition of something\n"}

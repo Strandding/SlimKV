@@ -126,8 +126,12 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
     if lowrank_requested:
         if not model_args_dict["enable_beacon"]:
             raise ValueError("Beacon KV compression requires `enable_beacon=True`.")
-        if architecture != "Qwen2ForCausalLM":
-            raise NotImplementedError("Low-rank beacon KV is currently only supported for Qwen2 beacon models.")
+        supports_lowrank = (
+            architecture == "Qwen2ForCausalLM"
+            or (architecture == "LlamaForCausalLM" and is_llama3_model)
+        )
+        if not supports_lowrank:
+            raise NotImplementedError("Low-rank beacon KV is currently only supported for Qwen2 and Llama3 beacon models.")
 
     extra_kwargs = {}
     if model_args_dict["max_position_embeddings"] is not None:
