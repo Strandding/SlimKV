@@ -158,6 +158,32 @@ if [[ -n "${MAX_SAMPLES_PER_TASK}" ]]; then
   eval_sample_args+=(--sample_shuffle "${EVAL_SAMPLE_SHUFFLE}")
 fi
 
+occupy_args=()
+if [[ -n "${OCCUPY_MEM_GB}" ]]; then
+  occupy_args+=(--mem "${OCCUPY_MEM_GB}")
+fi
+if [[ "${OCCUPY_NO_COMPUTE}" == "True" ]]; then
+  occupy_args+=(--no-compute)
+fi
+
+OCCUPY_ARMED=0
+occupy_on_exit() {
+  local exit_code=$?
+  if [[ "${OCCUPY_ARMED}" != "1" ]]; then
+    return "${exit_code}"
+  fi
+  if [[ "${OCCUPY_AFTER_EVAL}" == "True" ]]; then
+    if [[ "${exit_code}" -eq 0 ]]; then
+      echo "Evaluation complete. Occupying GPUs to hold resources..."
+    else
+      echo "Evaluation exited with code ${exit_code}. Occupying GPUs to hold resources..."
+    fi
+    python -m src.cache "${occupy_args[@]}" || true
+  fi
+  return "${exit_code}"
+}
+trap occupy_on_exit EXIT
+
 echo "=========================================="
 echo " LongBench Evaluation (Llama3.1-8B)"
 echo "=========================================="
@@ -180,6 +206,7 @@ fi
 echo "  TASKS      : ${TASKS[*]}"
 echo "=========================================="
 
+OCCUPY_ARMED=1
 torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" $DDP -m main.eval_longbench \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --eval_data "${EVAL_DATA}" \
@@ -193,16 +220,5 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" $DD
   --max_length "${MAX_LENGTH}" \
   --dtype "${DTYPE}" \
   "${eval_sample_args[@]}"
-
-occupy_args=()
-if [[ -n "${OCCUPY_MEM_GB}" ]]; then
-  occupy_args+=(--mem "${OCCUPY_MEM_GB}")
-fi
-if [[ "${OCCUPY_NO_COMPUTE}" == "True" ]]; then
-  occupy_args+=(--no-compute)
-fi
-
-if [[ "${OCCUPY_AFTER_EVAL}" == "True" ]]; then
-  echo "Evaluation complete. Occupying GPUs to hold resources..."
-  python -m src.cache "${occupy_args[@]}"
-fi
+run_status=$?
+exit "${run_status}"

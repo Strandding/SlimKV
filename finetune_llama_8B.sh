@@ -168,6 +168,32 @@ LOG_DIR="${OUTPUT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/finetune_$(date +%Y%m%d_%H%M%S).log"
 
+occupy_args=()
+if [[ -n "${OCCUPY_MEM_GB}" ]]; then
+  occupy_args+=(--mem "${OCCUPY_MEM_GB}")
+fi
+if [[ "${OCCUPY_NO_COMPUTE}" == "True" ]]; then
+  occupy_args+=(--no-compute)
+fi
+
+OCCUPY_ARMED=0
+occupy_on_exit() {
+  local exit_code=$?
+  if [[ "${OCCUPY_ARMED}" != "1" ]]; then
+    return "${exit_code}"
+  fi
+  if [[ "${OCCUPY_AFTER_FINETUNE}" == "True" ]]; then
+    if [[ "${exit_code}" -eq 0 ]]; then
+      echo "Finetuning complete. Occupying GPUs to hold resources..."
+    else
+      echo "Finetuning exited with code ${exit_code}. Occupying GPUs to hold resources..."
+    fi
+    python -m src.cache "${occupy_args[@]}" || true
+  fi
+  return "${exit_code}"
+}
+trap occupy_on_exit EXIT
+
 echo "========== Run Summary =========="
 echo "script: finetune_llama_8B.sh"
 echo "mode: finetune (beacon configurable)"
@@ -199,6 +225,7 @@ echo "attn_impl: flash_attention_2 | dtype: bf16 | lr: 1e-5"
 echo "log_file: ${LOG_FILE}"
 echo "================================="
 
+OCCUPY_ARMED=1
 torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m main.train \
 --output_dir "${OUTPUT_DIR}" \
 --model_name_or_path "${MODEL_NAME_OR_PATH}" \
@@ -242,16 +269,5 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --deepspeed data/deepspeed/stage2.json \
 --chat_template "${CHAT_TEMPLATE}" \
 "${resume_args[@]}" 2>&1 | tee "${LOG_FILE}"
-
-occupy_args=()
-if [[ -n "${OCCUPY_MEM_GB}" ]]; then
-  occupy_args+=(--mem "${OCCUPY_MEM_GB}")
-fi
-if [[ "${OCCUPY_NO_COMPUTE}" == "True" ]]; then
-  occupy_args+=(--no-compute)
-fi
-
-if [[ "${OCCUPY_AFTER_FINETUNE}" == "True" ]]; then
-  echo "Finetuning complete. Occupying GPUs to hold resources..."
-  python -m src.cache "${occupy_args[@]}"
-fi
+run_status=${PIPESTATUS[0]}
+exit "${run_status}"

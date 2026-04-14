@@ -34,6 +34,9 @@ MASTER_PORT="${MASTER_PORT:-29544}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 TOTAL_TRAIN_SAMPLES="${TOTAL_TRAIN_SAMPLES:-}"
 GROUP_BY_STRIDE="${GROUP_BY_STRIDE:-strict}"
+OCCUPY_AFTER_TRAIN="${OCCUPY_AFTER_TRAIN:-True}"
+OCCUPY_MEM_GB="${OCCUPY_MEM_GB:-}"
+OCCUPY_NO_COMPUTE="${OCCUPY_NO_COMPUTE:-False}"
 # ================================
 
 if [[ ! -f "${TRAIN_DATA}" ]]; then
@@ -85,6 +88,32 @@ LOG_DIR="${OUTPUT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/train_$(date +%Y%m%d_%H%M%S).log"
 
+occupy_args=()
+if [[ -n "${OCCUPY_MEM_GB}" ]]; then
+  occupy_args+=(--mem "${OCCUPY_MEM_GB}")
+fi
+if [[ "${OCCUPY_NO_COMPUTE}" == "True" ]]; then
+  occupy_args+=(--no-compute)
+fi
+
+OCCUPY_ARMED=0
+occupy_on_exit() {
+  local exit_code=$?
+  if [[ "${OCCUPY_ARMED}" != "1" ]]; then
+    return "${exit_code}"
+  fi
+  if [[ "${OCCUPY_AFTER_TRAIN}" == "True" ]]; then
+    if [[ "${exit_code}" -eq 0 ]]; then
+      echo "Training complete. Occupying GPUs to hold resources..."
+    else
+      echo "Training exited with code ${exit_code}. Occupying GPUs to hold resources..."
+    fi
+    python -m src.cache "${occupy_args[@]}" || true
+  fi
+  return "${exit_code}"
+}
+trap occupy_on_exit EXIT
+
 echo "========== Run Summary =========="
 echo "script: train_qwen25_14B.sh"
 echo "mode: train (dense beacon)"
@@ -101,14 +130,16 @@ echo "batch: per_device=${PER_DEVICE_TRAIN_BATCH_SIZE} grad_acc=${GRADIENT_ACCUM
 if [[ -n "${TOTAL_TRAIN_SAMPLES}" ]]; then
   echo "train_budget: total_samples=${TOTAL_TRAIN_SAMPLES} -> max_steps=${MAX_STEPS}"
 else
-  echo "train_budget: total_samples=all (1 epoch)"
+echo "train_budget: total_samples=all (1 epoch)"
 fi
 echo "group_by_stride: ${GROUP_BY_STRIDE}"
+echo "occupy_after_train: ${OCCUPY_AFTER_TRAIN}"
 echo "beacon: window=2048 stride=2048 ratio='8' param='q k v' pos=interleave"
 echo "attn_impl: flash_attention_2 | dtype: bf16"
 echo "log_file: ${LOG_FILE}"
 echo "================================="
 
+OCCUPY_ARMED=1
 torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m main.train \
 --output_dir "${OUTPUT_DIR}" \
 --model_name_or_path "${MODEL_NAME_OR_PATH}" \
@@ -143,7 +174,5 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --bf16 \
 --deepspeed data/deepspeed/stage2.json \
 "${resume_args[@]}" 2>&1 | tee "${LOG_FILE}"
-
-# Training finished — occupy GPUs to hold the cards.
-echo "Training complete. Occupying GPUs to hold resources..."
-python -m src.cache
+run_status=${PIPESTATUS[0]}
+exit "${run_status}"
