@@ -218,7 +218,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --beacon_attn full-coverage \
 --beacon_attend_prev True \
 --beacon_sink_size 1 \
---beacon_ratio 4 8 16\
+--beacon_ratio 4 8 \
 --beacon_ratio_mix step-random \
 --beacon_param q k v \
 --beacon_pos interleave \
