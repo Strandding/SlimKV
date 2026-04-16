@@ -120,6 +120,39 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
+class HeadwiseUpProj(nn.Module):
+    """Head-wise independent up projection for low-rank beacon K/V."""
+
+    def __init__(
+        self,
+        num_heads: int,
+        latent_head_dim: int,
+        head_dim: int,
+        bias: bool = True,
+        dtype=None,
+        device=None,
+    ):
+        super().__init__()
+        self.num_heads = num_heads
+        self.latent_head_dim = latent_head_dim
+        self.head_dim = head_dim
+        self.weight = nn.Parameter(
+            torch.empty(num_heads, head_dim, latent_head_dim, dtype=dtype, device=device)
+        )
+        if bias:
+            self.bias = nn.Parameter(torch.empty(num_heads, head_dim, dtype=dtype, device=device))
+        else:
+            self.register_parameter("bias", None)
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        batch_size, seq_len, _ = hidden_states.shape
+        hidden_states = hidden_states.reshape(batch_size, seq_len, self.num_heads, self.latent_head_dim)
+        projected = torch.einsum("bshl,hdl->bshd", hidden_states, self.weight)
+        if self.bias is not None:
+            projected = projected + self.bias.unsqueeze(0).unsqueeze(0)
+        return projected.reshape(batch_size, seq_len, self.num_heads * self.head_dim)
+
+
 class LlamaAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
@@ -213,6 +246,9 @@ class LlamaAttention(nn.Module):
 
     # ---- K low-rank helpers ----
 
+    def _use_headwise_up_proj(self):
+        return getattr(self.config, "beacon_headwise_up_proj", True)
+
     def _use_lowrank_beacon_k(self):
         return "k" in self.config.beacon_param and self.beacon_k_compression == "lowrank_svd"
 
@@ -247,13 +283,17 @@ class LlamaAttention(nn.Module):
             )
 
         down_proj = nn.Linear(self.hidden_size, global_rank, bias=False, dtype=dtype, device=device)
-        up_proj = nn.Linear(global_rank, out_features, bias=self.k_proj.bias is not None, dtype=dtype, device=device)
-        down_proj.weight.data.zero_()
-        up_proj.weight.data.zero_()
-        if up_proj.bias is not None:
-            up_proj.bias.data.zero_()
-        down_proj._is_hf_initialized = True
-        up_proj._is_hf_initialized = True
+        if self._use_headwise_up_proj():
+            up_proj = HeadwiseUpProj(
+                num_heads=self.num_key_value_heads,
+                latent_head_dim=latent_head_dim,
+                head_dim=self.head_dim,
+                bias=self.k_proj.bias is not None,
+                dtype=dtype,
+                device=device,
+            )
+        else:
+            up_proj = nn.Linear(global_rank, out_features, bias=self.k_proj.bias is not None, dtype=dtype, device=device)
         return down_proj, up_proj
 
     def _project_beacon_key(self, hidden_states):
@@ -299,13 +339,17 @@ class LlamaAttention(nn.Module):
             )
 
         down_proj = nn.Linear(self.hidden_size, global_rank, bias=False, dtype=dtype, device=device)
-        up_proj = nn.Linear(global_rank, out_features, bias=self.v_proj.bias is not None, dtype=dtype, device=device)
-        down_proj.weight.data.zero_()
-        up_proj.weight.data.zero_()
-        if up_proj.bias is not None:
-            up_proj.bias.data.zero_()
-        down_proj._is_hf_initialized = True
-        up_proj._is_hf_initialized = True
+        if self._use_headwise_up_proj():
+            up_proj = HeadwiseUpProj(
+                num_heads=self.num_key_value_heads,
+                latent_head_dim=latent_head_dim,
+                head_dim=self.head_dim,
+                bias=self.v_proj.bias is not None,
+                dtype=dtype,
+                device=device,
+            )
+        else:
+            up_proj = nn.Linear(global_rank, out_features, bias=self.v_proj.bias is not None, dtype=dtype, device=device)
         return down_proj, up_proj
 
     def _project_beacon_value(self, hidden_states):
@@ -349,9 +393,24 @@ class LlamaAttention(nn.Module):
             device=self.beacon_k_proj.weight.device,
         )
         down_proj.weight.data.copy_(down_weight.to(dtype=down_proj.weight.dtype, device=down_proj.weight.device))
-        up_proj.weight.data.copy_(up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
-        if up_proj.bias is not None and self.beacon_k_proj.bias is not None:
-            up_proj.bias.data.copy_(self.beacon_k_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device))
+        if isinstance(up_proj, HeadwiseUpProj):
+            up_weight = up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device)
+            per_head_up = up_weight.reshape(self.num_key_value_heads, self.head_dim, global_rank)
+            for head_idx in range(self.num_key_value_heads):
+                start = head_idx * latent_head_dim
+                end = start + latent_head_dim
+                up_proj.weight.data[head_idx].copy_(per_head_up[head_idx, :, start:end])
+            if up_proj.bias is not None and self.beacon_k_proj.bias is not None:
+                up_proj.bias.data.copy_(
+                    self.beacon_k_proj.bias.data.reshape(self.num_key_value_heads, self.head_dim).to(
+                        dtype=up_proj.bias.dtype,
+                        device=up_proj.bias.device,
+                    )
+                )
+        else:
+            up_proj.weight.data.copy_(up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
+            if up_proj.bias is not None and self.beacon_k_proj.bias is not None:
+                up_proj.bias.data.copy_(self.beacon_k_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device))
 
         del dense_weight, u, s, vh, sqrt_s, up_weight, down_weight
         if svd_device.type == "cuda":
@@ -404,9 +463,24 @@ class LlamaAttention(nn.Module):
             device=self.beacon_v_proj.weight.device,
         )
         down_proj.weight.data.copy_(down_weight.to(dtype=down_proj.weight.dtype, device=down_proj.weight.device))
-        up_proj.weight.data.copy_(up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
-        if up_proj.bias is not None and self.beacon_v_proj.bias is not None:
-            up_proj.bias.data.copy_(self.beacon_v_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device))
+        if isinstance(up_proj, HeadwiseUpProj):
+            up_weight = up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device)
+            per_head_up = up_weight.reshape(self.num_key_value_heads, self.head_dim, global_rank)
+            for head_idx in range(self.num_key_value_heads):
+                start = head_idx * latent_head_dim
+                end = start + latent_head_dim
+                up_proj.weight.data[head_idx].copy_(per_head_up[head_idx, :, start:end])
+            if up_proj.bias is not None and self.beacon_v_proj.bias is not None:
+                up_proj.bias.data.copy_(
+                    self.beacon_v_proj.bias.data.reshape(self.num_key_value_heads, self.head_dim).to(
+                        dtype=up_proj.bias.dtype,
+                        device=up_proj.bias.device,
+                    )
+                )
+        else:
+            up_proj.weight.data.copy_(up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
+            if up_proj.bias is not None and self.beacon_v_proj.bias is not None:
+                up_proj.bias.data.copy_(self.beacon_v_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device))
 
         del dense_weight, u, s, vh, sqrt_s, up_weight, down_weight
         if svd_device.type == "cuda":
@@ -1198,6 +1272,10 @@ class LlamaPreTrainedModel(PreTrainedModel):
             module.weight.data.normal_(mean=0.0, std=std)
             if module.bias is not None:
                 module.bias.data.zero_()
+        elif isinstance(module, HeadwiseUpProj):
+            module.weight.data.normal_(mean=0.0, std=std)
+            if module.bias is not None:
+                module.bias.data.zero_()
         elif isinstance(module, nn.Embedding):
             module.weight.data.normal_(mean=0.0, std=std)
             if module.padding_idx is not None:
@@ -1495,68 +1573,6 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         return self.model
 
     @staticmethod
-    def _validate_lowrank_beacon_kv_loading(config, loading_info):
-        beacon_param = getattr(config, "beacon_param", [])
-        missing_keys = loading_info.get("missing_keys", [])
-        unexpected_keys = loading_info.get("unexpected_keys", [])
-
-        # validate K
-        shared_kv = getattr(config, "beacon_shared_kv_down_proj", False)
-        if "k" in beacon_param and getattr(config, "beacon_k_compression", "none") == "lowrank_svd":
-            if shared_kv:
-                # shared mode: K uses beacon_kv_down_proj (validated in V block) + beacon_k_up_proj
-                missing_lowrank_keys = [
-                    k for k in missing_keys if "beacon_k_up_proj" in k
-                ]
-            else:
-                missing_lowrank_keys = [
-                    k for k in missing_keys
-                    if "beacon_k_down_proj" in k or "beacon_k_up_proj" in k
-                ]
-            if missing_lowrank_keys:
-                unexpected_dense_keys = [k for k in unexpected_keys if "beacon_k_proj" in k]
-                message = (
-                    "Low-rank beacon K mode requires a converted checkpoint. "
-                    f"Missing low-rank weights: {missing_lowrank_keys[:8]}"
-                )
-                if unexpected_dense_keys:
-                    message += (
-                        f". Dense beacon_k_proj weights were found instead: {unexpected_dense_keys[:8]}. "
-                        "Run the offline conversion script before training or finetuning."
-                    )
-                else:
-                    message += ". Run the offline conversion script before training or finetuning."
-                raise ValueError(message)
-
-        # validate V
-        if "v" in beacon_param and getattr(config, "beacon_v_compression", "none") == "lowrank_svd":
-            if shared_kv:
-                # shared mode: V uses beacon_kv_down_proj + beacon_v_up_proj
-                missing_lowrank_keys = [
-                    k for k in missing_keys
-                    if "beacon_kv_down_proj" in k or "beacon_v_up_proj" in k
-                ]
-            else:
-                missing_lowrank_keys = [
-                    k for k in missing_keys
-                    if "beacon_v_down_proj" in k or "beacon_v_up_proj" in k
-                ]
-            if missing_lowrank_keys:
-                unexpected_dense_keys = [k for k in unexpected_keys if "beacon_v_proj" in k]
-                message = (
-                    "Low-rank beacon V mode requires a converted checkpoint. "
-                    f"Missing low-rank weights: {missing_lowrank_keys[:8]}"
-                )
-                if unexpected_dense_keys:
-                    message += (
-                        f". Dense beacon_v_proj weights were found instead: {unexpected_dense_keys[:8]}. "
-                        "Run the offline conversion script before training or finetuning."
-                    )
-                else:
-                    message += ". Run the offline conversion script before training or finetuning."
-                raise ValueError(message)
-
-    @staticmethod
     def _auto_merge_kv_down_proj(model, loading_info):
         """When beacon_shared_kv_down_proj is enabled but the checkpoint has
         separate beacon_k_down_proj / beacon_v_down_proj, automatically merge
@@ -1641,7 +1657,6 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         if getattr(config, "beacon_shared_kv_down_proj", False):
             cls._auto_merge_kv_down_proj(model, loading_info)
 
-        cls._validate_lowrank_beacon_kv_loading(config, loading_info)
         missing_keys = loading_info["missing_keys"]
         # NOTE: the beacon parameters may or may not be loaded from the checkpoint
         # if it is loaded from the checkpoint, we should not re-initilize it

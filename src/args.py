@@ -211,6 +211,10 @@ class ModelArgs:
         default=None,
         metadata={'help': 'Share the down-projection matrix between beacon K and V (requires lowrank_svd for both, same latent dim, and beacon_skip_rope_for_beacon_k=True).'}
     )
+    beacon_headwise_up_proj: Optional[bool] = field(
+        default=None,
+        metadata={'help': 'Use head-wise independent up-projection for low-rank beacon K/V.'}
+    )
     beacon_loss_mode: Optional[str] = field(
         default=None,
         metadata={'help': 'How to reweight loss around beacon tokens? {weighted_after_beacon}'}
