@@ -94,6 +94,17 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
     # if attn_impl == "flash_attention_2" and version.parse(transformers.__version__) <= version.parse("4.36"):
     #     from_pretrained_kwargs["use_flash_attention_2"] = True
 
+    # Normalize the shorthand before constructing config kwargs.
+    # NOTE: in from_pretrained -> from_dict flow, kwargs are applied via setattr
+    # after __init__, so relying on config __init__ convenience logic alone is
+    # not sufficient for beacon_kv_compression.
+    beacon_kv_compression = model_args_dict.get("beacon_kv_compression")
+    if beacon_kv_compression is not None:
+        if model_args_dict.get("beacon_k_compression") is None:
+            model_args_dict["beacon_k_compression"] = beacon_kv_compression
+        if model_args_dict.get("beacon_v_compression") is None:
+            model_args_dict["beacon_v_compression"] = beacon_kv_compression
+
     beacon_kwargs = {}
     for k, v in model_args_dict.items():
         if k.startswith("beacon") and v is not None:

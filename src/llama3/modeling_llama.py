@@ -121,35 +121,54 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 
 
 class HeadwiseUpProj(nn.Module):
-    """Head-wise independent up projection for low-rank beacon K/V."""
+    """Grouped-coupled up projection for low-rank beacon K/V.
+
+    Each group couples `group_size` KV heads with one matrix:
+    (group_size * latent_head_dim) -> (group_size * head_dim).
+    """
 
     def __init__(
         self,
         num_heads: int,
         latent_head_dim: int,
         head_dim: int,
+        group_size: int = 1,
         bias: bool = True,
         dtype=None,
         device=None,
     ):
         super().__init__()
+        if group_size <= 0:
+            raise ValueError(f"group_size must be positive, found {group_size}.")
+        if num_heads % group_size != 0:
+            raise ValueError(
+                f"num_heads ({num_heads}) must be divisible by group_size ({group_size})."
+            )
         self.num_heads = num_heads
         self.latent_head_dim = latent_head_dim
         self.head_dim = head_dim
+        self.group_size = group_size
+        self.num_groups = num_heads // group_size
+        self.group_input_dim = group_size * latent_head_dim
+        self.group_output_dim = group_size * head_dim
         self.weight = nn.Parameter(
-            torch.empty(num_heads, head_dim, latent_head_dim, dtype=dtype, device=device)
+            torch.empty(self.num_groups * self.group_output_dim, self.group_input_dim, dtype=dtype, device=device)
         )
         if bias:
-            self.bias = nn.Parameter(torch.empty(num_heads, head_dim, dtype=dtype, device=device))
+            self.bias = nn.Parameter(torch.empty(self.num_groups * self.group_output_dim, dtype=dtype, device=device))
         else:
             self.register_parameter("bias", None)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len, _ = hidden_states.shape
-        hidden_states = hidden_states.reshape(batch_size, seq_len, self.num_heads, self.latent_head_dim)
-        projected = torch.einsum("bshl,hdl->bshd", hidden_states, self.weight)
+        hidden_states = hidden_states.reshape(
+            batch_size, seq_len, self.num_groups, self.group_input_dim
+        )
+        up_weight = self.weight.view(self.num_groups, self.group_output_dim, self.group_input_dim)
+        projected = torch.einsum("bsgi,goi->bsgo", hidden_states, up_weight)
         if self.bias is not None:
-            projected = projected + self.bias.unsqueeze(0).unsqueeze(0)
+            up_bias = self.bias.view(self.num_groups, self.group_output_dim)
+            projected = projected + up_bias.unsqueeze(0).unsqueeze(0)
         return projected.reshape(batch_size, seq_len, self.num_heads * self.head_dim)
 
 
@@ -249,6 +268,19 @@ class LlamaAttention(nn.Module):
     def _use_headwise_up_proj(self):
         return getattr(self.config, "beacon_headwise_up_proj", True)
 
+    def _get_beacon_up_proj_group_size(self):
+        group_size = getattr(self.config, "beacon_up_proj_group_size", 1)
+        if group_size is None:
+            group_size = 1
+        if group_size <= 0:
+            raise ValueError(f"beacon_up_proj_group_size must be positive, found {group_size}.")
+        if self.num_key_value_heads % group_size != 0:
+            raise ValueError(
+                f"beacon_up_proj_group_size ({group_size}) must divide num_key_value_heads "
+                f"({self.num_key_value_heads})."
+            )
+        return group_size
+
     def _use_lowrank_beacon_k(self):
         return "k" in self.config.beacon_param and self.beacon_k_compression == "lowrank_svd"
 
@@ -288,6 +320,7 @@ class LlamaAttention(nn.Module):
                 num_heads=self.num_key_value_heads,
                 latent_head_dim=latent_head_dim,
                 head_dim=self.head_dim,
+                group_size=self._get_beacon_up_proj_group_size(),
                 bias=self.k_proj.bias is not None,
                 dtype=dtype,
                 device=device,
@@ -344,6 +377,7 @@ class LlamaAttention(nn.Module):
                 num_heads=self.num_key_value_heads,
                 latent_head_dim=latent_head_dim,
                 head_dim=self.head_dim,
+                group_size=self._get_beacon_up_proj_group_size(),
                 bias=self.v_proj.bias is not None,
                 dtype=dtype,
                 device=device,
@@ -361,13 +395,23 @@ class LlamaAttention(nn.Module):
 
     # ---- SVD conversion: K ----
 
-    def convert_beacon_k_proj_to_lowrank(self, latent_head_dim, svd_device="cpu", return_singular_values=False):
+    def convert_beacon_k_proj_to_lowrank(
+        self,
+        latent_head_dim,
+        svd_device="cpu",
+        svd_partition="global",
+        return_singular_values=False,
+    ):
         if "k" not in self.config.beacon_param:
             raise ValueError("Cannot convert beacon K projection because `k` is not enabled in beacon_param.")
         if self._use_lowrank_beacon_k():
             raise ValueError("beacon_k_proj is already using low-rank parameterization.")
         if not hasattr(self, "beacon_k_proj"):
             raise ValueError("Dense beacon_k_proj was not found on the source checkpoint.")
+        if svd_partition not in {"global", "per_head"}:
+            raise ValueError(
+                f"Unsupported svd_partition={svd_partition}. Expected one of {{'global', 'per_head'}}."
+            )
 
         svd_device = torch.device(svd_device)
         dense_weight = self.beacon_k_proj.weight.detach().float().to(svd_device)
@@ -378,41 +422,83 @@ class LlamaAttention(nn.Module):
                 f"Requested global rank {global_rank} exceeds the maximum feasible rank {max_rank}."
             )
 
-        u, s, vh = torch.linalg.svd(dense_weight, full_matrices=False)
-        singular_values = s.detach().cpu()
-        u = u[:, :global_rank]
-        s = s[:global_rank]
-        vh = vh[:global_rank, :]
-        sqrt_s = s.sqrt()
-        up_weight = u * sqrt_s.unsqueeze(0)
-        down_weight = sqrt_s.unsqueeze(1) * vh
-
         down_proj, up_proj = self._build_lowrank_beacon_k_layers(
             latent_head_dim=latent_head_dim,
             dtype=self.beacon_k_proj.weight.dtype,
             device=self.beacon_k_proj.weight.device,
         )
-        down_proj.weight.data.copy_(down_weight.to(dtype=down_proj.weight.dtype, device=down_proj.weight.device))
-        if isinstance(up_proj, HeadwiseUpProj):
-            up_weight = up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device)
-            per_head_up = up_weight.reshape(self.num_key_value_heads, self.head_dim, global_rank)
-            for head_idx in range(self.num_key_value_heads):
-                start = head_idx * latent_head_dim
-                end = start + latent_head_dim
-                up_proj.weight.data[head_idx].copy_(per_head_up[head_idx, :, start:end])
-            if up_proj.bias is not None and self.beacon_k_proj.bias is not None:
-                up_proj.bias.data.copy_(
-                    self.beacon_k_proj.bias.data.reshape(self.num_key_value_heads, self.head_dim).to(
-                        dtype=up_proj.bias.dtype,
-                        device=up_proj.bias.device,
-                    )
-                )
-        else:
-            up_proj.weight.data.copy_(up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
-            if up_proj.bias is not None and self.beacon_k_proj.bias is not None:
-                up_proj.bias.data.copy_(self.beacon_k_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device))
+        if svd_partition == "global":
+            u, s, vh = torch.linalg.svd(dense_weight, full_matrices=False)
+            singular_values = s.detach().cpu()
+            u = u[:, :global_rank]
+            s = s[:global_rank]
+            vh = vh[:global_rank, :]
+            sqrt_s = s.sqrt()
+            up_weight = u * sqrt_s.unsqueeze(0)
+            down_weight = sqrt_s.unsqueeze(1) * vh
 
-        del dense_weight, u, s, vh, sqrt_s, up_weight, down_weight
+            down_proj.weight.data.copy_(down_weight.to(dtype=down_proj.weight.dtype, device=down_proj.weight.device))
+            if isinstance(up_proj, HeadwiseUpProj):
+                up_weight = up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device)
+                grouped_up = up_proj.weight.view(
+                    up_proj.num_groups, up_proj.group_output_dim, up_proj.group_input_dim
+                )
+                for group_idx in range(up_proj.num_groups):
+                    row_start = group_idx * up_proj.group_output_dim
+                    row_end = row_start + up_proj.group_output_dim
+                    col_start = group_idx * up_proj.group_input_dim
+                    col_end = col_start + up_proj.group_input_dim
+                    grouped_up[group_idx].copy_(up_weight[row_start:row_end, col_start:col_end])
+                if up_proj.bias is not None and self.beacon_k_proj.bias is not None:
+                    dense_bias = self.beacon_k_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device)
+                    grouped_bias = up_proj.bias.view(up_proj.num_groups, up_proj.group_output_dim)
+                    for group_idx in range(up_proj.num_groups):
+                        row_start = group_idx * up_proj.group_output_dim
+                        row_end = row_start + up_proj.group_output_dim
+                        grouped_bias[group_idx].copy_(dense_bias[row_start:row_end])
+            else:
+                up_proj.weight.data.copy_(up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
+                if up_proj.bias is not None and self.beacon_k_proj.bias is not None:
+                    up_proj.bias.data.copy_(self.beacon_k_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device))
+        else:
+            if not isinstance(up_proj, HeadwiseUpProj) or up_proj.group_size != 1:
+                raise ValueError(
+                    "svd_partition='per_head' requires headwise up projection with beacon_up_proj_group_size=1."
+                )
+            down_weight = torch.empty(
+                global_rank, self.hidden_size, dtype=dense_weight.dtype, device=svd_device
+            )
+            grouped_up = up_proj.weight.view(up_proj.num_groups, up_proj.group_output_dim, up_proj.group_input_dim)
+            singular_values = []
+            for head_idx in range(self.num_key_value_heads):
+                row_start = head_idx * self.head_dim
+                row_end = row_start + self.head_dim
+                head_weight = dense_weight[row_start:row_end, :]
+                u, s, vh = torch.linalg.svd(head_weight, full_matrices=False)
+                singular_values.append(s.detach().cpu())
+                u = u[:, :latent_head_dim]
+                s = s[:latent_head_dim]
+                vh = vh[:latent_head_dim, :]
+                sqrt_s = s.sqrt()
+                up_head = u * sqrt_s.unsqueeze(0)
+                down_head = sqrt_s.unsqueeze(1) * vh
+
+                latent_start = head_idx * latent_head_dim
+                latent_end = latent_start + latent_head_dim
+                down_weight[latent_start:latent_end, :] = down_head
+                grouped_up[head_idx].copy_(up_head.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
+
+            down_proj.weight.data.copy_(down_weight.to(dtype=down_proj.weight.dtype, device=down_proj.weight.device))
+            if up_proj.bias is not None and self.beacon_k_proj.bias is not None:
+                dense_bias = self.beacon_k_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device)
+                grouped_bias = up_proj.bias.view(up_proj.num_groups, up_proj.group_output_dim)
+                for head_idx in range(self.num_key_value_heads):
+                    row_start = head_idx * self.head_dim
+                    row_end = row_start + self.head_dim
+                    grouped_bias[head_idx].copy_(dense_bias[row_start:row_end])
+            singular_values = torch.cat(singular_values, dim=0)
+
+        del dense_weight
         if svd_device.type == "cuda":
             torch.cuda.empty_cache()
 
@@ -431,13 +517,23 @@ class LlamaAttention(nn.Module):
 
     # ---- SVD conversion: V ----
 
-    def convert_beacon_v_proj_to_lowrank(self, latent_head_dim, svd_device="cpu", return_singular_values=False):
+    def convert_beacon_v_proj_to_lowrank(
+        self,
+        latent_head_dim,
+        svd_device="cpu",
+        svd_partition="global",
+        return_singular_values=False,
+    ):
         if "v" not in self.config.beacon_param:
             raise ValueError("Cannot convert beacon V projection because `v` is not enabled in beacon_param.")
         if self._use_lowrank_beacon_v():
             raise ValueError("beacon_v_proj is already using low-rank parameterization.")
         if not hasattr(self, "beacon_v_proj"):
             raise ValueError("Dense beacon_v_proj was not found on the source checkpoint.")
+        if svd_partition not in {"global", "per_head"}:
+            raise ValueError(
+                f"Unsupported svd_partition={svd_partition}. Expected one of {{'global', 'per_head'}}."
+            )
 
         svd_device = torch.device(svd_device)
         dense_weight = self.beacon_v_proj.weight.detach().float().to(svd_device)
@@ -448,41 +544,83 @@ class LlamaAttention(nn.Module):
                 f"Requested global rank {global_rank} exceeds the maximum feasible rank {max_rank}."
             )
 
-        u, s, vh = torch.linalg.svd(dense_weight, full_matrices=False)
-        singular_values = s.detach().cpu()
-        u = u[:, :global_rank]
-        s = s[:global_rank]
-        vh = vh[:global_rank, :]
-        sqrt_s = s.sqrt()
-        up_weight = u * sqrt_s.unsqueeze(0)
-        down_weight = sqrt_s.unsqueeze(1) * vh
-
         down_proj, up_proj = self._build_lowrank_beacon_v_layers(
             latent_head_dim=latent_head_dim,
             dtype=self.beacon_v_proj.weight.dtype,
             device=self.beacon_v_proj.weight.device,
         )
-        down_proj.weight.data.copy_(down_weight.to(dtype=down_proj.weight.dtype, device=down_proj.weight.device))
-        if isinstance(up_proj, HeadwiseUpProj):
-            up_weight = up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device)
-            per_head_up = up_weight.reshape(self.num_key_value_heads, self.head_dim, global_rank)
-            for head_idx in range(self.num_key_value_heads):
-                start = head_idx * latent_head_dim
-                end = start + latent_head_dim
-                up_proj.weight.data[head_idx].copy_(per_head_up[head_idx, :, start:end])
-            if up_proj.bias is not None and self.beacon_v_proj.bias is not None:
-                up_proj.bias.data.copy_(
-                    self.beacon_v_proj.bias.data.reshape(self.num_key_value_heads, self.head_dim).to(
-                        dtype=up_proj.bias.dtype,
-                        device=up_proj.bias.device,
-                    )
-                )
-        else:
-            up_proj.weight.data.copy_(up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
-            if up_proj.bias is not None and self.beacon_v_proj.bias is not None:
-                up_proj.bias.data.copy_(self.beacon_v_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device))
+        if svd_partition == "global":
+            u, s, vh = torch.linalg.svd(dense_weight, full_matrices=False)
+            singular_values = s.detach().cpu()
+            u = u[:, :global_rank]
+            s = s[:global_rank]
+            vh = vh[:global_rank, :]
+            sqrt_s = s.sqrt()
+            up_weight = u * sqrt_s.unsqueeze(0)
+            down_weight = sqrt_s.unsqueeze(1) * vh
 
-        del dense_weight, u, s, vh, sqrt_s, up_weight, down_weight
+            down_proj.weight.data.copy_(down_weight.to(dtype=down_proj.weight.dtype, device=down_proj.weight.device))
+            if isinstance(up_proj, HeadwiseUpProj):
+                up_weight = up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device)
+                grouped_up = up_proj.weight.view(
+                    up_proj.num_groups, up_proj.group_output_dim, up_proj.group_input_dim
+                )
+                for group_idx in range(up_proj.num_groups):
+                    row_start = group_idx * up_proj.group_output_dim
+                    row_end = row_start + up_proj.group_output_dim
+                    col_start = group_idx * up_proj.group_input_dim
+                    col_end = col_start + up_proj.group_input_dim
+                    grouped_up[group_idx].copy_(up_weight[row_start:row_end, col_start:col_end])
+                if up_proj.bias is not None and self.beacon_v_proj.bias is not None:
+                    dense_bias = self.beacon_v_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device)
+                    grouped_bias = up_proj.bias.view(up_proj.num_groups, up_proj.group_output_dim)
+                    for group_idx in range(up_proj.num_groups):
+                        row_start = group_idx * up_proj.group_output_dim
+                        row_end = row_start + up_proj.group_output_dim
+                        grouped_bias[group_idx].copy_(dense_bias[row_start:row_end])
+            else:
+                up_proj.weight.data.copy_(up_weight.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
+                if up_proj.bias is not None and self.beacon_v_proj.bias is not None:
+                    up_proj.bias.data.copy_(self.beacon_v_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device))
+        else:
+            if not isinstance(up_proj, HeadwiseUpProj) or up_proj.group_size != 1:
+                raise ValueError(
+                    "svd_partition='per_head' requires headwise up projection with beacon_up_proj_group_size=1."
+                )
+            down_weight = torch.empty(
+                global_rank, self.hidden_size, dtype=dense_weight.dtype, device=svd_device
+            )
+            grouped_up = up_proj.weight.view(up_proj.num_groups, up_proj.group_output_dim, up_proj.group_input_dim)
+            singular_values = []
+            for head_idx in range(self.num_key_value_heads):
+                row_start = head_idx * self.head_dim
+                row_end = row_start + self.head_dim
+                head_weight = dense_weight[row_start:row_end, :]
+                u, s, vh = torch.linalg.svd(head_weight, full_matrices=False)
+                singular_values.append(s.detach().cpu())
+                u = u[:, :latent_head_dim]
+                s = s[:latent_head_dim]
+                vh = vh[:latent_head_dim, :]
+                sqrt_s = s.sqrt()
+                up_head = u * sqrt_s.unsqueeze(0)
+                down_head = sqrt_s.unsqueeze(1) * vh
+
+                latent_start = head_idx * latent_head_dim
+                latent_end = latent_start + latent_head_dim
+                down_weight[latent_start:latent_end, :] = down_head
+                grouped_up[head_idx].copy_(up_head.to(dtype=up_proj.weight.dtype, device=up_proj.weight.device))
+
+            down_proj.weight.data.copy_(down_weight.to(dtype=down_proj.weight.dtype, device=down_proj.weight.device))
+            if up_proj.bias is not None and self.beacon_v_proj.bias is not None:
+                dense_bias = self.beacon_v_proj.bias.data.to(dtype=up_proj.bias.dtype, device=up_proj.bias.device)
+                grouped_bias = up_proj.bias.view(up_proj.num_groups, up_proj.group_output_dim)
+                for head_idx in range(self.num_key_value_heads):
+                    row_start = head_idx * self.head_dim
+                    row_end = row_start + self.head_dim
+                    grouped_bias[head_idx].copy_(dense_bias[row_start:row_end])
+            singular_values = torch.cat(singular_values, dim=0)
+
+        del dense_weight
         if svd_device.type == "cuda":
             torch.cuda.empty_cache()
 

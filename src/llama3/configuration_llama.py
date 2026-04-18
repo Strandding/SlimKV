@@ -152,6 +152,7 @@ class LlamaConfig(PretrainedConfig):
         beacon_skip_rope_for_beacon_k=False,
         beacon_shared_kv_down_proj=False,
         beacon_headwise_up_proj=True,
+        beacon_up_proj_group_size=1,
         beacon_k_compression="none",
         beacon_v_compression="none",
         beacon_k_latent_head_dim=64,
@@ -206,6 +207,7 @@ class LlamaConfig(PretrainedConfig):
         self.beacon_skip_rope_for_beacon_k = beacon_skip_rope_for_beacon_k
         self.beacon_shared_kv_down_proj = beacon_shared_kv_down_proj
         self.beacon_headwise_up_proj = beacon_headwise_up_proj
+        self.beacon_up_proj_group_size = beacon_up_proj_group_size
         # convenience: beacon_kv_compression overrides both k and v
         if beacon_kv_compression is not None:
             beacon_k_compression = beacon_kv_compression

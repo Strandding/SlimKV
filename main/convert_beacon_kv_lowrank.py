@@ -25,9 +25,17 @@ class ConversionArgs:
         default=True,
         metadata={"help": "Save the converted checkpoint in safetensors format when possible."}
     )
+    save_dtype: str = field(
+        default="fp16",
+        metadata={"help": "Checkpoint save dtype. One of {fp16, bf16, fp32, inherit}."}
+    )
     svd_device: str = field(
         default="cpu",
         metadata={"help": "Device used for SVD decomposition. Usually `cpu` or `cuda`."}
+    )
+    svd_partition: str = field(
+        default="global",
+        metadata={"help": "How to partition dense projection before SVD. One of {global, per_head}."}
     )
     save_svd_spectra: bool = field(
         default=True,
@@ -143,7 +151,7 @@ def _save_cumulative_energy_overview(output_dir, singular_values_by_layer, globa
     return plot_path
 
 
-def _convert_proj(layers, proj_name, latent_head_dim, svd_device, return_sv):
+def _convert_proj(layers, proj_name, latent_head_dim, svd_device, svd_partition, return_sv):
     """Convert a single projection (k or v) across all layers. Returns (rank, sv_list)."""
     dense_attr = f"beacon_{proj_name}_proj"
     dense_layers = [layer for layer in layers if hasattr(layer, dense_attr)]
@@ -162,6 +170,7 @@ def _convert_proj(layers, proj_name, latent_head_dim, svd_device, return_sv):
         conversion_info = getattr(layer, convert_fn_name)(
             latent_head_dim,
             svd_device=svd_device,
+            svd_partition=svd_partition,
             return_singular_values=return_sv,
         )
         if isinstance(conversion_info, dict):
@@ -232,6 +241,11 @@ def main():
         raise ValueError(
             f"Requested svd_device={conversion_args.svd_device}, but CUDA is not available."
         )
+    if conversion_args.svd_partition not in {"global", "per_head"}:
+        raise ValueError(
+            f"Unsupported svd_partition={conversion_args.svd_partition}. "
+            "Expected one of {global, per_head}."
+        )
 
     return_sv = conversion_args.save_svd_spectra or conversion_args.save_svd_spectra_data
 
@@ -245,7 +259,14 @@ def main():
             k_latent_head_dim = getattr(model.config, "beacon_k_latent_head_dim", 64)
         logger.info("Converting beacon K projections (latent_head_dim=%s)...", k_latent_head_dim)
         with torch.no_grad():
-            k_rank, k_sv = _convert_proj(attn_layers, "k", k_latent_head_dim, conversion_args.svd_device, return_sv)
+            k_rank, k_sv = _convert_proj(
+                attn_layers,
+                "k",
+                k_latent_head_dim,
+                conversion_args.svd_device,
+                conversion_args.svd_partition,
+                return_sv,
+            )
         model.config.beacon_k_latent_head_dim = k_latent_head_dim
 
     # Convert V
@@ -256,13 +277,36 @@ def main():
             v_latent_head_dim = getattr(model.config, "beacon_v_latent_head_dim", 64)
         logger.info("Converting beacon V projections (latent_head_dim=%s)...", v_latent_head_dim)
         with torch.no_grad():
-            v_rank, v_sv = _convert_proj(attn_layers, "v", v_latent_head_dim, conversion_args.svd_device, return_sv)
+            v_rank, v_sv = _convert_proj(
+                attn_layers,
+                "v",
+                v_latent_head_dim,
+                conversion_args.svd_device,
+                conversion_args.svd_partition,
+                return_sv,
+            )
         model.config.beacon_v_latent_head_dim = v_latent_head_dim
 
     output_dir = makedirs(conversion_args.output_dir)
+    save_dtype_map = {
+        "fp16": torch.float16,
+        "bf16": torch.bfloat16,
+        "fp32": torch.float32,
+        "inherit": None,
+    }
+    if conversion_args.save_dtype not in save_dtype_map:
+        raise ValueError(
+            f"Unsupported save_dtype={conversion_args.save_dtype}. "
+            "Expected one of {fp16, bf16, fp32, inherit}."
+        )
+    target_save_dtype = save_dtype_map[conversion_args.save_dtype]
+    if target_save_dtype is not None:
+        model = model.to(target_save_dtype)
+        model.config.torch_dtype = target_save_dtype
+
     logger.info(
-        "Saving low-rank beacon-KV checkpoint to %s (k_rank=%s, v_rank=%s, elapsed=%.1fs)...",
-        output_dir, k_rank, v_rank, time.time() - start_time,
+        "Saving low-rank beacon-KV checkpoint to %s (k_rank=%s, v_rank=%s, svd_partition=%s, save_dtype=%s, elapsed=%.1fs)...",
+        output_dir, k_rank, v_rank, conversion_args.svd_partition, conversion_args.save_dtype, time.time() - start_time,
     )
     model.save_pretrained(output_dir, safe_serialization=conversion_args.safe_serialization)
     if conversion_args.save_tokenizer:

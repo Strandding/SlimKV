@@ -213,7 +213,11 @@ class ModelArgs:
     )
     beacon_headwise_up_proj: Optional[bool] = field(
         default=None,
-        metadata={'help': 'Use head-wise independent up-projection for low-rank beacon K/V.'}
+        metadata={'help': 'Use grouped low-rank up-projection for beacon K/V (grouping controlled by beacon_up_proj_group_size). If False, use one fully-coupled Linear(global_rank->out_features).'}
+    )
+    beacon_up_proj_group_size: Optional[int] = field(
+        default=None,
+        metadata={'help': 'Number of KV heads coupled in one low-rank up-projection group. 1 means per-head; num_kv_heads means fully coupled.'}
     )
     beacon_loss_mode: Optional[str] = field(
         default=None,

@@ -38,6 +38,7 @@ BEACON_RATIO="${BEACON_RATIO:-4 8 16}"
 BEACON_KV_COMPRESSION="${BEACON_KV_COMPRESSION:-none}"
 BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K:-False}"
 BEACON_SHARED_KV_DOWN_PROJ="${BEACON_SHARED_KV_DOWN_PROJ:-False}"
+BEACON_UP_PROJ_GROUP_SIZE="${BEACON_UP_PROJ_GROUP_SIZE:-1}"
 BEACON_KV_LATENT_COMPRESS_RATIO="${BEACON_KV_LATENT_COMPRESS_RATIO:-2}"
 BEACON_ORIGINAL_HEAD_DIM="${BEACON_ORIGINAL_HEAD_DIM:-}"
 TOTAL_TRAIN_SAMPLES="${TOTAL_TRAIN_SAMPLES:-24000}"
@@ -220,7 +221,7 @@ fi
 echo "group_by_stride: ${GROUP_BY_STRIDE}"
 echo "occupy_after_train: ${OCCUPY_AFTER_TRAIN}"
 echo "beacon: window=${BEACON_WINDOW} stride=${BEACON_STRIDE} ratio='${BEACON_RATIO}' param='q k v' pos=interleave"
-echo "beacon_extra: kv_compression=${BEACON_KV_COMPRESSION} k_skip_rope=${BEACON_SKIP_ROPE_FOR_BEACON_K} shared_down=${BEACON_SHARED_KV_DOWN_PROJ}"
+echo "beacon_extra: kv_compression=${BEACON_KV_COMPRESSION} k_skip_rope=${BEACON_SKIP_ROPE_FOR_BEACON_K} shared_down=${BEACON_SHARED_KV_DOWN_PROJ} up_group=${BEACON_UP_PROJ_GROUP_SIZE}"
 if [[ "${BEACON_KV_COMPRESSION}" == "lowrank_svd" ]]; then
   echo "beacon_lowrank: head_dim=${BEACON_RESOLVED_HEAD_DIM} ratio=${BEACON_KV_LATENT_COMPRESS_RATIO} -> latent_dim=${BEACON_LATENT_HEAD_DIM}"
 else
@@ -250,6 +251,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --beacon_pos interleave \
 --beacon_skip_rope_for_beacon_k "${BEACON_SKIP_ROPE_FOR_BEACON_K}" \
 --beacon_shared_kv_down_proj "${BEACON_SHARED_KV_DOWN_PROJ}" \
+--beacon_up_proj_group_size "${BEACON_UP_PROJ_GROUP_SIZE}" \
 "${beacon_kv_args[@]}" \
 --chat_template "${CHAT_TEMPLATE}" \
 --attn_impl flash_attention_2 \

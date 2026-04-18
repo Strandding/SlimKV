@@ -328,13 +328,23 @@ class Qwen2Attention(nn.Module):
 
     # ---- SVD conversion: K ----
 
-    def convert_beacon_k_proj_to_lowrank(self, latent_head_dim, svd_device="cpu", return_singular_values=False):
+    def convert_beacon_k_proj_to_lowrank(
+        self,
+        latent_head_dim,
+        svd_device="cpu",
+        svd_partition="global",
+        return_singular_values=False,
+    ):
         if "k" not in self.config.beacon_param:
             raise ValueError("Cannot convert beacon K projection because `k` is not enabled in beacon_param.")
         if self._use_lowrank_beacon_k():
             raise ValueError("beacon_k_proj is already using low-rank parameterization.")
         if not hasattr(self, "beacon_k_proj"):
             raise ValueError("Dense beacon_k_proj was not found on the source checkpoint.")
+        if svd_partition != "global":
+            raise NotImplementedError(
+                f"Qwen2 low-rank conversion only supports svd_partition='global', got {svd_partition}."
+            )
 
         svd_device = torch.device(svd_device)
         dense_weight = self.beacon_k_proj.weight.detach().float().to(svd_device)
@@ -383,13 +393,23 @@ class Qwen2Attention(nn.Module):
 
     # ---- SVD conversion: V ----
 
-    def convert_beacon_v_proj_to_lowrank(self, latent_head_dim, svd_device="cpu", return_singular_values=False):
+    def convert_beacon_v_proj_to_lowrank(
+        self,
+        latent_head_dim,
+        svd_device="cpu",
+        svd_partition="global",
+        return_singular_values=False,
+    ):
         if "v" not in self.config.beacon_param:
             raise ValueError("Cannot convert beacon V projection because `v` is not enabled in beacon_param.")
         if self._use_lowrank_beacon_v():
             raise ValueError("beacon_v_proj is already using low-rank parameterization.")
         if not hasattr(self, "beacon_v_proj"):
             raise ValueError("Dense beacon_v_proj was not found on the source checkpoint.")
+        if svd_partition != "global":
+            raise NotImplementedError(
+                f"Qwen2 low-rank conversion only supports svd_partition='global', got {svd_partition}."
+            )
 
         svd_device = torch.device(svd_device)
         dense_weight = self.beacon_v_proj.weight.detach().float().to(svd_device)
@@ -438,16 +458,28 @@ class Qwen2Attention(nn.Module):
 
     # ---- SVD conversion: unified entry ----
 
-    def convert_beacon_kv_proj_to_lowrank(self, k_latent_head_dim=None, v_latent_head_dim=None,
-                                           svd_device="cpu", return_singular_values=False):
+    def convert_beacon_kv_proj_to_lowrank(
+        self,
+        k_latent_head_dim=None,
+        v_latent_head_dim=None,
+        svd_device="cpu",
+        svd_partition="global",
+        return_singular_values=False,
+    ):
         results = {}
         if k_latent_head_dim is not None and "k" in self.config.beacon_param and not self._use_lowrank_beacon_k():
             results["k"] = self.convert_beacon_k_proj_to_lowrank(
-                k_latent_head_dim, svd_device=svd_device, return_singular_values=return_singular_values,
+                k_latent_head_dim,
+                svd_device=svd_device,
+                svd_partition=svd_partition,
+                return_singular_values=return_singular_values,
             )
         if v_latent_head_dim is not None and "v" in self.config.beacon_param and not self._use_lowrank_beacon_v():
             results["v"] = self.convert_beacon_v_proj_to_lowrank(
-                v_latent_head_dim, svd_device=svd_device, return_singular_values=return_singular_values,
+                v_latent_head_dim,
+                svd_device=svd_device,
+                svd_partition=svd_partition,
+                return_singular_values=return_singular_values,
             )
         return results
 
