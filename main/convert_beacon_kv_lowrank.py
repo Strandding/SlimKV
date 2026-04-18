@@ -76,7 +76,8 @@ def _save_singular_value_overview(output_dir, singular_values_by_layer, global_r
         normalized = normalized.clamp_min(1e-12)
         x = torch.arange(1, normalized.numel() + 1)
         ax.plot(x.cpu().numpy(), normalized.cpu().numpy(), linewidth=1.5)
-        ax.axvline(global_rank, color="tab:red", linestyle="--", linewidth=1.0)
+        layer_rank = global_rank[layer_idx] if isinstance(global_rank, (list, tuple)) else global_rank
+        ax.axvline(layer_rank, color="tab:red", linestyle="--", linewidth=1.0)
         ax.set_yscale("log")
         ax.set_title(f"Layer {layer_idx}", fontsize=10)
         ax.set_xlabel("Singular value index")
@@ -87,8 +88,9 @@ def _save_singular_value_overview(output_dir, singular_values_by_layer, global_r
         axes[empty_idx // ncols][empty_idx % ncols].set_visible(False)
 
     label = proj_name.upper()
+    rank_text = "variable" if isinstance(global_rank, (list, tuple)) else str(global_rank)
     fig.suptitle(
-        f"Beacon-{label} singular spectra (normalized, log scale, rank cutoff={global_rank})",
+        f"Beacon-{label} singular spectra (normalized, log scale, rank cutoff={rank_text})",
         fontsize=14,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.97))
@@ -128,7 +130,8 @@ def _save_cumulative_energy_overview(output_dir, singular_values_by_layer, globa
         cumulative_energy = energy.cumsum(0) / energy.sum().clamp_min(1e-12)
         x = torch.arange(1, cumulative_energy.numel() + 1)
         ax.plot(x.cpu().numpy(), cumulative_energy.cpu().numpy(), linewidth=1.5)
-        ax.axvline(global_rank, color="tab:red", linestyle="--", linewidth=1.0)
+        layer_rank = global_rank[layer_idx] if isinstance(global_rank, (list, tuple)) else global_rank
+        ax.axvline(layer_rank, color="tab:red", linestyle="--", linewidth=1.0)
         ax.set_ylim(0.0, 1.02)
         ax.set_title(f"Layer {layer_idx}", fontsize=10)
         ax.set_xlabel("Singular value index")
@@ -139,8 +142,9 @@ def _save_cumulative_energy_overview(output_dir, singular_values_by_layer, globa
         axes[empty_idx // ncols][empty_idx % ncols].set_visible(False)
 
     label = proj_name.upper()
+    rank_text = "variable" if isinstance(global_rank, (list, tuple)) else str(global_rank)
     fig.suptitle(
-        f"Beacon-{label} cumulative spectral energy (rank cutoff={global_rank})",
+        f"Beacon-{label} cumulative spectral energy (rank cutoff={rank_text})",
         fontsize=14,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.97))
@@ -151,7 +155,50 @@ def _save_cumulative_energy_overview(output_dir, singular_values_by_layer, globa
     return plot_path
 
 
-def _convert_proj(layers, proj_name, latent_head_dim, svd_device, svd_partition, return_sv):
+def _resolve_layer_latent_head_dims(
+    latent_head_dim,
+    latent_head_dim_list,
+    num_layers,
+    head_dim,
+    proj_name,
+    list_field_name,
+):
+    if latent_head_dim_list is not None:
+        if not isinstance(latent_head_dim_list, (list, tuple)):
+            raise ValueError(
+                f"{list_field_name} must be a list/tuple, got {type(latent_head_dim_list).__name__}."
+            )
+        if len(latent_head_dim_list) != num_layers:
+            raise ValueError(
+                f"{list_field_name} length must equal num_hidden_layers "
+                f"({num_layers}), found {len(latent_head_dim_list)}."
+            )
+        resolved = []
+        for idx, val in enumerate(latent_head_dim_list):
+            if not isinstance(val, int):
+                raise ValueError(
+                    f"{list_field_name}[{idx}] must be int, got {type(val).__name__}."
+                )
+            if val <= 0 or val > head_dim:
+                raise ValueError(
+                    f"Invalid {list_field_name}[{idx}]={val}. Must be in [1, {head_dim}]."
+                )
+            resolved.append(val)
+        return resolved
+
+    if latent_head_dim is None:
+        raise ValueError(
+            f"Missing latent head dim for beacon {proj_name.upper()}. "
+            f"Set {list_field_name} or beacon_{proj_name}_latent_head_dim."
+        )
+    if latent_head_dim <= 0 or latent_head_dim > head_dim:
+        raise ValueError(
+            f"Invalid latent_head_dim={latent_head_dim} for beacon {proj_name.upper()}. Must be in [1, {head_dim}]."
+        )
+    return [latent_head_dim for _ in range(num_layers)]
+
+
+def _convert_proj(layers, proj_name, latent_head_dims, svd_device, svd_partition, return_sv):
     """Convert a single projection (k or v) across all layers. Returns (rank, sv_list)."""
     dense_attr = f"beacon_{proj_name}_proj"
     dense_layers = [layer for layer in layers if hasattr(layer, dense_attr)]
@@ -163,12 +210,12 @@ def _convert_proj(layers, proj_name, latent_head_dim, svd_device, svd_partition,
 
     convert_fn_name = f"convert_beacon_{proj_name}_proj_to_lowrank"
     singular_values_by_layer = []
-    converted_rank = None
+    converted_ranks = []
     progress = tqdm(dense_layers, desc=f"Converting {dense_attr}", unit="layer")
-    for idx, layer in enumerate(progress, start=1):
+    for idx, (layer, layer_latent_head_dim) in enumerate(zip(progress, latent_head_dims), start=1):
         layer_start = time.time()
         conversion_info = getattr(layer, convert_fn_name)(
-            latent_head_dim,
+            layer_latent_head_dim,
             svd_device=svd_device,
             svd_partition=svd_partition,
             return_singular_values=return_sv,
@@ -178,12 +225,16 @@ def _convert_proj(layers, proj_name, latent_head_dim, svd_device, svd_partition,
             singular_values_by_layer.append(conversion_info["singular_values"])
         else:
             converted_rank = conversion_info
+        converted_ranks.append(converted_rank)
         progress.set_postfix(
             rank=converted_rank,
+            latent_head_dim=layer_latent_head_dim,
             layer=f"{idx}/{len(dense_layers)}",
             sec=f"{time.time() - layer_start:.1f}",
         )
-    return converted_rank, singular_values_by_layer
+    if len(converted_ranks) > 0 and all(rank == converted_ranks[0] for rank in converted_ranks):
+        return converted_ranks[0], singular_values_by_layer
+    return converted_ranks, singular_values_by_layer
 
 
 def _save_spectra(output_dir, proj_name, singular_values_by_layer, global_rank, save_data, save_plots):
@@ -251,23 +302,47 @@ def main():
 
     start_time = time.time()
 
+    num_layers = len(attn_layers)
+    head_dim = attn_layers[0].head_dim
+    kv_latent_head_dim_list = model_args.beacon_kv_latent_head_dim_list
+    k_latent_head_dim_list = model_args.beacon_k_latent_head_dim_list
+    v_latent_head_dim_list = model_args.beacon_v_latent_head_dim_list
+    if kv_latent_head_dim_list is not None:
+        raise ValueError(
+            "beacon_kv_latent_head_dim_list is deprecated and not supported. "
+            "Use beacon_k_latent_head_dim_list and beacon_v_latent_head_dim_list."
+        )
+    if k_latent_head_dim_list is not None:
+        logger.info("Using per-layer latent dims from beacon_k_latent_head_dim_list.")
+    if v_latent_head_dim_list is not None:
+        logger.info("Using per-layer latent dims from beacon_v_latent_head_dim_list.")
+
     # Convert K
     k_rank = None
     if "k" in beacon_param:
         k_latent_head_dim = model_args.beacon_k_latent_head_dim
         if k_latent_head_dim is None:
             k_latent_head_dim = getattr(model.config, "beacon_k_latent_head_dim", 64)
-        logger.info("Converting beacon K projections (latent_head_dim=%s)...", k_latent_head_dim)
+        k_layerwise_list = k_latent_head_dim_list
+        k_latent_head_dims = _resolve_layer_latent_head_dims(
+            k_latent_head_dim,
+            k_layerwise_list,
+            num_layers,
+            head_dim,
+            proj_name="k",
+            list_field_name="beacon_k_latent_head_dim_list",
+        )
+        logger.info("Converting beacon K projections (latent_head_dims=%s)...", k_latent_head_dims)
         with torch.no_grad():
             k_rank, k_sv = _convert_proj(
                 attn_layers,
                 "k",
-                k_latent_head_dim,
+                k_latent_head_dims,
                 conversion_args.svd_device,
                 conversion_args.svd_partition,
                 return_sv,
             )
-        model.config.beacon_k_latent_head_dim = k_latent_head_dim
+        model.config.beacon_k_latent_head_dim = k_latent_head_dims[0]
 
     # Convert V
     v_rank = None
@@ -275,17 +350,32 @@ def main():
         v_latent_head_dim = model_args.beacon_v_latent_head_dim
         if v_latent_head_dim is None:
             v_latent_head_dim = getattr(model.config, "beacon_v_latent_head_dim", 64)
-        logger.info("Converting beacon V projections (latent_head_dim=%s)...", v_latent_head_dim)
+        v_layerwise_list = v_latent_head_dim_list
+        v_latent_head_dims = _resolve_layer_latent_head_dims(
+            v_latent_head_dim,
+            v_layerwise_list,
+            num_layers,
+            head_dim,
+            proj_name="v",
+            list_field_name="beacon_v_latent_head_dim_list",
+        )
+        logger.info("Converting beacon V projections (latent_head_dims=%s)...", v_latent_head_dims)
         with torch.no_grad():
             v_rank, v_sv = _convert_proj(
                 attn_layers,
                 "v",
-                v_latent_head_dim,
+                v_latent_head_dims,
                 conversion_args.svd_device,
                 conversion_args.svd_partition,
                 return_sv,
             )
-        model.config.beacon_v_latent_head_dim = v_latent_head_dim
+        model.config.beacon_v_latent_head_dim = v_latent_head_dims[0]
+
+    if "k" in beacon_param and k_rank is not None:
+        model.config.beacon_k_latent_head_dim_list = list(k_latent_head_dims)
+    if "v" in beacon_param and v_rank is not None:
+        model.config.beacon_v_latent_head_dim_list = list(v_latent_head_dims)
+    model.config.beacon_kv_latent_head_dim_list = None
 
     output_dir = makedirs(conversion_args.output_dir)
     save_dtype_map = {

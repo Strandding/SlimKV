@@ -207,6 +207,30 @@ class ModelArgs:
         default=None,
         metadata={'help': 'Latent dimension per KV head for low-rank beacon V projection.'}
     )
+    beacon_kv_latent_head_dim_list: Optional[List[int]] = field(
+        default=None,
+        metadata={
+            'help': 'Per-layer latent dimension per KV head for low-rank beacon K/V. '
+                    'When provided, it overrides beacon_k_latent_head_dim and beacon_v_latent_head_dim '
+                    'and its length must equal num_hidden_layers.'
+        }
+    )
+    beacon_k_latent_head_dim_list: Optional[List[int]] = field(
+        default=None,
+        metadata={
+            'help': 'Per-layer latent dimension per KV head for low-rank beacon K only. '
+                    'When provided, it overrides beacon_k_latent_head_dim for K '
+                    'and its length must equal num_hidden_layers.'
+        }
+    )
+    beacon_v_latent_head_dim_list: Optional[List[int]] = field(
+        default=None,
+        metadata={
+            'help': 'Per-layer latent dimension per KV head for low-rank beacon V only. '
+                    'When provided, it overrides beacon_v_latent_head_dim for V '
+                    'and its length must equal num_hidden_layers.'
+        }
+    )
     beacon_shared_kv_down_proj: Optional[bool] = field(
         default=None,
         metadata={'help': 'Share the down-projection matrix between beacon K and V (requires lowrank_svd for both, same latent dim, and beacon_skip_rope_for_beacon_k=True).'}

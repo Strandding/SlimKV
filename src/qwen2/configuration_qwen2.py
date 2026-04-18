@@ -132,6 +132,9 @@ class Qwen2Config(PretrainedConfig):
         beacon_v_compression="none",
         beacon_k_latent_head_dim=64,
         beacon_v_latent_head_dim=64,
+        beacon_kv_latent_head_dim_list=None,
+        beacon_k_latent_head_dim_list=None,
+        beacon_v_latent_head_dim_list=None,
         # convenience: set both at once
         beacon_kv_compression=None,
         **kwargs,
@@ -180,6 +183,9 @@ class Qwen2Config(PretrainedConfig):
         self.beacon_v_compression = beacon_v_compression
         self.beacon_k_latent_head_dim = beacon_k_latent_head_dim
         self.beacon_v_latent_head_dim = beacon_v_latent_head_dim
+        self.beacon_kv_latent_head_dim_list = beacon_kv_latent_head_dim_list
+        self.beacon_k_latent_head_dim_list = beacon_k_latent_head_dim_list
+        self.beacon_v_latent_head_dim_list = beacon_v_latent_head_dim_list
 
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,

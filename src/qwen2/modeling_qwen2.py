@@ -221,8 +221,37 @@ class Qwen2Attention(nn.Module):
     def _use_lowrank_beacon_k(self):
         return "k" in self.config.beacon_param and self.beacon_k_compression == "lowrank_svd"
 
+    def _get_layerwise_latent_head_dim(self, field_name):
+        latent_head_dim_list = getattr(self.config, field_name, None)
+        if latent_head_dim_list is None:
+            return None
+        if not isinstance(latent_head_dim_list, (list, tuple)):
+            raise ValueError(
+                f"{field_name} must be a list/tuple, found {type(latent_head_dim_list).__name__}."
+            )
+        if len(latent_head_dim_list) != self.config.num_hidden_layers:
+            raise ValueError(
+                f"{field_name} length must equal num_hidden_layers "
+                f"({self.config.num_hidden_layers}), found {len(latent_head_dim_list)}."
+            )
+        if self.layer_idx is None:
+            logger.warning_once(
+                f"layer_idx is None while {field_name} is set; fallback to layer 0 latent dim."
+            )
+            latent_head_dim = latent_head_dim_list[0]
+        else:
+            latent_head_dim = latent_head_dim_list[self.layer_idx]
+        if not isinstance(latent_head_dim, int):
+            raise ValueError(
+                f"Each element in {field_name} must be int, "
+                f"but layer {self.layer_idx} is {type(latent_head_dim).__name__}."
+            )
+        return latent_head_dim
+
     def _get_beacon_k_latent_head_dim(self):
-        latent_head_dim = getattr(self.config, "beacon_k_latent_head_dim", None)
+        latent_head_dim = self._get_layerwise_latent_head_dim("beacon_k_latent_head_dim_list")
+        if latent_head_dim is None:
+            latent_head_dim = getattr(self.config, "beacon_k_latent_head_dim", None)
         if latent_head_dim is None:
             latent_head_dim = self.head_dim
         if latent_head_dim <= 0:
@@ -277,7 +306,9 @@ class Qwen2Attention(nn.Module):
         return "v" in self.config.beacon_param and self.beacon_v_compression == "lowrank_svd"
 
     def _get_beacon_v_latent_head_dim(self):
-        latent_head_dim = getattr(self.config, "beacon_v_latent_head_dim", None)
+        latent_head_dim = self._get_layerwise_latent_head_dim("beacon_v_latent_head_dim_list")
+        if latent_head_dim is None:
+            latent_head_dim = getattr(self.config, "beacon_v_latent_head_dim", None)
         if latent_head_dim is None:
             latent_head_dim = self.head_dim
         if latent_head_dim <= 0:
@@ -1457,6 +1488,10 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel):
         beacon_param = getattr(config, "beacon_param", [])
         missing_keys = loading_info.get("missing_keys", [])
         unexpected_keys = loading_info.get("unexpected_keys", [])
+        lowrank_enabled = (
+            getattr(config, "beacon_k_compression", "none") == "lowrank_svd"
+            or getattr(config, "beacon_v_compression", "none") == "lowrank_svd"
+        )
 
         # validate K
         shared_kv = getattr(config, "beacon_shared_kv_down_proj", False)
@@ -1513,6 +1548,15 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel):
                 else:
                     message += ". Run the offline conversion script before training or finetuning."
                 raise ValueError(message)
+
+        if lowrank_enabled:
+            missing_beacon_keys = [k for k in missing_keys if "beacon_" in k]
+            if missing_beacon_keys:
+                raise ValueError(
+                    "Low-rank beacon mode does not allow auto-initializing missing beacon weights. "
+                    f"Missing keys: {missing_beacon_keys[:8]}. "
+                    "Please provide a fully converted checkpoint."
+                )
 
     @staticmethod
     def _auto_merge_kv_down_proj(model, loading_info):
@@ -1603,14 +1647,13 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel):
             v_seq_dim=2,
         )
 
-        missing_keys = loading_info["missing_keys"]
-
         # Auto-merge separate K/V down_proj into shared beacon_kv_down_proj
         # when beacon_shared_kv_down_proj is enabled but checkpoint has separate weights.
         if getattr(config, "beacon_shared_kv_down_proj", False):
             cls._auto_merge_kv_down_proj(model, loading_info)
 
         cls._validate_lowrank_beacon_kv_loading(config, loading_info)
+        missing_keys = loading_info["missing_keys"]
         # NOTE: the beacon parameters may or may not be loaded from the checkpoint
         # if it is loaded from the checkpoint, we should not re-initilize it
         model.model._init_beacon_embed(missing_keys)

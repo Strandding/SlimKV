@@ -37,6 +37,9 @@ BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K:-False}"
 BEACON_SHARED_KV_DOWN_PROJ="${BEACON_SHARED_KV_DOWN_PROJ:-False}"
 BEACON_UP_PROJ_GROUP_SIZE="${BEACON_UP_PROJ_GROUP_SIZE:-1}"
 BEACON_KV_LATENT_COMPRESS_RATIO="${BEACON_KV_LATENT_COMPRESS_RATIO:-2}"
+BEACON_KV_LATENT_HEAD_DIM_LIST="${BEACON_KV_LATENT_HEAD_DIM_LIST:-}"
+BEACON_K_LATENT_HEAD_DIM_LIST="${BEACON_K_LATENT_HEAD_DIM_LIST:-}"
+BEACON_V_LATENT_HEAD_DIM_LIST="${BEACON_V_LATENT_HEAD_DIM_LIST:-}"
 BEACON_ORIGINAL_HEAD_DIM="${BEACON_ORIGINAL_HEAD_DIM:-}"
 TOTAL_FINETUNE_SAMPLES="${TOTAL_FINETUNE_SAMPLES:-16000}"
 GROUP_BY_STRIDE="${GROUP_BY_STRIDE:-strict}"
@@ -87,27 +90,68 @@ fi
 beacon_kv_args=()
 BEACON_RESOLVED_HEAD_DIM=""
 BEACON_LATENT_HEAD_DIM=""
+BEACON_K_LATENT_HEAD_DIM_LIST_ARR=()
+BEACON_V_LATENT_HEAD_DIM_LIST_ARR=()
 case "${BEACON_KV_COMPRESSION}" in
   none)
     ;;
   lowrank_svd)
-    if ! [[ "${BEACON_KV_LATENT_COMPRESS_RATIO}" =~ ^[1-9][0-9]*$ ]]; then
-      echo "Invalid BEACON_KV_LATENT_COMPRESS_RATIO: ${BEACON_KV_LATENT_COMPRESS_RATIO}" >&2
+    if [[ -n "${BEACON_KV_LATENT_HEAD_DIM_LIST}" ]]; then
+      echo "Invalid config: BEACON_KV_LATENT_HEAD_DIM_LIST is deprecated. Use BEACON_K_LATENT_HEAD_DIM_LIST and BEACON_V_LATENT_HEAD_DIM_LIST." >&2
       exit 1
     fi
-    BEACON_RESOLVED_HEAD_DIM="$(infer_head_dim "${MODEL_NAME_OR_PATH}")"
-    if [[ -z "${BEACON_RESOLVED_HEAD_DIM}" ]]; then
-      echo "Cannot infer head_dim from ${MODEL_NAME_OR_PATH}. Set BEACON_ORIGINAL_HEAD_DIM manually." >&2
-      exit 1
-    fi
-    BEACON_LATENT_HEAD_DIM=$(( BEACON_RESOLVED_HEAD_DIM / BEACON_KV_LATENT_COMPRESS_RATIO ))
-    if (( BEACON_LATENT_HEAD_DIM < 1 )); then
-      echo "Invalid latent dim: head_dim=${BEACON_RESOLVED_HEAD_DIM}, ratio=${BEACON_KV_LATENT_COMPRESS_RATIO}" >&2
-      exit 1
+    if [[ -n "${BEACON_K_LATENT_HEAD_DIM_LIST}" || -n "${BEACON_V_LATENT_HEAD_DIM_LIST}" ]]; then
+      if [[ -z "${BEACON_K_LATENT_HEAD_DIM_LIST}" || -z "${BEACON_V_LATENT_HEAD_DIM_LIST}" ]]; then
+        echo "Invalid config: set both BEACON_K_LATENT_HEAD_DIM_LIST and BEACON_V_LATENT_HEAD_DIM_LIST, or neither." >&2
+        exit 1
+      fi
+      read -r -a BEACON_K_LATENT_HEAD_DIM_LIST_ARR <<< "${BEACON_K_LATENT_HEAD_DIM_LIST}"
+      read -r -a BEACON_V_LATENT_HEAD_DIM_LIST_ARR <<< "${BEACON_V_LATENT_HEAD_DIM_LIST}"
+      if (( ${#BEACON_K_LATENT_HEAD_DIM_LIST_ARR[@]} == 0 || ${#BEACON_V_LATENT_HEAD_DIM_LIST_ARR[@]} == 0 )); then
+        echo "Invalid BEACON_K_LATENT_HEAD_DIM_LIST / BEACON_V_LATENT_HEAD_DIM_LIST: empty after parsing." >&2
+        exit 1
+      fi
+      if (( ${#BEACON_K_LATENT_HEAD_DIM_LIST_ARR[@]} != ${#BEACON_V_LATENT_HEAD_DIM_LIST_ARR[@]} )); then
+        echo "Invalid config: K/V layerwise list lengths differ (${#BEACON_K_LATENT_HEAD_DIM_LIST_ARR[@]} vs ${#BEACON_V_LATENT_HEAD_DIM_LIST_ARR[@]})." >&2
+        exit 1
+      fi
+      for dim in "${BEACON_K_LATENT_HEAD_DIM_LIST_ARR[@]}"; do
+        if ! [[ "${dim}" =~ ^[1-9][0-9]*$ ]]; then
+          echo "Invalid per-layer latent dim in BEACON_K_LATENT_HEAD_DIM_LIST: ${dim}" >&2
+          exit 1
+        fi
+      done
+      for dim in "${BEACON_V_LATENT_HEAD_DIM_LIST_ARR[@]}"; do
+        if ! [[ "${dim}" =~ ^[1-9][0-9]*$ ]]; then
+          echo "Invalid per-layer latent dim in BEACON_V_LATENT_HEAD_DIM_LIST: ${dim}" >&2
+          exit 1
+        fi
+      done
+      BEACON_LATENT_HEAD_DIM="variable-kv-separate"
+    else
+      if ! [[ "${BEACON_KV_LATENT_COMPRESS_RATIO}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Invalid BEACON_KV_LATENT_COMPRESS_RATIO: ${BEACON_KV_LATENT_COMPRESS_RATIO}" >&2
+        exit 1
+      fi
+      BEACON_RESOLVED_HEAD_DIM="$(infer_head_dim "${MODEL_NAME_OR_PATH}")"
+      if [[ -z "${BEACON_RESOLVED_HEAD_DIM}" ]]; then
+        echo "Cannot infer head_dim from ${MODEL_NAME_OR_PATH}. Set BEACON_ORIGINAL_HEAD_DIM manually." >&2
+        exit 1
+      fi
+      BEACON_LATENT_HEAD_DIM=$(( BEACON_RESOLVED_HEAD_DIM / BEACON_KV_LATENT_COMPRESS_RATIO ))
+      if (( BEACON_LATENT_HEAD_DIM < 1 )); then
+        echo "Invalid latent dim: head_dim=${BEACON_RESOLVED_HEAD_DIM}, ratio=${BEACON_KV_LATENT_COMPRESS_RATIO}" >&2
+        exit 1
+      fi
     fi
     beacon_kv_args+=(--beacon_kv_compression "${BEACON_KV_COMPRESSION}")
-    beacon_kv_args+=(--beacon_k_latent_head_dim "${BEACON_LATENT_HEAD_DIM}")
-    beacon_kv_args+=(--beacon_v_latent_head_dim "${BEACON_LATENT_HEAD_DIM}")
+    if [[ -n "${BEACON_K_LATENT_HEAD_DIM_LIST}" ]]; then
+      beacon_kv_args+=(--beacon_k_latent_head_dim_list "${BEACON_K_LATENT_HEAD_DIM_LIST_ARR[@]}")
+      beacon_kv_args+=(--beacon_v_latent_head_dim_list "${BEACON_V_LATENT_HEAD_DIM_LIST_ARR[@]}")
+    else
+      beacon_kv_args+=(--beacon_k_latent_head_dim "${BEACON_LATENT_HEAD_DIM}")
+      beacon_kv_args+=(--beacon_v_latent_head_dim "${BEACON_LATENT_HEAD_DIM}")
+    fi
     ;;
   *)
     echo "Unsupported BEACON_KV_COMPRESSION: ${BEACON_KV_COMPRESSION}" >&2
@@ -218,7 +262,12 @@ echo "occupy_after_finetune: ${OCCUPY_AFTER_FINETUNE}"
 echo "beacon: window=1024 stride=1024 ratio='2 4 8' param='q k v' pos=interleave"
 echo "beacon_extra: kv_compression=${BEACON_KV_COMPRESSION} k_skip_rope=${BEACON_SKIP_ROPE_FOR_BEACON_K} shared_down=${BEACON_SHARED_KV_DOWN_PROJ} up_group=${BEACON_UP_PROJ_GROUP_SIZE}"
 if [[ "${BEACON_KV_COMPRESSION}" == "lowrank_svd" ]]; then
-  echo "beacon_lowrank: head_dim=${BEACON_RESOLVED_HEAD_DIM} ratio=${BEACON_KV_LATENT_COMPRESS_RATIO} -> latent_dim=${BEACON_LATENT_HEAD_DIM}"
+  if [[ -n "${BEACON_K_LATENT_HEAD_DIM_LIST}" ]]; then
+    echo "beacon_lowrank: per_layer_k_latent_dims='${BEACON_K_LATENT_HEAD_DIM_LIST}'"
+    echo "beacon_lowrank: per_layer_v_latent_dims='${BEACON_V_LATENT_HEAD_DIM_LIST}'"
+  else
+    echo "beacon_lowrank: head_dim=${BEACON_RESOLVED_HEAD_DIM} ratio=${BEACON_KV_LATENT_COMPRESS_RATIO} -> latent_dim=${BEACON_LATENT_HEAD_DIM}"
+  fi
 else
   echo "beacon_lowrank: disabled"
 fi
