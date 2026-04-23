@@ -19,6 +19,8 @@ MASTER_PORT="${MASTER_PORT:-29531}"
 # no_beacon: 不使用 beacon（全量 attention）
 # question_only: 只对 question 部分做 beacon
 EVAL_MODE="${EVAL_MODE:-beacon8}"
+# raw_nokrope: 仅在 no_beacon 模式下生效，设置后执行 Q 保留 RoPE / K 去 RoPE
+RAW_NOKROPE="${RAW_NOKROPE:-False}"
 
 # --- 数据 & 输出 ---
 EVAL_DATA="${EVAL_DATA:-/dataset/common/tzh/dataset/long-llm/longbench}"
@@ -28,6 +30,12 @@ RESULT_ROOT="${RESULT_ROOT:-data/results/longbench}"
 # --- Beacon 参数（仅 beacon8 / question_only 模式生效）---
 BEACON_RATIO="${BEACON_RATIO:-8}"
 BEACON_RATIO_MIX="${BEACON_RATIO_MIX:-sequence}"
+BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K:-auto}"
+BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K="${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K:-auto}"
+BEACON_ENHANCE_K_POS_RESIDUAL="${BEACON_ENHANCE_K_POS_RESIDUAL:-auto}"
+BEACON_SHARED_KV_DOWN_PROJ="${BEACON_SHARED_KV_DOWN_PROJ:-auto}"
+BEACON_HEADWISE_UP_PROJ="${BEACON_HEADWISE_UP_PROJ:-auto}"
+BEACON_UP_PROJ_GROUP_SIZE="${BEACON_UP_PROJ_GROUP_SIZE:-auto}"
 
 # --- 评测超参 ---
 ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
@@ -84,6 +92,75 @@ export HF_DATASETS_DISABLE_PROGRESS_BARS=0
 export MAP_NUM_PROC="${MAP_NUM_PROC:-32}"
 export MAP_BATCH_SIZE="${MAP_BATCH_SIZE:-10}"
 
+normalize_bool_or_auto() {
+  local v="$1"
+  case "${v}" in
+    True|true) echo "True" ;;
+    False|false) echo "False" ;;
+    auto|AUTO) echo "auto" ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+normalize_bool() {
+  local v="$1"
+  case "${v}" in
+    True|true) echo "True" ;;
+    False|false) echo "False" ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+read_ckpt_bool_flag() {
+  local config_file="$1"
+  local key="$2"
+  if [[ -z "${config_file}" || ! -f "${config_file}" ]]; then
+    echo ""
+    return 0
+  fi
+  local raw
+  raw="$(grep -Po "\"${key}\"\\s*:\\s*\\K(true|false)" "${config_file}" | head -n 1 || true)"
+  case "${raw}" in
+    true) echo "True" ;;
+    false) echo "False" ;;
+    *) echo "" ;;
+  esac
+}
+
+normalize_int_or_auto() {
+  local v="$1"
+  case "${v}" in
+    auto|AUTO) echo "auto" ;;
+    *)
+      if [[ "${v}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "${v}"
+      else
+        return 1
+      fi
+      ;;
+  esac
+}
+
+read_ckpt_int_flag() {
+  local config_file="$1"
+  local key="$2"
+  if [[ -z "${config_file}" || ! -f "${config_file}" ]]; then
+    echo ""
+    return 0
+  fi
+  local raw
+  raw="$(grep -Po "\"${key}\"\\s*:\\s*\\K[0-9]+" "${config_file}" | head -n 1 || true)"
+  if [[ "${raw}" =~ ^[0-9]+$ ]]; then
+    echo "${raw}"
+  else
+    echo ""
+  fi
+}
+
 # 自动解析模型路径：优先用显式 MODEL_NAME_OR_PATH，否则从默认 finetune 目录选最新 ckpt
 if [[ -z "${MODEL_NAME_OR_PATH}" ]]; then
   if compgen -G "${DEFAULT_FINETUNE_DIR}/checkpoint-*" > /dev/null; then
@@ -106,6 +183,118 @@ fi
 if [[ -d "${MODEL_NAME_OR_PATH}" ]] && [[ ! -f "${MODEL_NAME_OR_PATH}/config.json" ]]; then
   echo "ERROR: ${MODEL_NAME_OR_PATH} 下没有 config.json，请指向具体 checkpoint 目录" >&2
   exit 1
+fi
+
+if ! BEACON_SKIP_ROPE_FOR_BEACON_K="$(normalize_bool_or_auto "${BEACON_SKIP_ROPE_FOR_BEACON_K}")"; then
+  echo "ERROR: BEACON_SKIP_ROPE_FOR_BEACON_K must be one of {True, False, auto}" >&2
+  exit 1
+fi
+if ! BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K="$(normalize_bool_or_auto "${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K}")"; then
+  echo "ERROR: BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K must be one of {True, False, auto}" >&2
+  exit 1
+fi
+if ! BEACON_ENHANCE_K_POS_RESIDUAL="$(normalize_bool_or_auto "${BEACON_ENHANCE_K_POS_RESIDUAL}")"; then
+  echo "ERROR: BEACON_ENHANCE_K_POS_RESIDUAL must be one of {True, False, auto}" >&2
+  exit 1
+fi
+if ! BEACON_SHARED_KV_DOWN_PROJ="$(normalize_bool_or_auto "${BEACON_SHARED_KV_DOWN_PROJ}")"; then
+  echo "ERROR: BEACON_SHARED_KV_DOWN_PROJ must be one of {True, False, auto}" >&2
+  exit 1
+fi
+if ! BEACON_HEADWISE_UP_PROJ="$(normalize_bool_or_auto "${BEACON_HEADWISE_UP_PROJ}")"; then
+  echo "ERROR: BEACON_HEADWISE_UP_PROJ must be one of {True, False, auto}" >&2
+  exit 1
+fi
+if ! BEACON_UP_PROJ_GROUP_SIZE="$(normalize_int_or_auto "${BEACON_UP_PROJ_GROUP_SIZE}")"; then
+  echo "ERROR: BEACON_UP_PROJ_GROUP_SIZE must be a positive integer or auto" >&2
+  exit 1
+fi
+if ! RAW_NOKROPE="$(normalize_bool "${RAW_NOKROPE}")"; then
+  echo "ERROR: RAW_NOKROPE must be one of {True, False}" >&2
+  exit 1
+fi
+if [[ "${EVAL_MODE}" != "no_beacon" && "${RAW_NOKROPE}" == "True" ]]; then
+  echo "ERROR: RAW_NOKROPE=True only works when EVAL_MODE=no_beacon" >&2
+  exit 1
+fi
+
+CONFIG_JSON_PATH=""
+if [[ -f "${MODEL_NAME_OR_PATH}/config.json" ]]; then
+  CONFIG_JSON_PATH="${MODEL_NAME_OR_PATH}/config.json"
+fi
+
+RESOLVED_BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K}"
+RESOLVED_BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K="${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K}"
+RESOLVED_BEACON_ENHANCE_K_POS_RESIDUAL="${BEACON_ENHANCE_K_POS_RESIDUAL}"
+RESOLVED_BEACON_SHARED_KV_DOWN_PROJ="${BEACON_SHARED_KV_DOWN_PROJ}"
+RESOLVED_BEACON_HEADWISE_UP_PROJ="${BEACON_HEADWISE_UP_PROJ}"
+RESOLVED_BEACON_UP_PROJ_GROUP_SIZE="${BEACON_UP_PROJ_GROUP_SIZE}"
+BEACON_SKIP_ROPE_SOURCE="manual"
+BEACON_CHUNK_FIXED_ROPE_SOURCE="manual"
+BEACON_ENHANCE_SOURCE="manual"
+BEACON_SHARED_DOWN_SOURCE="manual"
+BEACON_HEADWISE_UP_SOURCE="manual"
+BEACON_UP_GROUP_SOURCE="manual"
+
+if [[ "${BEACON_SKIP_ROPE_FOR_BEACON_K}" == "auto" ]]; then
+  RESOLVED_BEACON_SKIP_ROPE_FOR_BEACON_K="$(read_ckpt_bool_flag "${CONFIG_JSON_PATH}" "beacon_skip_rope_for_beacon_k")"
+  if [[ -z "${RESOLVED_BEACON_SKIP_ROPE_FOR_BEACON_K}" ]]; then
+    RESOLVED_BEACON_SKIP_ROPE_FOR_BEACON_K="False"
+    BEACON_SKIP_ROPE_SOURCE="default(False,missing_in_ckpt)"
+  else
+    BEACON_SKIP_ROPE_SOURCE="checkpoint"
+  fi
+fi
+
+if [[ "${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K}" == "auto" ]]; then
+  RESOLVED_BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K="$(read_ckpt_bool_flag "${CONFIG_JSON_PATH}" "beacon_chunk_fixed_rope_for_beacon_k")"
+  if [[ -z "${RESOLVED_BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K}" ]]; then
+    RESOLVED_BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K="False"
+    BEACON_CHUNK_FIXED_ROPE_SOURCE="default(False,missing_in_ckpt)"
+  else
+    BEACON_CHUNK_FIXED_ROPE_SOURCE="checkpoint"
+  fi
+fi
+
+if [[ "${BEACON_ENHANCE_K_POS_RESIDUAL}" == "auto" ]]; then
+  RESOLVED_BEACON_ENHANCE_K_POS_RESIDUAL="$(read_ckpt_bool_flag "${CONFIG_JSON_PATH}" "beacon_enhance_k_pos_residual")"
+  if [[ -z "${RESOLVED_BEACON_ENHANCE_K_POS_RESIDUAL}" ]]; then
+    RESOLVED_BEACON_ENHANCE_K_POS_RESIDUAL="False"
+    BEACON_ENHANCE_SOURCE="default(False,missing_in_ckpt)"
+  else
+    BEACON_ENHANCE_SOURCE="checkpoint"
+  fi
+fi
+
+if [[ "${BEACON_SHARED_KV_DOWN_PROJ}" == "auto" ]]; then
+  RESOLVED_BEACON_SHARED_KV_DOWN_PROJ="$(read_ckpt_bool_flag "${CONFIG_JSON_PATH}" "beacon_shared_kv_down_proj")"
+  if [[ -z "${RESOLVED_BEACON_SHARED_KV_DOWN_PROJ}" ]]; then
+    RESOLVED_BEACON_SHARED_KV_DOWN_PROJ="False"
+    BEACON_SHARED_DOWN_SOURCE="default(False,missing_in_ckpt)"
+  else
+    BEACON_SHARED_DOWN_SOURCE="checkpoint"
+  fi
+fi
+
+if [[ "${BEACON_HEADWISE_UP_PROJ}" == "auto" ]]; then
+  RESOLVED_BEACON_HEADWISE_UP_PROJ="$(read_ckpt_bool_flag "${CONFIG_JSON_PATH}" "beacon_headwise_up_proj")"
+  if [[ -z "${RESOLVED_BEACON_HEADWISE_UP_PROJ}" ]]; then
+    # compatibility: older lowrank checkpoints were trained with fully-coupled up projection
+    RESOLVED_BEACON_HEADWISE_UP_PROJ="False"
+    BEACON_HEADWISE_UP_SOURCE="compat_default(False,missing_in_ckpt)"
+  else
+    BEACON_HEADWISE_UP_SOURCE="checkpoint"
+  fi
+fi
+
+if [[ "${BEACON_UP_PROJ_GROUP_SIZE}" == "auto" ]]; then
+  RESOLVED_BEACON_UP_PROJ_GROUP_SIZE="$(read_ckpt_int_flag "${CONFIG_JSON_PATH}" "beacon_up_proj_group_size")"
+  if [[ -z "${RESOLVED_BEACON_UP_PROJ_GROUP_SIZE}" ]]; then
+    RESOLVED_BEACON_UP_PROJ_GROUP_SIZE="1"
+    BEACON_UP_GROUP_SOURCE="default(1,missing_in_ckpt)"
+  else
+    BEACON_UP_GROUP_SOURCE="checkpoint"
+  fi
 fi
 
 # 自动查找 LongBench 数据路径
@@ -131,17 +320,48 @@ fi
 # 构建评测模式参数
 mode_suffix=""
 mode_args=()
+if [[ "${EVAL_MODE}" != "no_beacon" && "${RESOLVED_BEACON_ENHANCE_K_POS_RESIDUAL}" == "True" && "${RESOLVED_BEACON_SKIP_ROPE_FOR_BEACON_K}" != "True" ]]; then
+  echo "ERROR: BEACON_ENHANCE_K_POS_RESIDUAL=True requires BEACON_SKIP_ROPE_FOR_BEACON_K=True" >&2
+  exit 1
+fi
 case "${EVAL_MODE}" in
   beacon8)
     mode_suffix="beacon8"
-    mode_args+=(--enable_beacon --beacon_ratio "${BEACON_RATIO}" --beacon_ratio_mix "${BEACON_RATIO_MIX}")
+    mode_args+=(
+      --enable_beacon
+      --beacon_ratio "${BEACON_RATIO}"
+      --beacon_ratio_mix "${BEACON_RATIO_MIX}"
+      --beacon_skip_rope_for_beacon_k "${RESOLVED_BEACON_SKIP_ROPE_FOR_BEACON_K}"
+      --beacon_chunk_fixed_rope_for_beacon_k "${RESOLVED_BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K}"
+      --beacon_enhance_k_pos_residual "${RESOLVED_BEACON_ENHANCE_K_POS_RESIDUAL}"
+      --beacon_shared_kv_down_proj "${RESOLVED_BEACON_SHARED_KV_DOWN_PROJ}"
+      --beacon_headwise_up_proj "${RESOLVED_BEACON_HEADWISE_UP_PROJ}"
+      --beacon_up_proj_group_size "${RESOLVED_BEACON_UP_PROJ_GROUP_SIZE}"
+    )
     ;;
   no_beacon)
     mode_suffix="nobeacon"
+    if [[ "${RAW_NOKROPE}" == "True" ]]; then
+      mode_suffix="raw_nokrope"
+      mode_args+=(
+        --raw_nokrope True
+      )
+    fi
     ;;
   question_only)
     mode_suffix="qonly"
-    mode_args+=(--enable_beacon --beacon_ratio "${BEACON_RATIO}" --beacon_ratio_mix "${BEACON_RATIO_MIX}" --question_only)
+    mode_args+=(
+      --enable_beacon
+      --beacon_ratio "${BEACON_RATIO}"
+      --beacon_ratio_mix "${BEACON_RATIO_MIX}"
+      --beacon_skip_rope_for_beacon_k "${RESOLVED_BEACON_SKIP_ROPE_FOR_BEACON_K}"
+      --beacon_chunk_fixed_rope_for_beacon_k "${RESOLVED_BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K}"
+      --beacon_enhance_k_pos_residual "${RESOLVED_BEACON_ENHANCE_K_POS_RESIDUAL}"
+      --beacon_shared_kv_down_proj "${RESOLVED_BEACON_SHARED_KV_DOWN_PROJ}"
+      --beacon_headwise_up_proj "${RESOLVED_BEACON_HEADWISE_UP_PROJ}"
+      --beacon_up_proj_group_size "${RESOLVED_BEACON_UP_PROJ_GROUP_SIZE}"
+      --question_only
+    )
     ;;
   *)
     echo "ERROR: 不支持的 EVAL_MODE=${EVAL_MODE}，可选: beacon8 | no_beacon | question_only" >&2
@@ -150,6 +370,17 @@ case "${EVAL_MODE}" in
 esac
 
 export CUDA_VISIBLE_DEVICES
+IFS=',' read -r -a __visible_gpus <<< "${CUDA_VISIBLE_DEVICES}"
+VISIBLE_GPU_COUNT=0
+for __gpu_id in "${__visible_gpus[@]}"; do
+  if [[ -n "${__gpu_id//[[:space:]]/}" ]]; then
+    VISIBLE_GPU_COUNT=$((VISIBLE_GPU_COUNT + 1))
+  fi
+done
+if (( NPROC_PER_NODE > VISIBLE_GPU_COUNT )); then
+  echo "ERROR: NPROC_PER_NODE=${NPROC_PER_NODE} > visible_gpus=${VISIBLE_GPU_COUNT} (CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES})" >&2
+  exit 1
+fi
 RESULT_DIR_FINAL="${RESULT_DIR:-${OUTPUT_NAME}-${mode_suffix}}"
 eval_sample_args=()
 if [[ -n "${MAX_SAMPLES_PER_TASK}" ]]; then
@@ -194,8 +425,9 @@ echo "  RESULT_DIR : ${RESULT_ROOT}/${RESULT_DIR_FINAL}"
 echo "  GPUS       : ${CUDA_VISIBLE_DEVICES} (nproc=${NPROC_PER_NODE}, port=${MASTER_PORT})"
 if [[ "${EVAL_MODE}" == "no_beacon" ]]; then
   echo "  BEACON     : disabled"
+  echo "  RAW_NOKROPE: ${RAW_NOKROPE}"
 else
-  echo "  BEACON     : ratio=${BEACON_RATIO} mix=${BEACON_RATIO_MIX}"
+  echo "  BEACON     : ratio=${BEACON_RATIO} mix=${BEACON_RATIO_MIX} k_skip_rope=${RESOLVED_BEACON_SKIP_ROPE_FOR_BEACON_K}(${BEACON_SKIP_ROPE_SOURCE}) k_chunk_fixed_rope=${RESOLVED_BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K}(${BEACON_CHUNK_FIXED_ROPE_SOURCE}) k_pos_residual=${RESOLVED_BEACON_ENHANCE_K_POS_RESIDUAL}(${BEACON_ENHANCE_SOURCE}) shared_down=${RESOLVED_BEACON_SHARED_KV_DOWN_PROJ}(${BEACON_SHARED_DOWN_SOURCE}) headwise_up=${RESOLVED_BEACON_HEADWISE_UP_PROJ}(${BEACON_HEADWISE_UP_SOURCE}) up_group=${RESOLVED_BEACON_UP_PROJ_GROUP_SIZE}(${BEACON_UP_GROUP_SOURCE})"
 fi
 echo "  RUNTIME    : attn=${ATTN_IMPL}, dtype=${DTYPE}, batch=${BATCH_SIZE}, max_len=${MAX_LENGTH}"
 if [[ -n "${MAX_SAMPLES_PER_TASK}" ]]; then

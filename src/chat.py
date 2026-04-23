@@ -10,7 +10,7 @@ from typing import List, Any, Dict, Union, Tuple
 
 import numpy as np
 from copy import deepcopy
-from transformers.tokenization_utils import PreTrainedTokenizer, BatchEncoding
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase, BatchEncoding
 
 
 @dataclasses.dataclass
@@ -28,7 +28,7 @@ def mask_nested_lists(lst, mask_target, mask_value=0):
         return [x if x != mask_target else mask_value for x in lst]
 
 
-def apply_chat_template(template, messages, system_message=None, tokenizer:PreTrainedTokenizer=None, add_generation_prompt=False, return_labels=False, **tokenization_kwargs):
+def apply_chat_template(template, messages, system_message=None, tokenizer:PreTrainedTokenizerBase=None, add_generation_prompt=False, return_labels=False, **tokenization_kwargs):
     """
     Wrap the message using the template from fastchat according to its role
 
@@ -132,6 +132,13 @@ def apply_chat_template(template, messages, system_message=None, tokenizer:PreTr
             # the number of tokens in the beginning of the entire sequence, usually the length of the bos string
             "begin_of_text_len": 0,
             # the number of tokens to offset in the beginning of each turn, these tokens should be masked
+            "turn_seq_left_offset": -4,
+        },
+        'qwen2.5': {
+            # Qwen2.5 still uses ChatML (<|im_start|> / <|im_end|>) for plain chat.
+            "turn_sep": "<|im_start|>user\n",
+            "role_sep": "<|im_end|>\n<|im_start|>assistant\n",
+            "begin_of_text_len": 0,
             "turn_seq_left_offset": -4,
         }
     }[template]
@@ -1621,6 +1628,25 @@ register_conv_template(
             151645,
         ],  # "<|endoftext|>", "<|im_start|>", "<|im_end|>"
         stop_str="<|endoftext|>",
+    )
+)
+
+# Qwen2.5 default chat template (ChatML). We keep this separate from "qwen"
+# so scripts can opt in explicitly while preserving backward compatibility.
+register_conv_template(
+    Conversation(
+        name="qwen2.5",
+        system_template="<|im_start|>system\n{system_message}",
+        system_message="You are Qwen, created by Alibaba Cloud. You are a helpful assistant.",
+        roles=("<|im_start|>user", "<|im_start|>assistant"),
+        sep_style=SeparatorStyle.CHATML,
+        sep="<|im_end|>",
+        stop_token_ids=[
+            151643,
+            151644,
+            151645,
+        ],
+        stop_str="<|im_end|>",
     )
 )
 

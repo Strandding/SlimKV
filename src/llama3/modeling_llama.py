@@ -198,7 +198,26 @@ class LlamaAttention(nn.Module):
         self.is_causal = True
         self.beacon_k_compression = getattr(config, "beacon_k_compression", "none")
         self.beacon_v_compression = getattr(config, "beacon_v_compression", "none")
-
+        self.beacon_chunk_fixed_rope_for_beacon_k = bool(
+            getattr(config, "beacon_chunk_fixed_rope_for_beacon_k", False)
+        )
+        self.beacon_enhance_k_pos_residual = bool(getattr(config, "beacon_enhance_k_pos_residual", False))
+        self.beacon_probe_prev_raw8_attn = bool(getattr(config, "beacon_probe_prev_raw8_attn", False))
+        probe_prev_raw_tokens = getattr(config, "beacon_probe_prev_raw_tokens", 8)
+        self.beacon_probe_prev_raw_tokens = int(probe_prev_raw_tokens) if probe_prev_raw_tokens is not None else 8
+        if self.beacon_probe_prev_raw_tokens <= 0:
+            self.beacon_probe_prev_raw_tokens = 8
+        self.beacon_probe_chunk2_heatmap = bool(getattr(config, "beacon_probe_chunk2_heatmap", False))
+        probe_chunk_idx = getattr(config, "beacon_probe_chunk_idx", 2)
+        try:
+            probe_chunk_idx = int(probe_chunk_idx)
+        except (TypeError, ValueError):
+            probe_chunk_idx = 2
+        if probe_chunk_idx <= 0:
+            probe_chunk_idx = 2
+        self.beacon_probe_chunk_idx = probe_chunk_idx
+        self._beacon_probe_records = []
+        self._beacon_chunk2_heatmap_record = None
         if (self.head_dim * self.num_heads) != self.hidden_size:
             raise ValueError(
                 f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
@@ -210,6 +229,7 @@ class LlamaAttention(nn.Module):
                 raise ValueError(
                     f"Unsupported {_name}: {_val}. Expected one of ['none', 'lowrank_svd']."
                 )
+        self._validate_beacon_pos_residual_config()
 
         self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=config.attention_bias)
         self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=config.attention_bias)
@@ -266,7 +286,7 @@ class LlamaAttention(nn.Module):
     # ---- K low-rank helpers ----
 
     def _use_headwise_up_proj(self):
-        return getattr(self.config, "beacon_headwise_up_proj", True)
+        return getattr(self.config, "beacon_headwise_up_proj", False)
 
     def _get_beacon_up_proj_group_size(self):
         group_size = getattr(self.config, "beacon_up_proj_group_size", 1)
@@ -745,14 +765,357 @@ class LlamaAttention(nn.Module):
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
 
-    def _apply_rotary_with_beacon(self, query_states, key_states, position_ids, beacon_size, beacon_indices):
-        """Apply RoPE to Q and K. When beacon_skip_rope_for_beacon_k is enabled,
-        beacon token keys are excluded from RoPE (their K values stay as-is)."""
-        if (
-            not getattr(self.config, "beacon_skip_rope_for_beacon_k", False)
-            or beacon_size <= 0
-            or beacon_indices is None
-        ):
+    def pop_beacon_probe_records(self):
+        if not self._beacon_probe_records:
+            return []
+        records = self._beacon_probe_records
+        self._beacon_probe_records = []
+        return records
+
+    def clear_beacon_probe_records(self):
+        self._beacon_probe_records = []
+
+    def pop_beacon_chunk2_heatmap_record(self):
+        if self._beacon_chunk2_heatmap_record is None:
+            return None
+        record = self._beacon_chunk2_heatmap_record
+        self._beacon_chunk2_heatmap_record = None
+        return record
+
+    def clear_beacon_chunk2_heatmap_record(self):
+        self._beacon_chunk2_heatmap_record = None
+
+    def _validate_beacon_pos_residual_config(self):
+        if self.beacon_chunk_fixed_rope_for_beacon_k:
+            if getattr(self.config, "beacon_parallel_window", 1) > 1:
+                raise ValueError(
+                    "beacon_chunk_fixed_rope_for_beacon_k does not support beacon_parallel_window>1."
+                )
+            if getattr(self.config, "beacon_pos", None) != "interleave":
+                raise ValueError(
+                    "beacon_chunk_fixed_rope_for_beacon_k currently supports beacon_pos='interleave' only."
+                )
+            if "k" not in getattr(self.config, "beacon_param", []):
+                raise ValueError(
+                    "beacon_chunk_fixed_rope_for_beacon_k requires 'k' in beacon_param."
+                )
+        if not self.beacon_enhance_k_pos_residual:
+            return
+        if not getattr(self.config, "beacon_skip_rope_for_beacon_k", False):
+            raise ValueError(
+                "beacon_enhance_k_pos_residual=True requires beacon_skip_rope_for_beacon_k=True."
+            )
+        if getattr(self.config, "beacon_parallel_window", 1) > 1:
+            raise ValueError(
+                "beacon_enhance_k_pos_residual does not support beacon_parallel_window>1."
+            )
+        if getattr(self.config, "beacon_pos", None) != "interleave":
+            raise ValueError(
+                "beacon_enhance_k_pos_residual currently supports beacon_pos='interleave' only."
+            )
+        if "k" not in getattr(self.config, "beacon_param", []):
+            raise ValueError(
+                "beacon_enhance_k_pos_residual requires 'k' in beacon_param."
+            )
+
+    def _should_enhance_beacon_k_pos_residual(self, beacon_size, beacon_indices):
+        return (
+            self.beacon_enhance_k_pos_residual
+            and beacon_size is not None
+            and beacon_size > 0
+            and beacon_indices is not None
+        )
+
+    def _should_apply_chunk_fixed_beacon_k_rope(self, beacon_size, beacon_indices):
+        return (
+            self.beacon_chunk_fixed_rope_for_beacon_k
+            and beacon_size is not None
+            and beacon_size > 0
+            and beacon_indices is not None
+        )
+
+    def _apply_chunk_fixed_rope_to_current_beacon_k(
+        self,
+        key_states: torch.Tensor,
+        position_ids: torch.LongTensor,
+        beacon_indices: torch.LongTensor,
+        q_len: int,
+        current_key_states: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Apply RoPE to current-step beacon K with one fixed anchor position per chunk.
+
+        Anchor position: the first token position in the current chunk.
+        """
+        if beacon_indices.dim() != 1:
+            raise ValueError(
+                f"beacon_indices must be 1D, found shape={tuple(beacon_indices.shape)}"
+            )
+        if beacon_indices.shape[0] < q_len:
+            raise ValueError(
+                f"beacon_indices length {beacon_indices.shape[0]} is smaller than q_len {q_len}."
+            )
+
+        cur_beacon_indices = beacon_indices[-q_len:].to(device=key_states.device)
+        beacon_positions = torch.nonzero(cur_beacon_indices == 1, as_tuple=False).flatten()
+        if beacon_positions.numel() == 0:
+            return key_states
+
+        current_start = key_states.shape[2] - q_len
+        anchor_local = 0
+        anchor_global = current_start + anchor_local
+
+        beacon_count = beacon_positions.numel()
+        anchor_pos = position_ids[:, anchor_global].unsqueeze(1).expand(-1, beacon_count)
+        selected_current = current_key_states.index_select(2, beacon_positions) if current_key_states is not None else key_states.index_select(2, beacon_positions + current_start)
+
+        # Reuse rotary_emb implementation: rotate selected beacon K with fixed anchor positions.
+        dummy_q = torch.zeros(
+            (selected_current.shape[0], self.num_heads, selected_current.shape[2], self.head_dim),
+            dtype=selected_current.dtype,
+            device=selected_current.device,
+        )
+        _, selected_rot = self.rotary_emb(dummy_q, selected_current, anchor_pos)
+
+        if current_key_states is not None:
+            current_key_states.index_copy_(2, beacon_positions, selected_rot)
+        key_states.index_copy_(2, beacon_positions + current_start, selected_rot)
+        return key_states
+
+    def _enhance_beacon_key_with_raw_pos_residual_from_rope(
+        self,
+        key_states: torch.Tensor,
+        key_states_rope: torch.Tensor,
+        beacon_indices: torch.LongTensor,
+        q_len: int,
+        current_key_states: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Enhance current-step beacon K using the nearest previous raw-token RoPE residual.
+
+        For each beacon in the current step, take only the last raw token before it:
+            delta = (k_rope - k) at that raw token,
+            k_beacon <- k_beacon + delta.
+
+        This reuses the already computed `key_states_rope` to avoid an extra RoPE call.
+        """
+        if beacon_indices.dim() != 1:
+            raise ValueError(
+                f"beacon_indices must be 1D, found shape={tuple(beacon_indices.shape)}"
+            )
+        if beacon_indices.shape[0] < q_len:
+            raise ValueError(
+                f"beacon_indices length {beacon_indices.shape[0]} is smaller than q_len {q_len}."
+            )
+
+        cur_beacon_indices = beacon_indices[-q_len:].to(device=key_states.device)
+        beacon_positions = torch.nonzero(cur_beacon_indices == 1, as_tuple=False).flatten()
+        if beacon_positions.numel() == 0:
+            return key_states
+
+        current_start = key_states.shape[2] - q_len
+        raw_mask = cur_beacon_indices == 0
+
+        token_positions = torch.arange(q_len, device=key_states.device)
+        # previous raw position for each token (or -1 if none)
+        last_raw = torch.where(raw_mask, token_positions, token_positions.new_full((q_len,), -1))
+        last_raw = torch.cummax(last_raw, dim=0).values
+        last_raw_prev = torch.cat([token_positions.new_full((1,), -1), last_raw[:-1]], dim=0)
+
+        residual_cur = key_states_rope[:, :, current_start:, :] - key_states[:, :, current_start:, :]
+        prev_raw_idx = last_raw_prev.index_select(0, beacon_positions)
+        valid_prev_raw = prev_raw_idx >= 0
+        if not valid_prev_raw.any():
+            return key_states
+
+        valid_idx = torch.nonzero(valid_prev_raw, as_tuple=False).flatten()
+        valid_beacon_pos = beacon_positions.index_select(0, valid_idx)
+        valid_beacon_pos_global = valid_beacon_pos + current_start
+
+        valid_prev_raw_idx = prev_raw_idx.index_select(0, valid_idx)
+        delta = residual_cur.index_select(2, valid_prev_raw_idx)
+
+        updated_key = key_states.index_select(2, valid_beacon_pos_global) + delta
+        key_states.index_copy_(2, valid_beacon_pos_global, updated_key)
+        if current_key_states is not None and current_key_states is not key_states:
+            updated_current = current_key_states.index_select(2, valid_beacon_pos) + delta
+            current_key_states.index_copy_(2, valid_beacon_pos, updated_current)
+
+        return key_states
+
+    def _collect_beacon_prev_raw_attn_probe(
+        self,
+        attn_probs: torch.Tensor,
+        beacon_indices: Optional[torch.LongTensor],
+        q_len: int,
+        kv_seq_len: int,
+    ) -> None:
+        if not self.beacon_probe_prev_raw8_attn or beacon_indices is None or q_len <= 0:
+            return
+        if beacon_indices.dim() != 1 or beacon_indices.shape[0] < q_len:
+            return
+
+        cur_beacon_indices = beacon_indices[-q_len:].to(device=attn_probs.device)
+        beacon_query_positions = torch.nonzero(cur_beacon_indices == 1, as_tuple=False).flatten()
+        if beacon_query_positions.numel() == 0:
+            return
+
+        prefix_len = kv_seq_len - len(beacon_indices)
+        if prefix_len < 0:
+            return
+        if prefix_len > 0:
+            sink_size = min(getattr(self.config, "beacon_sink_size", 0), prefix_len)
+            beacon_history_size = prefix_len - sink_size
+            prefix_indices = torch.cat(
+                [
+                    beacon_indices.new_zeros(sink_size),
+                    beacon_indices.new_ones(beacon_history_size),
+                ]
+            )
+            full_beacon_indices = torch.cat([prefix_indices, beacon_indices]).to(device=attn_probs.device)
+        else:
+            full_beacon_indices = beacon_indices.to(device=attn_probs.device)
+
+        if full_beacon_indices.shape[0] != kv_seq_len:
+            return
+
+        raw_positions = torch.nonzero(full_beacon_indices == 0, as_tuple=False).flatten()
+        if raw_positions.numel() == 0:
+            return
+
+        bsz = attn_probs.shape[0]
+        current_start = kv_seq_len - q_len
+        for beacon_query_pos in beacon_query_positions.tolist():
+            query_global_pos = current_start + beacon_query_pos
+            prev_raw = raw_positions[raw_positions < query_global_pos]
+            if prev_raw.numel() == 0:
+                continue
+
+            selected_raw = prev_raw[-self.beacon_probe_prev_raw_tokens :]
+            probs = attn_probs[:, :, beacon_query_pos, selected_raw]
+            probs_mean = probs.mean(dim=1)
+            probs_sum_mean = probs_mean.sum(dim=-1)
+            selected_raw_list = selected_raw.detach().cpu().tolist()
+
+            for batch_idx in range(bsz):
+                self._beacon_probe_records.append(
+                    {
+                        "layer_idx": int(self.layer_idx if self.layer_idx is not None else -1),
+                        "batch_idx": int(batch_idx),
+                        "beacon_query_local_idx": int(beacon_query_pos),
+                        "beacon_query_global_idx": int(query_global_pos),
+                        "prev_raw_positions": [int(x) for x in selected_raw_list],
+                        "prev_raw_probs_mean": probs_mean[batch_idx].detach().to(torch.float32).cpu().tolist(),
+                        "prev_raw_probs_sum_mean": float(probs_sum_mean[batch_idx].item()),
+                    }
+                )
+
+    def _collect_beacon_chunk2_heatmap_probe(
+        self,
+        attn_probs: torch.Tensor,
+        q_len: int,
+        past_key: Optional[torch.Tensor],
+        beacon_indices: Optional[torch.LongTensor],
+    ) -> None:
+        if not self.beacon_probe_chunk2_heatmap:
+            return
+        # Probe-only safeguard: never collect during training.
+        if self.training:
+            return
+        if self._beacon_chunk2_heatmap_record is not None:
+            return
+
+        runtime_chunk_idx = int(getattr(self.config, "_beacon_runtime_chunk_idx", -1))
+        raw_probe_mode = runtime_chunk_idx < 0 and beacon_indices is None
+        if raw_probe_mode:
+            # Raw-model probe: capture prefill attention heatmap once.
+            if past_key is not None or q_len <= 1:
+                return
+        else:
+            # Beacon probe: capture the configured chunk only.
+            if past_key is None or q_len <= 1:
+                return
+            if runtime_chunk_idx != self.beacon_probe_chunk_idx:
+                return
+        if attn_probs.shape[0] <= 0:
+            return
+
+        # [heads, q_len, kv_seq_len] -> [q_len, kv_seq_len]
+        heatmap = attn_probs[0].mean(dim=0).detach().to(torch.float32).cpu()
+        beacon_query_positions = []
+        raw_query_positions = []
+        beacon_key_positions = []
+        kv_seq_len = int(attn_probs.shape[-1])
+        if beacon_indices is not None and beacon_indices.dim() == 1 and beacon_indices.shape[0] >= q_len:
+            cur_beacon_indices = beacon_indices[-q_len:].to(device=attn_probs.device)
+            beacon_query_mask = torch.logical_or(cur_beacon_indices == 1, cur_beacon_indices == 2)
+            raw_query_mask = torch.logical_not(beacon_query_mask)
+            beacon_query_positions = (
+                torch.nonzero(beacon_query_mask, as_tuple=False).flatten().detach().cpu().tolist()
+            )
+            raw_query_positions = (
+                torch.nonzero(raw_query_mask, as_tuple=False).flatten().detach().cpu().tolist()
+            )
+
+            if len(beacon_indices) <= kv_seq_len:
+                prefix_len = kv_seq_len - len(beacon_indices)
+                if prefix_len > 0:
+                    sink_size = min(int(getattr(self.config, "beacon_sink_size", 0)), prefix_len)
+                    beacon_history_size = prefix_len - sink_size
+                    prefix_indices = torch.cat(
+                        [
+                            beacon_indices.new_zeros(sink_size),
+                            beacon_indices.new_ones(beacon_history_size),
+                        ]
+                    )
+                    full_beacon_indices = torch.cat([prefix_indices, beacon_indices]).to(device=attn_probs.device)
+                else:
+                    full_beacon_indices = beacon_indices.to(device=attn_probs.device)
+                if full_beacon_indices.shape[0] == kv_seq_len:
+                    beacon_key_mask = torch.logical_or(full_beacon_indices == 1, full_beacon_indices == 2)
+                    beacon_key_positions = (
+                        torch.nonzero(beacon_key_mask, as_tuple=False).flatten().detach().cpu().tolist()
+                    )
+        else:
+            # Raw-model probe: all queries are raw tokens; no beacon keys.
+            raw_query_positions = list(range(int(heatmap.shape[0])))
+        self._beacon_chunk2_heatmap_record = {
+            "layer_idx": int(self.layer_idx if self.layer_idx is not None else -1),
+            "chunk_idx": runtime_chunk_idx,
+            "q_len": int(heatmap.shape[0]),
+            "kv_seq_len": int(heatmap.shape[1]),
+            "beacon_query_positions": [int(x) for x in beacon_query_positions],
+            "raw_query_positions": [int(x) for x in raw_query_positions],
+            "beacon_key_positions": [int(x) for x in beacon_key_positions],
+            "heatmap": heatmap.tolist(),
+        }
+
+    def _apply_rotary_with_beacon(
+        self,
+        query_states,
+        key_states,
+        position_ids,
+        beacon_size,
+        beacon_indices,
+        current_key_states=None,
+    ):
+        """Apply RoPE to Q and K with beacon-K custom handling.
+
+        Two optional beacon-K behaviors are supported:
+        1) beacon_skip_rope_for_beacon_k: keep beacon K un-rotated.
+        2) beacon_chunk_fixed_rope_for_beacon_k:
+           - beacon K in each chunk uses one fixed anchor position (chunk-first token)
+           - the same fixed-RoPE beacon K is used for attention and KV cache
+        """
+        skip_beacon_k_rope = getattr(self.config, "beacon_skip_rope_for_beacon_k", False)
+        chunk_fixed_beacon_k_rope = self.beacon_chunk_fixed_rope_for_beacon_k
+        raw_nokrope = bool(getattr(self.config, "raw_nokrope", False))
+
+        # Raw-model mode: keep RoPE on Q but disable it on K.
+        if beacon_size <= 0 or beacon_indices is None:
+            if raw_nokrope:
+                query_states_rope, _ = self.rotary_emb(query_states, key_states, position_ids)
+                return query_states_rope, key_states
+            return self.rotary_emb(query_states, key_states, position_ids)
+        if not skip_beacon_k_rope and not chunk_fixed_beacon_k_rope:
             return self.rotary_emb(query_states, key_states, position_ids)
 
         # key_states shape: [bsz, num_kv_heads, kv_seq_len, head_dim]
@@ -769,19 +1132,62 @@ class LlamaAttention(nn.Module):
                 beacon_indices.new_zeros(sink_size),
                 beacon_indices.new_ones(beacon_history_size),
             ])
-            full_beacon_indices = torch.cat([prefix_indices, beacon_indices])
+            full_beacon_indices = torch.cat([prefix_indices, beacon_indices]).to(device=key_states.device)
         else:
-            full_beacon_indices = beacon_indices
+            full_beacon_indices = beacon_indices.to(device=key_states.device)
 
-        beacon_mask = torch.logical_or(full_beacon_indices == 1, full_beacon_indices == 2)
-        beacon_k_backup = key_states[:, :, beacon_mask].clone()
+        q_len = query_states.shape[2]
 
-        # Apply standard RoPE once, then restore beacon-key slots.
-        # This keeps raw-token K RoPE unchanged and only skips RoPE for beacon K.
-        query_states, key_states = self.rotary_emb(query_states, key_states, position_ids)
-        key_states[:, :, beacon_mask] = beacon_k_backup
+        # Apply RoPE once. If enabled, reuse this result to compute residuals
+        # and custom-update current-step beacon K in full-rank space.
+        query_states, key_states_rope = self.rotary_emb(query_states, key_states, position_ids)
 
-        return query_states, key_states
+        if self._should_enhance_beacon_k_pos_residual(beacon_size, beacon_indices):
+            if q_len > 0:
+                key_states = self._enhance_beacon_key_with_raw_pos_residual_from_rope(
+                    key_states=key_states,
+                    key_states_rope=key_states_rope,
+                    beacon_indices=beacon_indices,
+                    q_len=q_len,
+                    current_key_states=current_key_states,
+                )
+
+        if skip_beacon_k_rope and not chunk_fixed_beacon_k_rope:
+            # Keep beacon K un-rotated for both current and cached parts.
+            beacon_mask = torch.logical_or(full_beacon_indices == 1, full_beacon_indices == 2)
+            beacon_k_backup = key_states[:, :, beacon_mask].clone()
+            key_states_rope[:, :, beacon_mask] = beacon_k_backup
+            return query_states, key_states_rope
+
+        if chunk_fixed_beacon_k_rope:
+            # Restore historical beacon K from cache first. Cache stores chunk-fixed
+            # beacon K (already rotated with each chunk's anchor).
+            current_start = key_states.shape[2] - q_len
+            if current_start > 0:
+                history_beacon_mask = torch.logical_or(
+                    full_beacon_indices[:current_start] == 1,
+                    full_beacon_indices[:current_start] == 2,
+                )
+                if history_beacon_mask.any():
+                    history_pos = torch.nonzero(history_beacon_mask, as_tuple=False).flatten()
+                    key_states_rope[:, :, history_pos] = key_states[:, :, history_pos]
+
+            # Apply chunk-fixed RoPE to current-step beacon K on both attention path
+            # and cache path so they stay identical.
+            if (
+                current_key_states is not None
+                and self._should_apply_chunk_fixed_beacon_k_rope(beacon_size, beacon_indices)
+                and q_len > 0
+            ):
+                self._apply_chunk_fixed_rope_to_current_beacon_k(
+                    key_states=key_states_rope,
+                    position_ids=position_ids,
+                    beacon_indices=beacon_indices,
+                    q_len=q_len,
+                    current_key_states=current_key_states,
+                )
+
+        return query_states, key_states_rope
     
     # def qkv_proj_with_beacon(self, hidden_states, beacon_size, beacon_indices):
     #     if beacon_size > 0:
@@ -860,7 +1266,6 @@ class LlamaAttention(nn.Module):
         if beacon_size > 0:
             # NOTE: when beacon_pos == "interleave", the beacon_indices points to all beacon tokens in the current window (cached activations + input_ids), so we shall slice out the part corresponding to the input_ids
             cur_beacon_indices = beacon_indices[-hidden_states.shape[1]:]
-
             # NOTE: there is slight redundant computation because ordinal tokens should never be projected by beacon matrices, but we are doing this for efficiency
             if "q" in self.config.beacon_param:
                 ordinal_query_states = self.q_proj(hidden_states)
@@ -947,14 +1352,15 @@ class LlamaAttention(nn.Module):
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        current_key_states = key_states
 
         # return keys and values before rope
         # NOTE: incrementally return keys and values for beacon efficiency
-        past_key_value = (key_states, value_states, beacon_size, beacon_indices)
+        past_key_value = (current_key_states, value_states, beacon_size, beacon_indices)
 
         if past_key is not None:
             # reuse k, v, self_attention
-            key_states = torch.cat([past_key, key_states], dim=2)
+            key_states = torch.cat([past_key, current_key_states], dim=2)
             value_states = torch.cat([past_value, value_states], dim=2)
 
         # In no-beacon native generation, `generate()` expects an accumulated KV cache.
@@ -968,6 +1374,7 @@ class LlamaAttention(nn.Module):
             position_ids,
             beacon_size,
             beacon_indices,
+            current_key_states=current_key_states,
         )
 
         key_states = repeat_kv(key_states, self.num_key_value_groups)
@@ -990,6 +1397,18 @@ class LlamaAttention(nn.Module):
 
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        self._collect_beacon_prev_raw_attn_probe(
+            attn_probs=attn_weights,
+            beacon_indices=beacon_indices,
+            q_len=q_len,
+            kv_seq_len=kv_seq_len,
+        )
+        self._collect_beacon_chunk2_heatmap_probe(
+            attn_probs=attn_weights,
+            q_len=q_len,
+            past_key=past_key,
+            beacon_indices=beacon_indices,
+        )
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
 
@@ -1056,14 +1475,15 @@ class LlamaSdpaAttention(LlamaAttention):
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        current_key_states = key_states
 
         # return keys and values before rope
         # NOTE: incrementally return keys and values for beacon efficiency
-        past_key_value = (key_states, value_states, beacon_size, beacon_indices)
+        past_key_value = (current_key_states, value_states, beacon_size, beacon_indices)
 
         if past_key is not None:
             # reuse k, v, self_attention
-            key_states = torch.cat([past_key, key_states], dim=2)
+            key_states = torch.cat([past_key, current_key_states], dim=2)
             value_states = torch.cat([past_value, value_states], dim=2)
 
         # In no-beacon native generation, `generate()` expects an accumulated KV cache.
@@ -1077,6 +1497,7 @@ class LlamaSdpaAttention(LlamaAttention):
             position_ids,
             beacon_size,
             beacon_indices,
+            current_key_states=current_key_states,
         )
 
         key_states = repeat_kv(key_states, self.num_key_value_groups)
@@ -1153,14 +1574,15 @@ class LlamaFlashAttention2(LlamaAttention):
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        current_key_states = key_states
 
         # return keys and values before rope
         # NOTE: incrementally return keys and values for beacon efficiency
-        past_key_value = (key_states, value_states, beacon_size, beacon_indices)
+        past_key_value = (current_key_states, value_states, beacon_size, beacon_indices)
 
         if past_key is not None:
             # reuse k, v, self_attention
-            key_states = torch.cat([past_key, key_states], dim=2)
+            key_states = torch.cat([past_key, current_key_states], dim=2)
             value_states = torch.cat([past_value, value_states], dim=2)
 
         # In no-beacon native generation, `generate()` expects an accumulated KV cache.
@@ -1174,6 +1596,7 @@ class LlamaFlashAttention2(LlamaAttention):
             position_ids,
             beacon_size,
             beacon_indices,
+            current_key_states=current_key_states,
         )
 
         # TODO: These transpose are quite inefficient but Flash Attention requires the layout [batch_size, sequence_length, num_heads, head_dim]. We would need to refactor the KV cache
@@ -1591,6 +2014,39 @@ class LlamaModel(LlamaPreTrainedModel):
     def set_input_embeddings(self, value):
         self.embed_tokens = value
 
+    def pop_beacon_probe_records(self):
+        records = []
+        for layer in self.layers:
+            self_attn = layer.self_attn
+            if hasattr(self_attn, "pop_beacon_probe_records"):
+                layer_records = self_attn.pop_beacon_probe_records()
+                if layer_records:
+                    records.extend(layer_records)
+        return records
+
+    def clear_beacon_probe_records(self):
+        for layer in self.layers:
+            self_attn = layer.self_attn
+            if hasattr(self_attn, "clear_beacon_probe_records"):
+                self_attn.clear_beacon_probe_records()
+
+    def pop_beacon_chunk2_heatmap_records(self):
+        records = []
+        for layer in self.layers:
+            self_attn = layer.self_attn
+            if hasattr(self_attn, "pop_beacon_chunk2_heatmap_record"):
+                layer_record = self_attn.pop_beacon_chunk2_heatmap_record()
+                if layer_record is not None:
+                    records.append(layer_record)
+        records.sort(key=lambda x: x.get("layer_idx", -1))
+        return records
+
+    def clear_beacon_chunk2_heatmap_records(self):
+        for layer in self.layers:
+            self_attn = layer.self_attn
+            if hasattr(self_attn, "clear_beacon_chunk2_heatmap_record"):
+                self_attn.clear_beacon_chunk2_heatmap_record()
+
     @add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)
     def forward(
         self,
@@ -1624,6 +2080,31 @@ class LlamaModel(LlamaPreTrainedModel):
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
         past_key, past_value, beacon_size, beacon_indices = past_key_values[0]
+
+        # Eager attention in this codepath consumes an additive 4D mask
+        # of shape [bsz, 1, q_len, kv_len]. Generation can provide a 2D
+        # padding mask [bsz, kv_len], so convert it here for compatibility.
+        if (
+            attention_mask is not None
+            and attention_mask.dim() == 2
+            and getattr(self.config, "_attn_implementation", None) == "eager"
+        ):
+            bsz = attention_mask.shape[0]
+            q_len = seq_length
+            kv_len = attention_mask.shape[-1]
+            min_dtype = torch.finfo(torch.float32).min
+            device = attention_mask.device
+
+            # Padding mask: keys with mask==0 should be blocked for all queries.
+            additive_mask = torch.zeros((bsz, 1, q_len, kv_len), dtype=torch.float32, device=device)
+            key_padding = attention_mask[:, None, None, :].eq(0)
+            additive_mask = additive_mask.masked_fill(key_padding, min_dtype)
+
+            # Causal mask for current query block against full key length.
+            past_tokens = max(0, kv_len - q_len)
+            causal = torch.full((q_len, kv_len), min_dtype, dtype=torch.float32, device=device)
+            causal = torch.triu(causal, diagonal=1 + past_tokens)
+            attention_mask = additive_mask + causal[None, None, :, :]
 
         # BEACON: separately embed ordinal tokens and beacon tokens because ordinal tokens do not receive gradients
         if beacon_size > 0:
@@ -1740,6 +2221,24 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
     def get_decoder(self):
         return self.model
+
+    def pop_beacon_probe_records(self):
+        if hasattr(self.model, "pop_beacon_probe_records"):
+            return self.model.pop_beacon_probe_records()
+        return []
+
+    def clear_beacon_probe_records(self):
+        if hasattr(self.model, "clear_beacon_probe_records"):
+            self.model.clear_beacon_probe_records()
+
+    def pop_beacon_chunk2_heatmap_records(self):
+        if hasattr(self.model, "pop_beacon_chunk2_heatmap_records"):
+            return self.model.pop_beacon_chunk2_heatmap_records()
+        return []
+
+    def clear_beacon_chunk2_heatmap_records(self):
+        if hasattr(self.model, "clear_beacon_chunk2_heatmap_records"):
+            self.model.clear_beacon_chunk2_heatmap_records()
 
     @staticmethod
     def _validate_lowrank_beacon_kv_loading(config, loading_info):
@@ -1992,6 +2491,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         **kwargs,
     ):
         # t1 = time.time()
+        self.config._beacon_runtime_chunk_idx = -1
 
         # initialize cache
         self.memory.prepare(
@@ -2007,6 +2507,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             # t3 = time.time()
 
             input_ids, attention_mask, position_ids, past_key_values, labels = self.memory.step()
+            self.config._beacon_runtime_chunk_idx = int(self.memory._step_idx)
             loss_weights = build_beacon_loss_weights(
                 input_ids=input_ids,
                 labels=labels,
@@ -2051,6 +2552,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
         # output loss, past_key_values, and perplexity
         outputs = self.memory.output(outputs)
+        self.config._beacon_runtime_chunk_idx = -1
 
         # t9 = time.time()
 

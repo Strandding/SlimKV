@@ -1,8 +1,15 @@
 import torch
 from vllm import LLM, SamplingParams
 from transformers import GenerationConfig
+from dataclasses import dataclass
 from typing import List, Union
-from .modeling_utils import BeaconModelOutput
+
+
+@dataclass
+class BeaconModelOutput:
+    # Keep the output contract used by vLLM eval path without depending on modeling_utils.
+    batch_loss: List[float]
+    valid_token_num: List[int]
 
 HF_KEY_TO_VLLM_KEY = {
     "top_k": "top_k", 
@@ -20,7 +27,12 @@ class HFStyleVllmModel:
         **kwargs,
     ):
         self.model = LLM(**kwargs)
-        self.generation_config = GenerationConfig(**self.model.llm_engine.generation_config_fields)
+        # vLLM changed internal API across versions; keep compatibility here.
+        generation_fields = getattr(self.model.llm_engine, "generation_config_fields", None)
+        if isinstance(generation_fields, dict):
+            self.generation_config = GenerationConfig(**generation_fields)
+        else:
+            self.generation_config = GenerationConfig()
 
     @property
     def device(self):
@@ -35,6 +47,8 @@ class HFStyleVllmModel:
 
         for k, v in generation_config.items():
             if k in HF_KEY_TO_VLLM_KEY:
+                if v is None:
+                    continue
                 k = HF_KEY_TO_VLLM_KEY[k]
                 if k == "stop_token_ids" and isinstance(v, int):
                     v = [v]
@@ -60,8 +74,8 @@ class HFStyleVllmModel:
         if input_ids is not None:
             if isinstance(input_ids, torch.Tensor):
                 input_ids = input_ids.tolist()
-            outputs = self.model.generate(
-                prompt_token_ids=input_ids,
+            outputs = self._generate_with_token_ids(
+                input_ids=input_ids,
                 sampling_params=sampling_params,
                 use_tqdm=use_tqdm,
             )
@@ -74,6 +88,31 @@ class HFStyleVllmModel:
         outputs = [output.outputs[0].text for output in outputs]
         return outputs
 
+    def _generate_with_token_ids(self, input_ids, sampling_params, use_tqdm=False):
+        # Compatibility across vLLM versions:
+        # - old: model.generate(prompt_token_ids=...)
+        # - new: model.generate(prompts=[{"prompt_token_ids": ...}], ...)
+        try:
+            return self.model.generate(
+                prompt_token_ids=input_ids,
+                sampling_params=sampling_params,
+                use_tqdm=use_tqdm,
+            )
+        except TypeError:
+            token_prompts = [{"prompt_token_ids": ids} for ids in input_ids]
+            try:
+                return self.model.generate(
+                    prompts=token_prompts,
+                    sampling_params=sampling_params,
+                    use_tqdm=use_tqdm,
+                )
+            except TypeError:
+                return self.model.generate(
+                    token_prompts,
+                    sampling_params=sampling_params,
+                    use_tqdm=use_tqdm,
+                )
+
     def __call__(self, input_ids, attention_mask, labels, **kwargs):
         if isinstance(input_ids, torch.Tensor):
             device = input_ids.device
@@ -81,7 +120,11 @@ class HFStyleVllmModel:
             labels = labels.tolist()
 
         sampling_params = SamplingParams(prompt_logprobs=True, max_tokens=1, temperature=0)
-        outputs = self.model.generate(prompt_token_ids=input_ids, sampling_params=sampling_params)
+        outputs = self._generate_with_token_ids(
+            input_ids=input_ids,
+            sampling_params=sampling_params,
+            use_tqdm=False,
+        )
 
         batch_losses = []
         valid_token_nums = []

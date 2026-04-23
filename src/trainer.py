@@ -7,7 +7,7 @@ from dataclasses import asdict
 from typing import Any, Dict, List, Optional, Union
 from torch.utils.data import Sampler, Dataset
 from transformers.trainer import Trainer, is_datasets_available
-from transformers.tokenization_utils import BatchEncoding
+from transformers.tokenization_utils_base import BatchEncoding
 from transformers.utils import logging
 
 from .modeling_utils import evaluate_generation, evaluate_perplexity

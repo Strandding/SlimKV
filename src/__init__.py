@@ -30,7 +30,7 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
 
     model_args_dict = asdict(model_args)
     model_args_dict.update(**kwargs)
-    
+
     model_name_or_path = model_args_dict["model_name_or_path"]
     cache_dir = model_args_dict["model_cache_dir"]
     access_token = model_args_dict["access_token"]
@@ -110,6 +110,11 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
         if k.startswith("beacon") and v is not None:
             beacon_kwargs[k] = v
 
+    probe_kwargs = {}
+    for k, v in model_args_dict.items():
+        if k.startswith("beacon_probe") and v is not None:
+            probe_kwargs[k] = v
+
     # read raw config dict first to avoid strict AutoConfig validation on older transformers
     probe_config_dict, _ = PretrainedConfig.get_config_dict(
         model_name_or_path,
@@ -157,6 +162,19 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
             bnb_4bit_compute_dtype=dtype,
         )
         device_map = None
+
+    raw_nokrope_kwargs = {}
+    if model_args_dict.get("raw_nokrope", False):
+        if architecture != "LlamaForCausalLM":
+            logger.warning("raw_nokrope=True is ignored because architecture is not LlamaForCausalLM.")
+        elif not is_llama3_model:
+            logger.warning("raw_nokrope=True is ignored because model is not Llama3.")
+        elif model_args_dict["enable_beacon"]:
+            logger.warning("raw_nokrope=True is ignored when enable_beacon=True.")
+        elif model_args_dict["enable_vllm"]:
+            logger.warning("raw_nokrope=True is ignored when enable_vllm=True.")
+        else:
+            raw_nokrope_kwargs["raw_nokrope"] = True
 
     llama_config_class = None
     llama_model_class = None
@@ -234,7 +252,9 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
                     cache_dir=cache_dir,
                     token=access_token,
                     torch_dtype=dtype,
+                    **probe_kwargs,
                     **rope_kwargs,
+                    **raw_nokrope_kwargs,
                     **attn_kwargs,
                     **extra_kwargs,
                 )

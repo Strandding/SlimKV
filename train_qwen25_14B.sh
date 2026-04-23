@@ -29,12 +29,14 @@ TRAIN_DATA="${TRAIN_DATA:-${DATA_ROOT}/redpajama/train.json}"
 MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-/dataset/common/tzh/.model/Qwen2.5-14B-Instruct}"
 OUTPUT_NAME="${OUTPUT_NAME:-beacon-qwen25-14b-pretrain-dense}"
 OUTPUT_DIR="data/outputs/${OUTPUT_NAME}"
-CHAT_TEMPLATE="${CHAT_TEMPLATE:-qwen}"
+CHAT_TEMPLATE="${CHAT_TEMPLATE:-qwen2.5}"
 MASTER_PORT="${MASTER_PORT:-29544}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 BEACON_KV_COMPRESSION="${BEACON_KV_COMPRESSION:-none}"
-BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K:-False}"
+BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K:-True}"
 BEACON_SHARED_KV_DOWN_PROJ="${BEACON_SHARED_KV_DOWN_PROJ:-False}"
+BEACON_WINDOW="${BEACON_WINDOW:-2048}"
+BEACON_STRIDE="${BEACON_STRIDE:-2048}"
 BEACON_KV_LATENT_COMPRESS_RATIO="${BEACON_KV_LATENT_COMPRESS_RATIO:-2}"
 BEACON_K_LATENT_HEAD_DIM_LIST="${BEACON_K_LATENT_HEAD_DIM_LIST:-}"
 BEACON_V_LATENT_HEAD_DIM_LIST="${BEACON_V_LATENT_HEAD_DIM_LIST:-}"
@@ -237,7 +239,7 @@ echo "train_budget: total_samples=all (1 epoch)"
 fi
 echo "group_by_stride: ${GROUP_BY_STRIDE}"
 echo "occupy_after_train: ${OCCUPY_AFTER_TRAIN}"
-echo "beacon: window=2048 stride=2048 ratio='8' param='q k v' pos=interleave"
+echo "beacon: window=${BEACON_WINDOW} stride=${BEACON_STRIDE} ratio='8' param='q k v' pos=interleave"
 echo "beacon_extra: kv_compression=${BEACON_KV_COMPRESSION} k_skip_rope=${BEACON_SKIP_ROPE_FOR_BEACON_K} shared_down=${BEACON_SHARED_KV_DOWN_PROJ}"
 if [[ "${BEACON_KV_COMPRESSION}" == "lowrank_svd" ]]; then
   if [[ -n "${BEACON_K_LATENT_HEAD_DIM_LIST}" ]]; then
@@ -262,12 +264,12 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --max_length 20000 \
 "${group_by_stride_args[@]}" \
 --enable_beacon \
---beacon_window 2048 \
---beacon_stride 2048 \
+--beacon_window "${BEACON_WINDOW}" \
+--beacon_stride "${BEACON_STRIDE}" \
 --beacon_attn full-coverage \
 --beacon_attend_prev True \
 --beacon_sink_size 0 \
---beacon_ratio 8 \
+--beacon_ratio 4 8 16 \
 --beacon_ratio_mix step-random \
 --beacon_param q k v \
 --beacon_pos interleave \

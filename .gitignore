@@ -1,4 +1,5 @@
 data/outputs
+data/results
 # 忽略依赖库
 node_modules/
 /dist/

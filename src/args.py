@@ -78,6 +78,10 @@ class ModelArgs:
         default=1.,
         metadata={'help': 'RoPE scaling factor.'},
     )
+    raw_nokrope: bool = field(
+        default=False,
+        metadata={'help': 'Raw-model inference only: keep RoPE on Q, disable RoPE on K.'},
+    )
 
     lora: Optional[str] = field(
         default=None,
@@ -186,6 +190,30 @@ class ModelArgs:
     beacon_skip_rope_for_beacon_k: Optional[bool] = field(
         default=None,
         metadata={'help': 'Skip RoPE for beacon token keys. Beacon Q still gets RoPE.'}
+    )
+    beacon_chunk_fixed_rope_for_beacon_k: Optional[bool] = field(
+        default=None,
+        metadata={'help': 'Use chunk-fixed RoPE for beacon K: each chunk uses its first token position as anchor, and the same fixed-RoPE beacon K is used in attention and KV cache.'}
+    )
+    beacon_enhance_k_pos_residual: Optional[bool] = field(
+        default=None,
+        metadata={'help': 'When beacon_skip_rope_for_beacon_k=True, enhance beacon K with the nearest previous raw-token RoPE residual in the current chunk.'}
+    )
+    beacon_probe_prev_raw8_attn: Optional[bool] = field(
+        default=None,
+        metadata={'help': 'Probe-only flag: collect beacon-query attention probabilities over previous raw tokens in eager attention.'}
+    )
+    beacon_probe_prev_raw_tokens: Optional[int] = field(
+        default=None,
+        metadata={'help': 'Probe-only: how many previous raw tokens to collect per beacon query (default 8).'}
+    )
+    beacon_probe_chunk2_heatmap: Optional[bool] = field(
+        default=None,
+        metadata={'help': 'Probe-only: collect target-chunk attention heatmap (head-averaged) for each layer in eager attention.'}
+    )
+    beacon_probe_chunk_idx: Optional[int] = field(
+        default=None,
+        metadata={'help': 'Probe-only: 1-based chunk index to capture for heatmap (default 2).'}
     )
     beacon_kv_compression: Optional[str] = field(
         default=None,

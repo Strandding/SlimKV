@@ -18,15 +18,15 @@ mkdir -p "${TRITON_CACHE_DIR}"
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 
 # ========= 主要可调参数 =========
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
-NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-6,7}"
+NPROC_PER_NODE="${NPROC_PER_NODE:-2}"
 PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-1}"
-GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
+GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-4}"
 SAVE_STEPS="${SAVE_STEPS:-500}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-2}"
 DATA_ROOT="${DATA_ROOT:-/dataset/common/tzh/.dataset/long-llm}"
 TRAIN_DATA="${TRAIN_DATA:-${DATA_ROOT}/redpajama/train.json}"
-MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-/dataset/common/tzh/.model/Llama-3.1-8B-Instruct}"
+MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-/export/home2/zihan/activation_beacon/data/outputs/beacon-llama31-8b-lowrank-r2-nokropek}"
 OUTPUT_NAME_BASE="${OUTPUT_NAME_BASE:-beacon-llama31-8b-pretrain}"
 OUTPUT_NAME="${OUTPUT_NAME:-}"
 CHAT_TEMPLATE="${CHAT_TEMPLATE:-llama-3}"
@@ -35,9 +35,12 @@ RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 BEACON_WINDOW="${BEACON_WINDOW:-1024}"
 BEACON_STRIDE="${BEACON_STRIDE:-1024}"
 BEACON_RATIO="${BEACON_RATIO:-4 8 16}"
-BEACON_KV_COMPRESSION="${BEACON_KV_COMPRESSION:-none}"
-BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K:-False}"
+BEACON_KV_COMPRESSION="${BEACON_KV_COMPRESSION:-lowrank_svd}"
+BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K:-True}"
+BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K="${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K:-True}"
+BEACON_ENHANCE_K_POS_RESIDUAL="${BEACON_ENHANCE_K_POS_RESIDUAL:-False}"
 BEACON_SHARED_KV_DOWN_PROJ="${BEACON_SHARED_KV_DOWN_PROJ:-False}"
+BEACON_HEADWISE_UP_PROJ="${BEACON_HEADWISE_UP_PROJ:-False}"
 BEACON_UP_PROJ_GROUP_SIZE="${BEACON_UP_PROJ_GROUP_SIZE:-1}"
 BEACON_KV_LATENT_COMPRESS_RATIO="${BEACON_KV_LATENT_COMPRESS_RATIO:-2}"
 BEACON_KV_LATENT_HEAD_DIM_LIST="${BEACON_KV_LATENT_HEAD_DIM_LIST:-}"
@@ -81,6 +84,10 @@ fi
 
 if [[ "${BEACON_SHARED_KV_DOWN_PROJ}" == "True" && "${BEACON_SKIP_ROPE_FOR_BEACON_K}" != "True" ]]; then
   echo "Invalid config: BEACON_SHARED_KV_DOWN_PROJ=True requires BEACON_SKIP_ROPE_FOR_BEACON_K=True" >&2
+  exit 1
+fi
+if [[ "${BEACON_ENHANCE_K_POS_RESIDUAL}" == "True" && "${BEACON_SKIP_ROPE_FOR_BEACON_K}" != "True" ]]; then
+  echo "Invalid config: BEACON_ENHANCE_K_POS_RESIDUAL=True requires BEACON_SKIP_ROPE_FOR_BEACON_K=True" >&2
   exit 1
 fi
 
@@ -269,7 +276,7 @@ fi
 echo "group_by_stride: ${GROUP_BY_STRIDE}"
 echo "occupy_after_train: ${OCCUPY_AFTER_TRAIN}"
 echo "beacon: window=${BEACON_WINDOW} stride=${BEACON_STRIDE} ratio='${BEACON_RATIO}' param='q k v' pos=interleave"
-echo "beacon_extra: kv_compression=${BEACON_KV_COMPRESSION} k_skip_rope=${BEACON_SKIP_ROPE_FOR_BEACON_K} shared_down=${BEACON_SHARED_KV_DOWN_PROJ} up_group=${BEACON_UP_PROJ_GROUP_SIZE}"
+echo "beacon_extra: kv_compression=${BEACON_KV_COMPRESSION} k_skip_rope=${BEACON_SKIP_ROPE_FOR_BEACON_K} k_chunk_fixed_rope=${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K} k_pos_residual=${BEACON_ENHANCE_K_POS_RESIDUAL} shared_down=${BEACON_SHARED_KV_DOWN_PROJ} headwise_up=${BEACON_HEADWISE_UP_PROJ} up_group=${BEACON_UP_PROJ_GROUP_SIZE}"
 if [[ "${BEACON_KV_COMPRESSION}" == "lowrank_svd" ]]; then
   if [[ -n "${BEACON_K_LATENT_HEAD_DIM_LIST}" ]]; then
     echo "beacon_lowrank: per_layer_k_latent_dims='${BEACON_K_LATENT_HEAD_DIM_LIST}'"
@@ -303,7 +310,10 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --beacon_param q k v \
 --beacon_pos interleave \
 --beacon_skip_rope_for_beacon_k "${BEACON_SKIP_ROPE_FOR_BEACON_K}" \
+--beacon_chunk_fixed_rope_for_beacon_k "${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K}" \
+--beacon_enhance_k_pos_residual "${BEACON_ENHANCE_K_POS_RESIDUAL}" \
 --beacon_shared_kv_down_proj "${BEACON_SHARED_KV_DOWN_PROJ}" \
+--beacon_headwise_up_proj "${BEACON_HEADWISE_UP_PROJ}" \
 --beacon_up_proj_group_size "${BEACON_UP_PROJ_GROUP_SIZE}" \
 "${beacon_kv_args[@]}" \
 --chat_template "${CHAT_TEMPLATE}" \

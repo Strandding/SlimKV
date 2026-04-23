@@ -34,7 +34,10 @@ MASTER_PORT="${MASTER_PORT:-29524}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 BEACON_KV_COMPRESSION="${BEACON_KV_COMPRESSION:-none}"
 BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K:-False}"
+BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K="${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K:-False}"
+BEACON_ENHANCE_K_POS_RESIDUAL="${BEACON_ENHANCE_K_POS_RESIDUAL:-False}"
 BEACON_SHARED_KV_DOWN_PROJ="${BEACON_SHARED_KV_DOWN_PROJ:-False}"
+BEACON_HEADWISE_UP_PROJ="${BEACON_HEADWISE_UP_PROJ:-False}"
 BEACON_UP_PROJ_GROUP_SIZE="${BEACON_UP_PROJ_GROUP_SIZE:-1}"
 BEACON_KV_LATENT_COMPRESS_RATIO="${BEACON_KV_LATENT_COMPRESS_RATIO:-2}"
 BEACON_KV_LATENT_HEAD_DIM_LIST="${BEACON_KV_LATENT_HEAD_DIM_LIST:-}"
@@ -84,6 +87,10 @@ fi
 
 if [[ "${BEACON_SHARED_KV_DOWN_PROJ}" == "True" && "${BEACON_SKIP_ROPE_FOR_BEACON_K}" != "True" ]]; then
   echo "Invalid config: BEACON_SHARED_KV_DOWN_PROJ=True requires BEACON_SKIP_ROPE_FOR_BEACON_K=True" >&2
+  exit 1
+fi
+if [[ "${BEACON_ENHANCE_K_POS_RESIDUAL}" == "True" && "${BEACON_SKIP_ROPE_FOR_BEACON_K}" != "True" ]]; then
+  echo "Invalid config: BEACON_ENHANCE_K_POS_RESIDUAL=True requires BEACON_SKIP_ROPE_FOR_BEACON_K=True" >&2
   exit 1
 fi
 
@@ -260,7 +267,7 @@ fi
 echo "group_by_stride: ${GROUP_BY_STRIDE}"
 echo "occupy_after_finetune: ${OCCUPY_AFTER_FINETUNE}"
 echo "beacon: window=1024 stride=1024 ratio='2 4 8' param='q k v' pos=interleave"
-echo "beacon_extra: kv_compression=${BEACON_KV_COMPRESSION} k_skip_rope=${BEACON_SKIP_ROPE_FOR_BEACON_K} shared_down=${BEACON_SHARED_KV_DOWN_PROJ} up_group=${BEACON_UP_PROJ_GROUP_SIZE}"
+echo "beacon_extra: kv_compression=${BEACON_KV_COMPRESSION} k_skip_rope=${BEACON_SKIP_ROPE_FOR_BEACON_K} k_chunk_fixed_rope=${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K} k_pos_residual=${BEACON_ENHANCE_K_POS_RESIDUAL} shared_down=${BEACON_SHARED_KV_DOWN_PROJ} headwise_up=${BEACON_HEADWISE_UP_PROJ} up_group=${BEACON_UP_PROJ_GROUP_SIZE}"
 if [[ "${BEACON_KV_COMPRESSION}" == "lowrank_svd" ]]; then
   if [[ -n "${BEACON_K_LATENT_HEAD_DIM_LIST}" ]]; then
     echo "beacon_lowrank: per_layer_k_latent_dims='${BEACON_K_LATENT_HEAD_DIM_LIST}'"
@@ -295,12 +302,15 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --beacon_attn full-coverage \
 --beacon_attend_prev True \
 --beacon_sink_size 1 \
---beacon_ratio 4 8 \
+--beacon_ratio 4 8 16 32 \
 --beacon_ratio_mix step-random \
 --beacon_param q k v \
 --beacon_pos interleave \
 --beacon_skip_rope_for_beacon_k "${BEACON_SKIP_ROPE_FOR_BEACON_K}" \
+--beacon_chunk_fixed_rope_for_beacon_k "${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K}" \
+--beacon_enhance_k_pos_residual "${BEACON_ENHANCE_K_POS_RESIDUAL}" \
 --beacon_shared_kv_down_proj "${BEACON_SHARED_KV_DOWN_PROJ}" \
+--beacon_headwise_up_proj "${BEACON_HEADWISE_UP_PROJ}" \
 --beacon_up_proj_group_size "${BEACON_UP_PROJ_GROUP_SIZE}" \
 "${beacon_kv_args[@]}" \
 --attn_impl flash_attention_2 \

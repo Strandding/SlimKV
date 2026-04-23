@@ -29,7 +29,7 @@ DEFAULT_PRETRAIN_DIR="data/outputs/beacon-qwen25-14b-pretrain-dense"
 MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-}"
 OUTPUT_NAME="${OUTPUT_NAME:-beacon-qwen25-14b-finetune-dense}"
 OUTPUT_DIR="data/outputs/${OUTPUT_NAME}"
-CHAT_TEMPLATE="${CHAT_TEMPLATE:-qwen}"
+CHAT_TEMPLATE="${CHAT_TEMPLATE:-qwen2.5}"
 MASTER_PORT="${MASTER_PORT:-29554}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 BEACON_KV_COMPRESSION="${BEACON_KV_COMPRESSION:-none}"
@@ -289,7 +289,7 @@ torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m 
 --beacon_attn full-coverage \
 --beacon_attend_prev True \
 --beacon_sink_size 0 \
---beacon_ratio 4 8 \
+--beacon_ratio 4 8 16 32 \
 --beacon_ratio_mix step-random \
 --beacon_param q k v \
 --beacon_pos interleave \

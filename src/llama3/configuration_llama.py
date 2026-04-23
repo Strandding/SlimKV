@@ -135,6 +135,7 @@ class LlamaConfig(PretrainedConfig):
         head_dim=None,
         rope_theta=10000.0,
         rope_scaling=None,
+        raw_nokrope=False,
         mlp_bias=False,
         attention_bias=False,
         attention_dropout=0.0,
@@ -150,8 +151,14 @@ class LlamaConfig(PretrainedConfig):
         beacon_pos="interleave",
         beacon_parallel_window=1,
         beacon_skip_rope_for_beacon_k=False,
+        beacon_chunk_fixed_rope_for_beacon_k=False,
+        beacon_enhance_k_pos_residual=False,
+        beacon_probe_prev_raw8_attn=False,
+        beacon_probe_prev_raw_tokens=8,
+        beacon_probe_chunk2_heatmap=False,
+        beacon_probe_chunk_idx=2,
         beacon_shared_kv_down_proj=False,
-        beacon_headwise_up_proj=True,
+        beacon_headwise_up_proj=False,
         beacon_up_proj_group_size=1,
         beacon_k_compression="none",
         beacon_v_compression="none",
@@ -185,6 +192,7 @@ class LlamaConfig(PretrainedConfig):
         self.rope_theta = rope_theta
         self.mlp_bias = mlp_bias
         self.rope_scaling = rope_scaling
+        self.raw_nokrope = bool(raw_nokrope)
         if isinstance(self.rope_scaling, dict):
             rope_scaling_type = self.rope_scaling.get("type", self.rope_scaling.get("rope_type", None))
             if rope_scaling_type is not None:
@@ -208,6 +216,12 @@ class LlamaConfig(PretrainedConfig):
         self.beacon_pos = beacon_pos
         self.beacon_parallel_window = beacon_parallel_window
         self.beacon_skip_rope_for_beacon_k = beacon_skip_rope_for_beacon_k
+        self.beacon_chunk_fixed_rope_for_beacon_k = beacon_chunk_fixed_rope_for_beacon_k
+        self.beacon_enhance_k_pos_residual = beacon_enhance_k_pos_residual
+        self.beacon_probe_prev_raw8_attn = beacon_probe_prev_raw8_attn
+        self.beacon_probe_prev_raw_tokens = beacon_probe_prev_raw_tokens
+        self.beacon_probe_chunk2_heatmap = beacon_probe_chunk2_heatmap
+        self.beacon_probe_chunk_idx = beacon_probe_chunk_idx
         self.beacon_shared_kv_down_proj = beacon_shared_kv_down_proj
         self.beacon_headwise_up_proj = beacon_headwise_up_proj
         self.beacon_up_proj_group_size = beacon_up_proj_group_size

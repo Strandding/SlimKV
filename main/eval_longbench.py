@@ -210,11 +210,17 @@ def main():
         eos_token_id = model.generation_config.eos_token_id
     else:
         eos_token_id = tokenizer.eos_token_id
-    if isinstance(eos_token_id, int):
+    if eos_token_id is None:
+        eos_token_id = []
+    elif isinstance(eos_token_id, int):
         eos_token_id = [eos_token_id]
+    elif not isinstance(eos_token_id, list):
+        eos_token_id = list(eos_token_id)
     # stop generation for QA tasks when \n appears
     if args.newline_as_eos:
-        eos_token_id.append(tokenizer.encode("\n", add_special_tokens=False)[-1])
+        newline_eos = tokenizer.encode("\n", add_special_tokens=False)[-1]
+        if newline_eos not in eos_token_id:
+            eos_token_id.append(newline_eos)
 
     if hasattr(model, "generation_config"):
         pad_token_id = model.generation_config.pad_token_id
