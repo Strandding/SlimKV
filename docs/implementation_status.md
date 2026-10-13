@@ -58,6 +58,37 @@ H20 原始样本、参数、输出、诊断和日志保存在本地忽略目录 
 
 H20 证据位于忽略目录 `data/results/latent_cache_validation_20261014/`；本机对应目录 `/data/workspace/slimkv_analysis/latent_cache_validation_20261014/` 保存原始 logits tensor、18 个文件的 SHA receipt 和 `independent_audit.json`。GPU 运行正常退出，原占卡程序已恢复。FA2 已接入读取与重建逻辑，但本次只做 eager GPU 验证，SDPA 为 CPU 验证；LSA 与性能 benchmark 不在此次验收范围内。
 
+## 重建推理耗时、实际显存与 LongBench-v1 扩展样本（2026-10-14）
+
+`tools/benchmark_reconstruction.py` 在同一 H20、同一 f4 BF16 模型、eager、token ratio 8 下测量两条输入。每次重置 Memory，三种模式各预热一次，再做两轮对称 full → full_compact → latent → latent → full_compact → full；每种模式共四次计时，表中为中位数。性能阶段固定生成 64 token，首 token 来自 prefill，63 次 decode 不按 EOS 提前停止；tokenization、评分、文件 IO 和 logits 保存均在计时外。
+
+标准 full 的 sink 切片会保留首窗口完整 K/V backing storage；full_compact 仅在工具中克隆首个 sink，消除这部分额外占用。三种模式在全部预热和计时调用中生成 token 相同。新增两项 CPU 控制回归通过，总计 20 项 CPU 回归通过，H20 同样通过两项新增控制回归。主模型算法未因本次测量改变。
+
+| 实际输入 token | full_compact prefill（ms） | latent prefill（ms） | full_compact decode（ms/token） | latent decode（ms/token） |
+|---|---:|---:|---:|---:|
+| 4009 | 852.75 | 873.86 | 27.67 | 43.26 |
+| 6194 | 1373.87 | 1406.46 | 27.50 | 42.55 |
+
+重建模式的 prefill 耗时增加 2.48% / 2.37%，decode 每 token 耗时增加 56.30% / 54.75%；decode 吞吐从 36.13 / 36.36 降到 23.12 / 23.50 token/s。该后端当前提供空间节省，并未带来解码加速。
+
+| 实际输入 token | 标准 full / full_compact / latent 的 prefill 后持久 K/V storage（MiB） | full_compact / latent 的峰值 CUDA allocated（GiB） |
+|---|---|---|
+| 4009 | 323.750 / 179.875 / 132.906 | 21.883 / 21.836 |
+| 6194 | 247.000 / 103.125 / 30.563 | 21.992 / 21.850 |
+
+持久 K/V 为 Memory 中去重后的实际底层 storage，峰值显存还包含模型、buffers、logits 和注意力工作区。相对 full_compact，峰值只减少 48.125 MiB（0.215%）/ 145.496 MiB（0.646%）；不能把 Beacon 维度的四倍节省解释成 GPU 总显存四倍节省。CUDA allocator reserved 字节未作为存活显存计入比较。
+
+质量部分扩展为 Qasper、HotpotQA、MultiFieldQA-en、LCC 各两条，共八条 LongBench-v1 官方数据；选取原始 `length` 在 2500–6000 的前两条，实际输入 4009–11437 token，未截断。使用官方任务模板和生成上限、现有 Llama-3 模板及 QA 换行停止规则，LCC 不加 chat template、不使用 QA 换行 EOS。QA 用 F1，LCC 用首个有效代码行相似度，独立使用官方 metrics 复核。
+
+| 任务（各两条） | full | latent |
+|---|---:|---:|
+| Qasper | 21.88 | 21.88 |
+| HotpotQA | 100.00 | 100.00 |
+| MultiFieldQA-en | 40.28 | 40.28 |
+| LCC | 75.00 | 75.00 |
+
+八条生成 token 全部一致；这是按长度选取的四个任务小样本，不代表完整 LongBench-v1 得分。完整 raw timing、显存、预测、输入 SHA、源码版本、14 文件 SHA receipt 和独立审核在本机 `/data/workspace/slimkv_analysis/longbench_perf_20261014/`，H20 对应 `data/results/longbench_perf_20261014/`。运行正常退出并恢复原占卡。
+
 ## 待处理问题
 
 以下问题仍待处理：
