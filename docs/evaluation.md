@@ -1,6 +1,6 @@
 # SlimKV 评测
 
-常规生成评测采用标准注意力。Llama3 可以保存低维 Beacon K/V，在 prefill 和 decode 的注意力计算前按层重建；Qwen2 目前仍保存完整维度 K/V。独立的 `slimkv/latency` 实验路径不作为已交付的论文 LSA 后端。
+默认生成评测采用标准注意力。Llama3 可以保存低维 Beacon K/V，在计算前按层重建；可选 FA2 后端在 decode 中直接计算 latent attention。Qwen2 目前仍保存完整维度 K/V。独立的 `slimkv/latency` 实验入口保留用于诊断。
 
 ## LongBench
 
@@ -39,6 +39,43 @@ python -m tools.benchmark_reconstruction \
 full_compact 是对照工具中释放 sink 切片多余 backing storage 的完整缓存模式，值和注意力数学不变；标准 full 模式仍按仓库原路径运行。工具同时记录 CUDA live allocated/peak allocated、Memory 逻辑 K/V 字节和去重后的底层 storage 字节，不能把缓存字节节省当作 GPU 总显存节省。allocator reserved 字节不参与显存对比。
 
 `--disable_optional_flash_import` 只用于 eager/SDPA 验证环境中存在 FlashAttention 元信息但缺少扩展的情况；它在工具内关闭未使用的可选导入，不修改模型源码。
+
+## 可选 FA2 latent decode
+
+本后端使用 `beacon_decode_backend=fa2`，默认仍为 `reconstruct`。训练与 prefill 在原始 head dim 上计算；decode 的历史和新 Beacon K/V 直接参与 latent attention，不重建历史 K/V。raw/sink 分支在原始维度计算，两支用 LSE 合并为同一个 softmax。新插入 Beacon 的 decode 包含 raw、Beacon 两个 query，因果关系已单独验证。
+
+当前支持 Llama 的低维缓存兼容配置，另要求 full-coverage、attend_prev、global Linear up projection、关闭 Beacon K RoPE、开启 raw K RoPE，以及关闭 latent relative-position bias。H20 验证使用 BF16、未 padding 的 batch=1、每步一个原始 token。其他批量或多 token 调用保留重建路径。cache mode 与 decode backend 的切换都需要先 `model.memory.reset()`。
+
+现成 FA2 2.8.3 扩展用于计算维度不超过 256 的层；逐层不等 K/V rank 临时补零至相同维度，超过 256 的层补到 320，并调用本仓库补编译的 forward kernel。缓存保存实际 rank。f4 checkpoint 的全局 K/V rank 最大为 304/312；softmax scale 始终为 `1/sqrt(128)`。
+
+先准备能够导入 FA2 2.8.3 的环境，Torch、CUDA、Python 和 C++ ABI 必须与现成二进制匹配。H20 实测环境为独立 venv 的 Torch 2.11.0+cu129、Transformers 4.40.2；复用了已有 FA2 `.so`，仅编译 BF16、SM90、320 维 forward。构建不包含 backward 或其他 GPU 架构。
+
+```bash
+git clone --depth 1 --branch v2.8.3 \
+  https://github.com/Dao-AILab/flash-attention.git .cache/flash-attention-v2.8.3
+git -C .cache/flash-attention-v2.8.3 submodule update --init csrc/cutlass
+python -m tools.build_fa2_decode \
+  --fa2_source .cache/flash-attention-v2.8.3 \
+  --output_dir .cache/fa2_decode_320 --jobs 2
+export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
+python -m tools.validate_fa2_decode \
+  --extension_dir "$SLIMKV_FA2_DECODE_EXTENSION_DIR" \
+  --output data/results/fa2-kernel-validation.json
+```
+
+模型入口通过 `--beacon_cache_mode latent --beacon_decode_backend fa2` 启用。验证采用 `--attn_impl eager` 控制原始维度 prefill；decode 由独立的 FA2 后端接管。
+
+```bash
+python -m tools.benchmark_fa2_decode \
+  --model_name_or_path /path/to/checkpoint-2000 \
+  --samples_jsonl /path/to/samples.jsonl \
+  --output_dir data/results/fa2-benchmark \
+  --attn_impl eager --beacon_ratio 8 \
+  --decode_tokens 64 --warmup 1 --rounds 2 \
+  --perf_sample_indices 0 2
+```
+
+性能阶段在同一模型、同一环境下交替 full_compact → reconstruct → fa2 → fa2 → reconstruct → full_compact，每轮各两次。decode 输入固定为 full_compact 预热产生的 token，使各模式处理同一输入；计时包含实际 model forward、argmax 和 CUDA 同步边界，tokenization、诊断和 IO 在计时外。质量阶段单独使用正常 greedy 生成。工具另外保存两条输入的 teacher-forced logits 和 kernel 调用覆盖；BF16 运算顺序不同，输出不保证逐位相等。具体结果见 [实现状态](implementation_status.md)。
 
 ## NIAH 与其他任务
 

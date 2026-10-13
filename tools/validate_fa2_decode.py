@@ -1,0 +1,65 @@
+"""Exercise SlimKV's FA2 extension against an independent FP32 reference on CUDA."""
+import argparse
+import importlib
+import json
+import math
+import sys
+from pathlib import Path
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--extension_dir', required=True)
+    p.add_argument('--output', required=True)
+    p.add_argument('--quick', action='store_true')
+    args = p.parse_args()
+    import torch
+    sys.path.insert(0, args.extension_dir)
+    ext = importlib.import_module('slimkv_fa2_decode_320')
+    torch.manual_seed(42)
+    rows = []
+    cases = [(1, 1, 1, 32, 1, False, 1), (1, 2, 1, 32, 1, True, 1),
+             (1, 2, 129, 32, 1, True, 3), (2, 1, 257, 8, 2, False, 3)]
+    if not args.quick:
+        cases += [(b, q, n, h, hk, causal, splits)
+                  for b in [1, 2] for q in [1, 2] for n in [63, 128, 1027, 2048]
+                  for h, hk in [(32, 1), (8, 2)]
+                  for causal in ([False] if q == 1 else [False, True])
+                  for splits in [1, 0, 16]]
+    with torch.inference_mode():
+        for b, qlen, n, h, hk, causal, splits in cases:
+            q = torch.randn(b, qlen, h, 320, device='cuda', dtype=torch.bfloat16) * 0.3
+            k = torch.randn(b, n, hk, 320, device='cuda', dtype=torch.bfloat16) * 0.3
+            v = torch.randn_like(k)
+            k[..., 304:] = 0
+            v[..., 312:] = 0
+            q[..., 304:] = 0
+            scale = 1 / math.sqrt(128)
+            out, lse = ext.forward(q, k, v, scale, causal, splits, True)
+            kf = k.float().repeat_interleave(h // hk, dim=2).transpose(1, 2)
+            vf = v.float().repeat_interleave(h // hk, dim=2).transpose(1, 2)
+            logits = q.float().transpose(1, 2) @ kf.transpose(-1, -2) * scale
+            if causal:
+                masked = torch.arange(n, device='cuda')[None] > torch.arange(qlen, device='cuda')[:, None] + n - qlen
+                logits.masked_fill_(masked, -math.inf)
+            expected_lse = logits.logsumexp(-1)
+            # Native FA2's documented zero-output convention uses +inf LSE for
+            # fully masked rows. The SlimKV wrapper converts it to log Z=-inf.
+            native_lse = expected_lse.masked_fill(expected_lse.isneginf(), math.inf)
+            expected = (logits.softmax(-1).nan_to_num() @ vf).transpose(1, 2)
+            torch.testing.assert_close(out.float(), expected, atol=0.015, rtol=0.015)
+            torch.testing.assert_close(lse, native_lse, atol=0.001, rtol=0.001)
+            rows.append({'batch': b, 'query': qlen, 'key': n, 'heads': h, 'kv_heads': hk,
+                         'causal': causal, 'splits': splits,
+                         'max_output_error': (out.float() - expected).abs().max().item(),
+                         'max_finite_lse_error': (lse - expected_lse)[expected_lse.isfinite()].abs().max().item()})
+    torch.cuda.synchronize()
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps({'status': 'PASS', 'torch': torch.__version__,
+                                           'extension': ext.__file__, 'cases': rows}, indent=2))
+    print('FA2_DECODE_KERNEL_VALIDATION_COMPLETE', len(rows), flush=True)
+
+
+if __name__ == '__main__':
+    main()

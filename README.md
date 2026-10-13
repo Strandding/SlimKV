@@ -2,7 +2,7 @@
 
 SlimKV 通过 Beacon 汇聚历史上下文，训练逐层低秩 K/V 投影。Llama3 的常规推理可将 Beacon K/V 保存为低维表示，在 prefill 和 decode 的注意力计算前按层重建到原始维度；raw token 和 sink 保持完整维度，训练沿用完整维度缓存。
 
-本仓库对应论文 **SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention**。当前主实现支持 Llama3 与 Qwen2 的低秩训练；论文中的 LSA 尚未实现为正式推理后端。`slimkv/latency` 保留独立实验代码，不作为当前推理和质量评测入口。Llama3 的 `beacon_cache_mode=auto` 会为兼容的低秩配置启用低维存储与重建；`full` 保留完整缓存作对照，`latent` 显式要求低维缓存。Qwen2 当前仍使用完整维度缓存。具体支持范围和已知问题见 [实现状态](docs/implementation_status.md)。
+本仓库对应论文 **SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention**。当前主实现支持 Llama3 与 Qwen2 的低秩训练。Llama3 默认使用低维 Beacon 存储与原始维度重建，新增可选 `beacon_decode_backend=fa2` 在 decode 中直接计算全局 latent attention；训练和 prefill 保持原始维度计算。`beacon_cache_mode=auto/full/latent` 控制缓存方式。Qwen2 当前仍使用完整维度缓存。`slimkv/latency` 保留独立实验代码。FA2 的编译、启用方法见 [评测说明](docs/evaluation.md)，支持范围与实际验证见 [实现状态](docs/implementation_status.md)。
 
 ## 目录
 

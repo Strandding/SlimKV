@@ -52,6 +52,7 @@ if is_flash_attn_2_available():
     _flash_supports_window_size = "window_size" in list(inspect.signature(flash_attn_func).parameters)
 
 from .memory import LlamaMemory, ReconstructionCache, ReconstructionCacheUpdate
+from .fa2_decode import eligible as fa2_eligible, decode as fa2_decode
 from ..modeling_utils import optional_grad_ctx, compute_loss, build_beacon_loss_weights, get_rope, ModelOutput
 
 
@@ -1333,6 +1334,8 @@ class LlamaAttention(nn.Module):
                 return None
             selected = latent[:, roles]
             batch, length, rank = selected.shape
+            if getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2':
+                return selected.unsqueeze(1).contiguous()
             return selected.reshape(batch, length, self.num_key_value_heads,
                                     rank // self.num_key_value_heads).transpose(1, 2).contiguous()
 
@@ -1373,6 +1376,8 @@ class LlamaAttention(nn.Module):
         kv_seq_len = hidden_states.shape[-2]
         past_key, past_value, beacon_size, beacon_indices = past_key_value
         latent_cache = isinstance(past_key, ReconstructionCache)
+        if fa2_eligible(self, hidden_states, past_key_value, output_attentions):
+            return fa2_decode(self, hidden_states, position_ids, past_key_value)
         if latent_cache:
             past_key, past_value = past_key.materialize(self), past_value.materialize(self)
 
@@ -1506,6 +1511,8 @@ class LlamaSdpaAttention(LlamaAttention):
         kv_seq_len = hidden_states.shape[-2]
         past_key, past_value, beacon_size, beacon_indices = past_key_value
         latent_cache = isinstance(past_key, ReconstructionCache)
+        if fa2_eligible(self, hidden_states, past_key_value, output_attentions):
+            return fa2_decode(self, hidden_states, position_ids, past_key_value)
         if latent_cache:
             past_key, past_value = past_key.materialize(self), past_value.materialize(self)
         if past_key is not None:
@@ -1614,6 +1621,8 @@ class LlamaFlashAttention2(LlamaAttention):
 
         past_key, past_value, beacon_size, beacon_indices = past_key_value
         latent_cache = isinstance(past_key, ReconstructionCache)
+        if fa2_eligible(self, hidden_states, past_key_value, output_attentions):
+            return fa2_decode(self, hidden_states, position_ids, past_key_value)
         if latent_cache:
             past_key, past_value = past_key.materialize(self), past_value.materialize(self)
         if past_key is not None:
@@ -2537,7 +2546,21 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             attentions=outputs.attentions,
         )
 
-    def _beacon_forward(self, 
+    def _beacon_forward(self, input_ids=None, attention_mask=None, **kwargs):
+        decode_step = (not self.training and kwargs.get('labels') is None
+                       and input_ids is not None and input_ids.shape == (1, 1)
+                       and self.memory.all_input_ids is not None)
+        if decode_step and getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2':
+            old_mask = self.memory.all_attention_mask
+            if (old_mask == 0).any() or (attention_mask is not None and (attention_mask == 0).any()):
+                raise ValueError('FA2 latent decode currently requires unpadded batch size one.')
+        self.config._slimkv_decode_step = decode_step
+        try:
+            return self._beacon_forward_impl(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
+        finally:
+            self.config._slimkv_decode_step = False
+
+    def _beacon_forward_impl(self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,

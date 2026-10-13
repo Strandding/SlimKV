@@ -9,13 +9,15 @@ def _length(tensor):
 class ReconstructionCache:
     """A layer-local cache read; materialization is never retained by Memory."""
 
-    def __init__(self, sink, history, raw, window, window_roles, num_heads, head_dim, kind):
+    def __init__(self, sink, history, raw, window, window_roles, num_heads, head_dim, kind,
+                 window_raw_indices=None):
         self.sink = sink
         self.history = history
         self.raw = raw
         self.window = window
         self.window_roles = window_roles
         self.kind = kind
+        self.window_raw_indices = window_raw_indices
         batch = next((x.shape[0] for x in (sink, history, raw, window) if x is not None), 0)
         length = sum(_length(x) for x in (sink, history, raw, window))
         self.shape = (batch, num_heads, length, head_dim)
@@ -29,7 +31,8 @@ class ReconstructionCache:
             batch, heads, length, dim = latent.shape
             flat = latent.transpose(1, 2).reshape(batch, length, heads * dim)
             full = up(flat)
-            return full.reshape(batch, length, heads, attention.head_dim).transpose(1, 2)
+            return full.reshape(batch, length, attention.num_key_value_heads,
+                                attention.head_dim).transpose(1, 2)
 
         history = reconstruct(self.history)
         if self.window is None:
@@ -62,6 +65,8 @@ class LlamaMemory(Memory):
         self.window_beacon_activations = [(None, None) for _ in range(self.config.num_hidden_layers)]
         self._window_roles = None
         self._latent_cache_active = None
+        self._cache_decode_backend = None
+        self._window_raw_indices = None
 
     @property
     def latent_cache_active(self):
@@ -69,6 +74,13 @@ class LlamaMemory(Memory):
 
     def _select_cache_mode(self):
         mode = getattr(self.config, 'beacon_cache_mode', 'auto')
+        backend = getattr(self.config, 'beacon_decode_backend', 'reconstruct')
+        if backend not in ('reconstruct', 'fa2'):
+            raise ValueError(f'Unknown beacon_decode_backend: {backend}')
+        if self._cache_decode_backend is None:
+            self._cache_decode_backend = backend
+        elif backend != self._cache_decode_backend:
+            raise RuntimeError('Reset Memory before changing the decode backend.')
         if mode not in ('auto', 'full', 'latent'):
             raise ValueError(f'Unknown beacon_cache_mode: {mode}')
         supported = (
@@ -88,6 +100,18 @@ class LlamaMemory(Memory):
                              'non-overlapping window, low-rank K/V, and no fixed-RoPE, '
                              'K residual or beacon_skip overrides.')
         active = not self.training and mode != 'full' and supported
+        if not self.training and backend == 'fa2' and (
+            not active or self.config.beacon_attn != 'full-coverage'
+            or not self.config.beacon_attend_prev
+            or not getattr(self.config, 'beacon_skip_rope_for_beacon_k', False)
+            or getattr(self.config, 'raw_nokrope', False)
+            or getattr(self.config, 'beacon_skip_rope_for_raw_k', False)
+            or getattr(self.config, 'beacon_headwise_up_proj', False)
+            or getattr(self.config, 'beacon_latent_rpb', False)
+        ):
+            raise ValueError('FA2 decode requires latent storage, full-coverage, attend_prev, '
+                             'raw K RoPE, unrotated Beacon K, global up projections '
+                             'and no latent relative-position bias.')
         if self._latent_cache_active is None:
             self._latent_cache_active = active
         elif active != self._latent_cache_active:
@@ -103,8 +127,8 @@ class LlamaMemory(Memory):
             self.sink_activations[layer_idx], self.beacon_activations[layer_idx],
             self.raw_activations[layer_idx], self.window_beacon_activations[layer_idx],
         ]
-        key = ReconstructionCache(*(x[0] for x in pairs), self._window_roles, heads, head_dim, 'k')
-        value = ReconstructionCache(*(x[1] for x in pairs), self._window_roles, heads, head_dim, 'v')
+        key = ReconstructionCache(*(x[0] for x in pairs), self._window_roles, heads, head_dim, 'k', self._window_raw_indices)
+        value = ReconstructionCache(*(x[1] for x in pairs), self._window_roles, heads, head_dim, 'v', self._window_raw_indices)
         return key, value, beacon_size, beacon_indices
 
     def get_memory_size(self):
@@ -120,12 +144,16 @@ class LlamaMemory(Memory):
             if not isinstance(update, ReconstructionCacheUpdate):
                 raise TypeError('Latent Memory requires projected Beacon latents from Llama attention.')
             key, value, _, indices = update
-            current_roles = indices[-key.shape[2]:] != 0
             old_raw_k, old_raw_v = self.raw_activations[idx]
             old_window_k, old_window_v = self.window_beacon_activations[idx]
             # Boolean indexing owns its storage, unlike a view into a full projection.
-            raw_k = cat_tensor([old_raw_k, key[:, :, ~current_roles]], dim=2)
-            raw_v = cat_tensor([old_raw_v, value[:, :, ~current_roles]], dim=2)
+            if getattr(update, 'raw_only', False):
+                new_raw_k, new_raw_v = key, value
+            else:
+                current_roles = indices[-key.shape[2]:] != 0
+                new_raw_k, new_raw_v = key[:, :, ~current_roles], value[:, :, ~current_roles]
+            raw_k = cat_tensor([old_raw_k, new_raw_k], dim=2)
+            raw_v = cat_tensor([old_raw_v, new_raw_v], dim=2)
             window_k = cat_tensor([old_window_k, update.key_latents], dim=2)
             window_v = cat_tensor([old_window_v, update.value_latents], dim=2)
             if self.beacon_activations[idx][0] is None and self.config.beacon_sink_size > 0:
@@ -145,6 +173,8 @@ class LlamaMemory(Memory):
                 self.raw_activations[idx] = (raw_k, raw_v)
                 self.window_beacon_activations[idx] = (window_k, window_v)
         self._window_roles = None if self._is_full_window else indices != 0
+        if self._cache_decode_backend == 'fa2':
+            self._window_raw_indices = None if self._is_full_window else (indices == 0).nonzero().flatten()
 
     def cache_bytes(self):
         """Logical persistent K/V bytes; attention workspaces are excluded."""

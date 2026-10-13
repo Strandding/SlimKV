@@ -1,12 +1,13 @@
 # SlimKV 实现状态
 
-主实现提供 Beacon 分块压缩、Llama3/Qwen2 低秩 K/V 投影、逐层 rank 配置、SVD 初始化、冻结 Backbone 的训练和常规长上下文评测。按作者确认的实际状态，论文中的 LSA 尚未实现为正式推理后端；当前推理使用低秩 K/V 重建回原始维度的常规路径。`slimkv/latency` 是独立实验代码，不作为已交付或已验收的 LSA 实现。
+主实现提供 Beacon 分块压缩、Llama3/Qwen2 低秩 K/V 投影、逐层 rank 配置、SVD 初始化、冻结 Backbone 的训练和常规长上下文评测。Llama3 默认推理使用低秩 K/V 重建回原始维度；新增可选 FA2 latent decode 后端，已做 H20 f4 权重的小规模验证。完整论文 LSA 的多模型、质量与效率协议仍待完成。`slimkv/latency` 保留独立实验代码。
 
 ## 计算路径
 
 | 路径 | Beacon 缓存 | 注意力 | 支持模型 |
 |---|---|---|---|
 | `slimkv/llama3` 兼容的低秩推理配置 | 低维 Beacon K/V，raw/sink 完整维度 | 重建后标准注意力 | Llama3 |
+| `slimkv/llama3` + `beacon_decode_backend=fa2` | 全局 latent Beacon K/V，raw/sink 完整维度 | prefill 重建；decode 用 raw/latent 两支 FA2 与 LSE 合并 | Llama3，H20 BF16 已验证 |
 | `slimkv/llama3` 训练、full 模式、不兼容配置；`slimkv/qwen2` | 完整维度 K/V | 标准注意力 | Llama3、Qwen2 |
 | `slimkv/latency` | 全局 latent K/V | raw/Beacon logits 统一 softmax | Llama eager 原型 |
 
@@ -16,7 +17,7 @@ Llama3 新增 `beacon_cache_mode=auto/full/latent`。auto 是默认模式，在�
 
 当前支持 interleave、window=stride、单窗口编码、正 token 压缩比、K/V 均为低秩，并排除 chunk-fixed K RoPE、K positional residual 和 beacon_skip。auto 对不支持的配置保留完整缓存；显式 latent 会报错。Qwen2 仍保留完整缓存。
 
-f4 权重的 Beacon K/V 特征维度平均缩小四倍，但 raw/sink、重建工作区和其他模型开销仍存在，整体显存不会直接缩小四倍。注意力仍在原始 head dim 上执行，属于重建推理，LSA 尚未交付。
+f4 权重的 Beacon K/V 特征维度平均缩小四倍，但 raw/sink、工作区和其他模型开销仍存在，整体显存不会直接缩小四倍。默认重建路径的注意力在原始 head dim 上执行；可选 FA2 后端在 decode 中使用全局 latent 维度。
 
 ## 已知问题
 
@@ -89,6 +90,43 @@ H20 证据位于忽略目录 `data/results/latent_cache_validation_20261014/`；
 
 八条生成 token 全部一致；这是按长度选取的四个任务小样本，不代表完整 LongBench-v1 得分。完整 raw timing、显存、预测、输入 SHA、源码版本、14 文件 SHA receipt 和独立审核在本机 `/data/workspace/slimkv_analysis/longbench_perf_20261014/`，H20 对应 `data/results/longbench_perf_20261014/`。运行正常退出并恢复原占卡。
 
+
+## 可选 FA2 latent decode：两轮实现与验证（2026-10-14）
+
+新增 `beacon_decode_backend=fa2`，默认保持 reconstruct。实际 decode 时，raw/sink 使用原始 128 维 FA2；Beacon 使用全头耦合的 global latent attention。按 GQA 分组把旋转后的 Q 投入 U_K 的各 head 切片；latent PV 再经 U_V 切片投回输出维度。两支的 LSE 合并成同一个 softmax，scale 保持 1/sqrt(128)。新 Beacon 直接 down-project 后加入 cache，不重建历史或当前 Beacon K/V。prefill 和训练保留原路径。
+
+f4 checkpoint 每层 K/V rank 不同，全局最大为 304/312。预编译 FA2 2.8.3 处理不超过 256 维的层；`kernels/fa2_decode` 基于官方 FA2 v2.8.3/CUTLASS，仅补编译 BF16、SM90、320 维的 forward split-KV 与 combine kernels。临时计算补零到同一宽度，持久缓存保存实际 rank，形状为 `[B,1,N,R]`。H20 独立环境为 Torch 2.11.0+cu129、Transformers 4.40.2，复用已有 FA2 二进制；与此前 Torch 2.13 的性能记录分开比较。
+
+支持范围：Llama、global Linear up projection、full-coverage、attend_prev、interleave、window=stride、正 token ratio；Beacon K 不加 RoPE，raw K 加 RoPE，无 chunk-fixed/K residual/latent relative-position bias。GPU 验证为 BF16、无 padding、batch=1、每步一个原始 token，新 Beacon 步为两个 query。其 raw 分支可见全部 raw，latent 分支使用 bottom-right causal mask。遇到 FA2 整行 mask 的 +inf LSE 约定时，合并前转换为零概率质量。训练、批量和多 raw token 调用保留重建路径。
+
+第一轮先贯通两支 attention；第二轮省掉逐层 CUDA `max().item()` RoPE 同步和无需 padding 的张量拷贝。25 项实际模型 CPU 测试在 H20 通过，包含 FP32 global/GQA/bias/shared down、短 prefill、首次 Beacon、跨窗口、新 Beacon 因果关系和默认训练回归。320 维 kernel 的 148 个 GPU cases 覆盖 query=1/2、因果/非因果、batch=1/2、GQA、边界长度、单/自动/16 splits；对独立 FP32 reference 最大输出绝对误差为 0.002335，四个实际 compute-sanitizer memcheck cases 为 0 errors。本机当前临时 Python 环境缺 Torch，CPU 模型测试在 H20 执行；本机完成源码检查和独立数据/评分审核。
+
+性能采用同一个模型，full_compact/reconstruct/fa2 各一次预热；两轮对称 full_compact → reconstruct → fa2 → fa2 → reconstruct → full_compact，每模式四次取中位。首 token 由 prefill 产生，63 次 decode 固定输入为 full_compact 预热产生的 token；诊断、tokenization、评分与 IO 均在同步计时外。
+
+| 实际输入 token | full_compact decode（ms/token） | reconstruct decode（ms/token） | FA2 第一轮 / 第二轮（ms/token） |
+|---|---:|---:|---:|
+| 4009 | 26.572 | 41.534 | 32.048 / 29.770 |
+| 6194 | 26.405 | 41.356 | 31.929 / 29.426 |
+
+第二轮 FA2 相对重建路径减少 decode 耗时 28.32% / 28.85%，但仍比 full_compact 慢 12.03% / 11.44%；当前没有达到比完整缓存更快的结果。第一轮使用 31 次 decode、每模式两次，第二轮使用 63 次、每模式四次；两轮的跨运行数字仅展示迭代趋势，正式收益来自第二轮同运行对照。
+
+prefill 的 full_compact/reconstruct/fa2 中位数为 851.60/869.29/865.48 ms（4009 token）与 1368.01/1401.62/1392.87 ms（6194 token）。FA2 和 reconstruct 的 prefill 后持久 K/V storage 相同，为 132.906/30.563 MiB；full_compact 为 179.875/103.125 MiB。Beacon K/V 部分仍精确压缩四倍。两种低维模式的整次调用峰值相同，受原始维度 prefill 支配；不能把 decode 算法变化解释为整体显存进一步四倍下降。
+
+LongBench-v1 复用此前八条原始样本和同一生成配置，两个版本均得到：
+
+| 任务（各两条） | reconstruct | FA2 |
+|---|---:|---:|
+| Qasper | 21.88 | 21.88 |
+| HotpotQA | 100.00 | 100.00 |
+| MultiFieldQA-en | 40.28 | 40.28 |
+| LCC | 75.00 | 75.00 |
+
+七条生成 token 完全一致；LCC 原始索引 22 在第 52 个生成 token 起不同，首个有效代码行及该任务评分保持一致。FA2 两轮的八条生成 token 逐条一致。只覆盖这些小样本，不能据此宣称完整 LongBench 质量或 BF16 逐位等价。
+
+两条输入各保存 prefill 加 16 次 teacher-forced decode 的完整 128256 logits。prefill 最大差为 0，decode 最大/平均绝对差分别为 0.21875/0.02144 与 0.53125/0.03905，34 个 argmax 全部相同。实际每条验证记录 1024 次 FA2 调用，其中 288 次使用新 320 维扩展，覆盖两种 query 长度。
+
+原始结果、不可变 source_v1/v1b/v2、编译命令和 SHA manifest、CPU/GPU/sanitizer 日志、预测、计时与显存记录在 H20 `data/results/fa2_decode_20261014/`；本机对应 `/data/workspace/slimkv_analysis/fa2_decode_20261014/` 保存 SHA receipt 和独立审核。完整 logits tensor 保留在 H20；独立 tensor 审核读取实际文件。两轮 GPU suite 均正常退出，原占卡程序已恢复。启用及构建命令见 [评测说明](evaluation.md)。
+
 ## 待处理问题
 
 以下问题仍待处理：
@@ -103,7 +141,7 @@ H20 证据位于忽略目录 `data/results/latent_cache_validation_20261014/`；
 
 - 论文的等能量阈值、rank floor 和剩余预算自动分配；目前需要外部提供 rank 列表。
 - Qwen latent-cache attention、Qwen3 MoE 支持。
-- 统一 latent backend 的 LongBench/NIAH 与完整模型等价性验收。
+- FA2 latent 后端的完整 LongBench/NIAH、多模型、批处理与长上下文质量验收；目前仅 Llama 小样本。
 - 最终三 seed NIAH judge、随机字符重建、attention 相似性统计和多问题共享上下文实验。
 - 论文完整效率协议：attention 单独计时、synthetic Full KV、latent-cache Recon、独立重复和 median。
 - SlimKV 的 vLLM 模型、paged cache 和连续批处理。

@@ -151,6 +151,10 @@ class ModelArgs:
         default=None,
         metadata={'help': 'Llama3 inference Beacon cache: auto, full, or latent (reconstruct before attention).'},
     )
+    beacon_decode_backend: Optional[str] = field(
+        default=None,
+        metadata={'help': 'Llama3 decode backend: reconstruct (default) or inference-only latent FA2.'},
+    )
     beacon_stride: Optional[int] = field(
         default=None,
         metadata={'help': 'The stride of the sliding window.'}
