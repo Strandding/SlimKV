@@ -1,6 +1,6 @@
 # SlimKV 实现状态
 
-主实现提供 Beacon 分块压缩、Llama3/Qwen2 低秩 K/V 投影、逐层 rank 配置、SVD 初始化、冻结 Backbone 的训练和常规长上下文评测。Llama 的 latent cache 与 hybrid attention 是独立 eager 原型，尚未接入所有评测入口或 vLLM。
+主实现提供 Beacon 分块压缩、Llama3/Qwen2 低秩 K/V 投影、逐层 rank 配置、SVD 初始化、冻结 Backbone 的训练和常规长上下文评测。按作者确认的实际状态，论文中的 LSA 尚未实现为正式推理后端；当前推理使用低秩 K/V 重建回原始维度的常规路径。`slimkv/latency` 是独立实验代码，不作为已交付或已验收的 LSA 实现。
 
 ## 计算路径
 
@@ -11,9 +11,32 @@
 
 `beacon_*` 字段和权重键保留，兼容已有 checkpoint。项目名称和 Python 包名为 SlimKV；Beacon 是算法术语。Headwise/grouped up projection 可用于部分常规实验，但不能直接映射到现有 hybrid loader。
 
+当前常规路径在缓存前完成重建，因此 Beacon K/V 缓存的最后一维仍为原始 head dim。特征压缩四倍描述低秩投影维度，不代表此路径的持久 K/V 缓存节省四倍；token 维度的 Beacon 压缩仍然生效。
+
 ## 已知问题
 
-Llama 常规路径已修复无新 Beacon 时的历史 K RoPE 处理。CPU 回归验证覆盖纯 raw、包含新 Beacon、训练最后窗口、prefill 尾块、decode 和 chunk-fixed 历史缓存；完整权重生成质量仍需另行验证。
+Llama 常规路径已修复无新 Beacon 时的历史 K RoPE 处理。CPU 回归验证覆盖纯 raw、包含新 Beacon、训练最后窗口、prefill 尾块、decode 和 chunk-fixed 历史缓存；已有 BF16 权重的小规模生成验证已完成，完整质量评测仍待开展。
+
+## 实际权重的小规模验证（2026-10-14）
+
+在 H20 上使用下述 f4 `checkpoint-2000`，比较修复前 `eeaca5e` 和修复后 `c8c8935` 两份独立源码。推理采用常规完整维度重建路径、BF16、eager、Llama-3 chat template、greedy；token 压缩比固定为 8，window/stride 保持 1024，每条样本前重置 Memory。逐层特征维度和权重不变。
+
+从 LongBench-v1 官方 `THUDM/LongBench` 的 Qasper 和 HotpotQA 中各取两条：按原始顺序选择数据集 `length` 在 2500–6000 的前两条，不截断上下文。QA 使用各任务默认生成上限（128/32）和现有评测的换行停止规则。
+
+| 任务 / 原始索引 | 实际输入 token | 修复前 QA F1 | 修复后 QA F1 |
+|---|---:|---:|---:|
+| Qasper / 0 | 4009 | 34.48 | 31.25 |
+| Qasper / 2 | 4370 | 12.50 | 12.50 |
+| HotpotQA / 16 | 6194 | 100.00 | 100.00 |
+| HotpotQA / 22 | 5145 | 100.00 | 100.00 |
+
+四条 QA F1 均值为 61.75 → 60.94；三条生成 token 完全一致，一条措辞改变。本次没有观察到质量提升，四条按长度选取的样本也不能代表完整 LongBench 分数。
+
+四条输入在修复前后的 prefill 首步 logits 完全一致。全部 32 层均实际经过无新 Beacon 的 decode 分支；抽查第 0、31 层时，旧代码返回的历史 Beacon K 相对未旋转 K 的最大绝对差为 3.65625–11.96875，新代码均为 0。全部 32 层 Beacon K/V 缓存最后一维仍为 128，确认实际采用重建后的完整维度缓存。这些样本没有覆盖无新 Beacon 的 prefill 尾块，相关验证来自上述 CPU 回归。
+
+H20 原始样本、参数、输出、诊断和日志保存在本地忽略目录 `data/results/longbench_v1_smoke_20261014/`；本机对应记录和独立评分审核保存在 `/data/workspace/slimkv_analysis/longbench_v1_smoke_20261014/`。运行正常退出，原占卡程序已恢复。本次记录不用于效率结论。
+
+## 待处理问题
 
 以下问题仍待处理：
 

@@ -1,8 +1,8 @@
 # SlimKV
 
-SlimKV 实现联合 token 与特征维度的 KV cache 压缩：通过 Beacon 汇聚历史上下文，训练逐层低秩 K/V 投影，并提供无需完整 K/V 重建的 latent attention 原型。
+SlimKV 通过 Beacon 汇聚历史上下文，训练逐层低秩 K/V 投影。当前实际推理先将低秩 K/V 重建回原始维度，再执行常规注意力。
 
-本仓库对应论文 **SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention**。当前主实现支持 Llama3 与 Qwen2 的低秩训练；Llama latent attention 位于独立的 `slimkv/latency` 路径。常规评测路径仍保存完整维度的 Beacon K/V。具体支持范围和已知问题见 [实现状态](docs/implementation_status.md)。
+本仓库对应论文 **SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention**。当前主实现支持 Llama3 与 Qwen2 的低秩训练；论文中的 LSA 尚未实现为正式推理后端。`slimkv/latency` 保留独立实验代码，不作为当前推理和质量评测入口。常规评测路径保存完整维度的 Beacon K/V，不能据此声称特征维度带来四倍缓存节省。具体支持范围和已知问题见 [实现状态](docs/implementation_status.md)。
 
 ## 目录
 
