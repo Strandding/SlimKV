@@ -1,6 +1,6 @@
 # SlimKV 评测
 
-常规生成评测和 latent attention benchmark 使用不同模型路径。常规路径可以验证低秩权重的生成效果，但缓存已还原为完整维度；只有 `slimkv/latency` 的 hybrid 路径保存 latent Beacon K/V。
+常规生成评测采用标准注意力。Llama3 可以保存低维 Beacon K/V，在 prefill 和 decode 的注意力计算前按层重建；Qwen2 目前仍保存完整维度 K/V。独立的 `slimkv/latency` 实验路径不作为已交付的论文 LSA 后端。
 
 ## LongBench
 
@@ -13,6 +13,10 @@ bash scripts/evaluation/eval_longbench_llama31_8B.sh
 ```
 
 通用入口为 `python -m main.eval_longbench --help`。独立请求之间必须调用 `model.memory.reset()`；评测入口会为每个 batch 重置。输出保存在 `data/results/`，每个任务文件包含首行分数和后续预测记录。
+
+Llama3 常规入口新增 `--beacon_cache_mode`：默认 `auto` 在兼容配置的推理中保存低维 Beacon K/V；`full` 用于完整缓存对照；`latent` 显式要求低维缓存，配置不兼容时会报错。当前低维存储支持 interleave、window=stride、单窗口编码、正 token 压缩比、K/V 均为低秩，且不启用 chunk-fixed K RoPE、K positional residual 或 beacon_skip。训练始终保留完整缓存；切换训练状态或模式前先重置 Memory。验证使用 greedy 生成。
+
+同一权重的对照可在调用 `main.eval_longbench` 时分别传入 `--beacon_cache_mode full` 和 `--beacon_cache_mode latent`，保持其他参数一致。小规模评测可以设置 `--tasks qasper hotpotqa --max_samples_per_task 2`。当前 H20 验证显式使用 `--attn_impl eager`；SDPA 已做 CPU 回归，FA2 尚未做此次 GPU 验收。
 
 `BEACON_RATIO` 是 token 压缩比例，不是低秩特征压缩比例。平均 f4 checkpoint 配合 token ratio 4/8 分别对应名义 t4f4/t8f4；raw tail 和 sink 会使实际压缩比低于名义值。
 

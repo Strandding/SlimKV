@@ -51,7 +51,7 @@ if is_flash_attn_2_available():
 
     _flash_supports_window_size = "window_size" in list(inspect.signature(flash_attn_func).parameters)
 
-from ..memory import Memory
+from .memory import LlamaMemory, ReconstructionCache, ReconstructionCacheUpdate
 from ..modeling_utils import optional_grad_ctx, compute_loss, build_beacon_loss_weights, get_rope, ModelOutput
 
 
@@ -378,11 +378,14 @@ class LlamaAttention(nn.Module):
             up_proj = nn.Linear(global_rank, out_features, bias=self.k_proj.bias is not None, dtype=dtype, device=device)
         return down_proj, up_proj
 
-    def _project_beacon_key(self, hidden_states):
+    def _project_beacon_key(self, hidden_states, return_latent=False):
         if self._use_lowrank_beacon_k():
             if self._use_shared_kv_down_proj():
-                return self.beacon_k_up_proj(self.beacon_kv_down_proj(hidden_states))
-            return self.beacon_k_up_proj(self.beacon_k_down_proj(hidden_states))
+                latent = self.beacon_kv_down_proj(hidden_states)
+            else:
+                latent = self.beacon_k_down_proj(hidden_states)
+            full = self.beacon_k_up_proj(latent)
+            return (full, latent) if return_latent else full
         return self.beacon_k_proj(hidden_states)
 
     # ---- V low-rank helpers ----
@@ -437,11 +440,14 @@ class LlamaAttention(nn.Module):
             up_proj = nn.Linear(global_rank, out_features, bias=self.v_proj.bias is not None, dtype=dtype, device=device)
         return down_proj, up_proj
 
-    def _project_beacon_value(self, hidden_states):
+    def _project_beacon_value(self, hidden_states, return_latent=False):
         if self._use_lowrank_beacon_v():
             if self._use_shared_kv_down_proj():
-                return self.beacon_v_up_proj(self.beacon_kv_down_proj(hidden_states))
-            return self.beacon_v_up_proj(self.beacon_v_down_proj(hidden_states))
+                latent = self.beacon_kv_down_proj(hidden_states)
+            else:
+                latent = self.beacon_v_down_proj(hidden_states)
+            full = self.beacon_v_up_proj(latent)
+            return (full, latent) if return_latent else full
         return self.beacon_v_proj(hidden_states)
 
     # ---- SVD conversion: K ----
@@ -1263,7 +1269,8 @@ class LlamaAttention(nn.Module):
     #         attn_output = self.o_proj(attn_output)
     #     return attn_output
 
-    def qkv_proj_with_beacon(self, hidden_states, beacon_size, beacon_indices):
+    def qkv_proj_with_beacon(self, hidden_states, beacon_size, beacon_indices, return_latents=False):
+        key_latent, value_latent = None, None
         if beacon_size > 0:
             # NOTE: when beacon_pos == "interleave", the beacon_indices points to all beacon tokens in the current window (cached activations + input_ids), so we shall slice out the part corresponding to the input_ids
             cur_beacon_indices = beacon_indices[-hidden_states.shape[1]:]
@@ -1281,7 +1288,10 @@ class LlamaAttention(nn.Module):
 
             if "k" in self.config.beacon_param:
                 ordinal_key_states = self.k_proj(hidden_states)
-                beacon_key_states = self._project_beacon_key(hidden_states)
+                if return_latents:
+                    beacon_key_states, key_latent = self._project_beacon_key(hidden_states, return_latent=True)
+                else:
+                    beacon_key_states = self._project_beacon_key(hidden_states)
                 key_states = torch.where((cur_beacon_indices == 0)[:, None], ordinal_key_states, beacon_key_states)
                 if (cur_beacon_indices == 2).any():
                     # beacon_indices == 2 means the beacon token is used to replicate the ones in previous window for parallel encoding
@@ -1292,7 +1302,10 @@ class LlamaAttention(nn.Module):
 
             if "v" in self.config.beacon_param:
                 ordinal_value_states = self.v_proj(hidden_states)
-                beacon_value_states = self._project_beacon_value(hidden_states)
+                if return_latents:
+                    beacon_value_states, value_latent = self._project_beacon_value(hidden_states, return_latent=True)
+                else:
+                    beacon_value_states = self._project_beacon_value(hidden_states)
                 value_states = torch.where((cur_beacon_indices == 0)[:, None], ordinal_value_states, beacon_value_states)
                 if (cur_beacon_indices == 2).any():
                     # beacon_indices == 2 means the beacon token is used to replicate the ones in previous window for parallel encoding
@@ -1306,7 +1319,25 @@ class LlamaAttention(nn.Module):
             key_states = self.k_proj(hidden_states)
             value_states = self.v_proj(hidden_states)
 
+        if return_latents:
+            return query_states, key_states, value_states, key_latent, value_latent
         return query_states, key_states, value_states
+
+    def _incremental_cache(self, key, value, beacon_size, indices, latents):
+        if latents is None:
+            return key, value, beacon_size, indices
+        roles = indices[-key.shape[2]:] != 0
+
+        def pack(latent):
+            if latent is None:
+                return None
+            selected = latent[:, roles]
+            batch, length, rank = selected.shape
+            return selected.reshape(batch, length, self.num_key_value_heads,
+                                    rank // self.num_key_value_heads).transpose(1, 2).contiguous()
+
+        return ReconstructionCacheUpdate(key, value, beacon_size, indices,
+                                         pack(latents[0]), pack(latents[1]))
 
     def o_proj_with_beacon(self, attn_output, beacon_size, beacon_indices):
         if beacon_size > 0:
@@ -1341,6 +1372,9 @@ class LlamaAttention(nn.Module):
         bsz, q_len, _ = hidden_states.size()
         kv_seq_len = hidden_states.shape[-2]
         past_key, past_value, beacon_size, beacon_indices = past_key_value
+        latent_cache = isinstance(past_key, ReconstructionCache)
+        if latent_cache:
+            past_key, past_value = past_key.materialize(self), past_value.materialize(self)
 
         if past_key is not None:
             past_seq_len = past_key.shape[2]
@@ -1348,7 +1382,11 @@ class LlamaAttention(nn.Module):
         else:
             past_seq_len = 0
 
-        query_states, key_states, value_states = self.qkv_proj_with_beacon(hidden_states, beacon_size, beacon_indices)
+        projected = self.qkv_proj_with_beacon(
+            hidden_states, beacon_size, beacon_indices, return_latents=latent_cache
+        )
+        query_states, key_states, value_states = projected[:3]
+        cache_latents = projected[3:] if latent_cache else None
 
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -1357,7 +1395,9 @@ class LlamaAttention(nn.Module):
 
         # return keys and values before rope
         # NOTE: incrementally return keys and values for beacon efficiency
-        past_key_value = (current_key_states, value_states, beacon_size, beacon_indices)
+        past_key_value = self._incremental_cache(
+            current_key_states, value_states, beacon_size, beacon_indices, cache_latents
+        )
 
         if past_key is not None:
             # reuse k, v, self_attention
@@ -1465,13 +1505,20 @@ class LlamaSdpaAttention(LlamaAttention):
         bsz, q_len, _ = hidden_states.size()
         kv_seq_len = hidden_states.shape[-2]
         past_key, past_value, beacon_size, beacon_indices = past_key_value
+        latent_cache = isinstance(past_key, ReconstructionCache)
+        if latent_cache:
+            past_key, past_value = past_key.materialize(self), past_value.materialize(self)
         if past_key is not None:
             past_seq_len = past_key.shape[2]
             kv_seq_len += past_seq_len
         else:
             past_seq_len = 0
 
-        query_states, key_states, value_states = self.qkv_proj_with_beacon(hidden_states, beacon_size, beacon_indices)
+        projected = self.qkv_proj_with_beacon(
+            hidden_states, beacon_size, beacon_indices, return_latents=latent_cache
+        )
+        query_states, key_states, value_states = projected[:3]
+        cache_latents = projected[3:] if latent_cache else None
 
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -1480,7 +1527,9 @@ class LlamaSdpaAttention(LlamaAttention):
 
         # return keys and values before rope
         # NOTE: incrementally return keys and values for beacon efficiency
-        past_key_value = (current_key_states, value_states, beacon_size, beacon_indices)
+        past_key_value = self._incremental_cache(
+            current_key_states, value_states, beacon_size, beacon_indices, cache_latents
+        )
 
         if past_key is not None:
             # reuse k, v, self_attention
@@ -1564,13 +1613,20 @@ class LlamaFlashAttention2(LlamaAttention):
         kv_seq_len = hidden_states.shape[-2]
 
         past_key, past_value, beacon_size, beacon_indices = past_key_value
+        latent_cache = isinstance(past_key, ReconstructionCache)
+        if latent_cache:
+            past_key, past_value = past_key.materialize(self), past_value.materialize(self)
         if past_key is not None:
             past_seq_len = past_key.shape[2]
             kv_seq_len += past_seq_len
         else:
             past_seq_len = 0
 
-        query_states, key_states, value_states = self.qkv_proj_with_beacon(hidden_states, beacon_size, beacon_indices)
+        projected = self.qkv_proj_with_beacon(
+            hidden_states, beacon_size, beacon_indices, return_latents=latent_cache
+        )
+        query_states, key_states, value_states = projected[:3]
+        cache_latents = projected[3:] if latent_cache else None
 
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -1579,7 +1635,9 @@ class LlamaFlashAttention2(LlamaAttention):
 
         # return keys and values before rope
         # NOTE: incrementally return keys and values for beacon efficiency
-        past_key_value = (current_key_states, value_states, beacon_size, beacon_indices)
+        past_key_value = self._incremental_cache(
+            current_key_states, value_states, beacon_size, beacon_indices, cache_latents
+        )
 
         if past_key is not None:
             # reuse k, v, self_attention
@@ -2390,11 +2448,12 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
         # NOTE: set memory after from_pretrained because there may be another transformer model inside the Memory object, which may cause weird erros during loading
         config = model.config
-        model.memory = Memory(
+        model.memory = LlamaMemory(
             model_config=config,
             k_seq_dim=2,
             v_seq_dim=2,
         )
+        model.memory.train(model.training)
 
         # Auto-merge separate K/V down_proj into shared beacon_kv_down_proj
         # when beacon_shared_kv_down_proj is enabled but checkpoint has separate weights.

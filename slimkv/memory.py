@@ -576,21 +576,9 @@ class Memory(torch.nn.Module):
         #============================================#
         past_key_values = []
         for layer_idx in range(self.config.num_hidden_layers):
-            if ignore_memory:
-                key, value = None, None
-            else:
-                sink_key, sink_value = self.sink_activations[layer_idx]
-                beacon_key, beacon_value = self.beacon_activations[layer_idx]
-                raw_key, raw_value = self.raw_activations[layer_idx]
-
-                key = cat_tensor([
-                    sink_key, beacon_key, raw_key,
-                ], dim=self.k_seq_dim)
-                value = cat_tensor([
-                    sink_value, beacon_value, raw_value,
-                ], dim=self.v_seq_dim)
-
-            layer_past_key_values = (key, value, beacon_size, beacon_indices)
+            layer_past_key_values = self._get_layer_past_key_value(
+                layer_idx, beacon_size, beacon_indices, ignore_memory
+            )
             past_key_values.append(layer_past_key_values)
 
         # t4 = time.time()
@@ -655,6 +643,17 @@ class Memory(torch.nn.Module):
         #     return
 
         return input_ids, attention_mask, position_ids, past_key_values, labels
+
+    def _get_layer_past_key_value(self, layer_idx, beacon_size, beacon_indices, ignore_memory):
+        if ignore_memory:
+            key, value = None, None
+        else:
+            sink_key, sink_value = self.sink_activations[layer_idx]
+            beacon_key, beacon_value = self.beacon_activations[layer_idx]
+            raw_key, raw_value = self.raw_activations[layer_idx]
+            key = cat_tensor([sink_key, beacon_key, raw_key], dim=self.k_seq_dim)
+            value = cat_tensor([sink_value, beacon_value, raw_value], dim=self.v_seq_dim)
+        return key, value, beacon_size, beacon_indices
 
     def update_memory(self, past_key_values):
         """

@@ -147,6 +147,10 @@ class ModelArgs:
         default=None,
         metadata={'help': 'The initial sliding window size.'}
     )
+    beacon_cache_mode: Optional[str] = field(
+        default=None,
+        metadata={'help': 'Llama3 inference Beacon cache: auto, full, or latent (reconstruct before attention).'},
+    )
     beacon_stride: Optional[int] = field(
         default=None,
         metadata={'help': 'The stride of the sliding window.'}

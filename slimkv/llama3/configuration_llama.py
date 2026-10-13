@@ -140,6 +140,7 @@ class LlamaConfig(PretrainedConfig):
         attention_bias=False,
         attention_dropout=0.0,
         beacon_window=1024,
+        beacon_cache_mode="auto",
         beacon_stride=1024,
         beacon_attn="full-coverage",
         beacon_ratio=[2,4,8,16,32],
@@ -205,6 +206,9 @@ class LlamaConfig(PretrainedConfig):
         self.attention_dropout = attention_dropout
         
         self.beacon_window = beacon_window
+        if beacon_cache_mode not in ("auto", "full", "latent"):
+            raise ValueError(f"Unknown beacon_cache_mode: {beacon_cache_mode}")
+        self.beacon_cache_mode = beacon_cache_mode
         self.beacon_stride = beacon_stride
         self.beacon_attn = beacon_attn
         self.beacon_ratio = beacon_ratio
