@@ -10,9 +10,9 @@ from torch.utils.data import DataLoader
 from dataclasses import dataclass, field, asdict
 from functools import partial
 
-from src.data import Data
-from src.metrics import Metric
-from src import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, evaluate_perplexity, split_file_dir_name_ext, apply_chat_template
+from slimkv.data import Data
+from slimkv.metrics import Metric
+from slimkv import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, evaluate_perplexity, split_file_dir_name_ext, apply_chat_template
 
 logger = logging.get_logger(__name__)
 

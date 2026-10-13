@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, asdict
 from collections import defaultdict
 from functools import partial
 
-from src import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, split_file_dir_name_ext, apply_chat_template, normalize_text
+from slimkv import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, split_file_dir_name_ext, apply_chat_template, normalize_text
 from .longbench_utils import qa_f1_score
 
 logger = logging.get_logger(__name__)

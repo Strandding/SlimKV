@@ -12,7 +12,7 @@ from transformers import HfArgumentParser
 from transformers.utils import logging
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from src import split_file_dir_name_ext, get_model_and_tokenizer, format_numel_str, ModelArgs
+from slimkv import split_file_dir_name_ext, get_model_and_tokenizer, format_numel_str, ModelArgs
 
 
 logger = logging.get_logger(__name__)
@@ -21,7 +21,7 @@ logger = logging.get_logger(__name__)
 @dataclass
 class Args(ModelArgs):
     config: str = field(
-        default="data/config/slimpajama.json",
+        default="config/data/slimpajama.json",
         metadata={'help': 'Configuration json path for standard pretraining (concatenating multiple documents to form instances of equal lengths).'}
     )
     train_data: str = field(

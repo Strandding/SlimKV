@@ -12,7 +12,7 @@ from transformers import HfArgumentParser, AutoTokenizer
 from transformers.utils import logging
 from torch.utils.data import DataLoader
 
-from src import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, apply_chat_template
+from slimkv import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, apply_chat_template
 from .infbench_utils import TASK_TO_PATH, TASK_TO_MAX_NEW_TOKENS, get_score_one, create_prompt, get_answer
 
 

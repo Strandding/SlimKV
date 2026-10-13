@@ -7,9 +7,9 @@ from transformers.utils import logging
 from torch.utils.data import DataLoader
 from dataclasses import dataclass, field, asdict
 
-from src.data import Data
-from src.metrics import Metric
-from src import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, evaluate_generation, split_file_dir_name_ext
+from slimkv.data import Data
+from slimkv.metrics import Metric
+from slimkv import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, evaluate_generation, split_file_dir_name_ext
 
 logger = logging.get_logger(__name__)
 

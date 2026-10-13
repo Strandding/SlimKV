@@ -14,7 +14,7 @@ from transformers import HfArgumentParser
 from transformers.utils import logging
 from torch.utils.data import DataLoader
 
-from src import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, apply_chat_template
+from slimkv import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, apply_chat_template
 from .longbench_utils import DATASET2PROMPT, DATASET2MAXNEWTOKENS, DATASET2CATEGORY, scorer
 
 logger = logging.get_logger(__name__)

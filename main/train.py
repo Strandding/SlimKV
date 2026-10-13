@@ -3,7 +3,7 @@ import time
 import torch
 from transformers import HfArgumentParser, TrainerCallback
 from transformers.integrations import is_deepspeed_zero3_enabled
-from src import (
+from slimkv import (
     Data,
     DefaultDataCollator,
     ModelArgs,
@@ -12,9 +12,9 @@ from src import (
     makedirs,
     format_numel_str
 )
-from src.args import TrainingArgs
-from src.metrics import Metric
-from src.trainer import ActivationBeaconTrainer
+from slimkv.args import TrainingArgs
+from slimkv.metrics import Metric
+from slimkv.trainer import SlimKVTrainer
 
 
 class EfficiencyCallback(TrainerCallback):
@@ -106,7 +106,7 @@ def main():
             cache_dir=model_args.dataset_cache_dir,
         )
 
-    trainer = ActivationBeaconTrainer(
+    trainer = SlimKVTrainer(
         model=model,
         tokenizer=tokenizer,
         args=training_args,

@@ -19,7 +19,7 @@ from transformers import HfArgumentParser
 from transformers.utils import logging
 from dataclasses import dataclass, field, asdict
 
-from src import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, apply_chat_template
+from slimkv import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, apply_chat_template
 
 logger = logging.get_logger(__name__)
 

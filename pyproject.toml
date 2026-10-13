@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slimkv"
+version = "0.1.0"
+description = "Joint token-feature KV cache compression with reconstruction-free Beacon attention"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "torch>=2.1",
+  "transformers>=4.40,<4.41",
+  "accelerate>=0.29,<1",
+  "datasets>=2.18,<3",
+  "numpy",
+  "pandas",
+  "seaborn",
+  "rouge",
+  "fuzzywuzzy",
+  "jieba",
+  "python-Levenshtein",
+  "pytz",
+  "safetensors",
+  "packaging",
+  "sentencepiece",
+  "protobuf",
+]
+
+[project.optional-dependencies]
+training = ["deepspeed", "peft>=0.10,<0.11"]
+needle-judge = ["langchain", "langchain-openai"]
+tensor-parallel = ["tensor-parallel"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["slimkv*", "main*", "tools*"]
+exclude = ["experiments*", "tests*"]

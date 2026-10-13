@@ -1,20 +1,41 @@
-data/outputs
-data/results
-# 忽略依赖库
-node_modules/
-/dist/
+# Python and local environments
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.cache/
+.pytest_cache/
+build/
+dist/
 
-# 忽略操作系统生成的临时文件
-.DS_Store
-Thumbs.db
-
-# 忽略本地环境变量文件（非常重要！保护密钥）
-.env
-*.local
-
-# 忽略 IDE 配置
-.vscode/
-.idea/
-
-# 忽略日志文件
+# Model weights, datasets and generated experiment artifacts
+/model/
+/models/
+/data/outputs/
+/data/results/
+/data/fig/
+/data/datasets/
+/outputs/
+/results/
+*.safetensors
+*.pt
+*.pth
+*.bin
 *.log
+*.nsys-rep
+*.ncu-rep
+
+# The H20 paper and checkpoints stay local.
+/SlimKV_EMNLP26.pdf
+
+# Credentials and machine-specific settings
+.env
+.env.*
+!.env.example
+*.local
+.DS_Store
+._*
+Thumbs.db
+.idea/
+.vscode/
+node_modules/

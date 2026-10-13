@@ -1,99 +1,85 @@
-# Activation-Beacon
+# SlimKV
 
-[Activation Beacon](https://arxiv.org/abs/2401.03462) is a plug-in module to transformer-based LLMs that enables effective, efficient, and flexible compression of long contexts.
+SlimKV 实现联合 token 与特征维度的 KV cache 压缩：通过 Beacon 汇聚历史上下文，训练逐层低秩 K/V 投影，并提供无需完整 K/V 重建的 latent attention 原型。
 
-This folder contains the newer code for activation beacon. It supports more LLMs, including Mistral, Llama-3, and Qwen-2. It also supports more features, including **Deepspeed Zero3 training**, **Flash-Attention-2**, adding **chat template** in training and inference, and **evaluating on more tasks**. However, code in this folder are under development and subject to change in the future.
+本仓库对应论文 **SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention**。当前主实现支持 Llama3 与 Qwen2 的低秩训练；Llama latent attention 位于独立的 `slimkv/latency` 路径。常规评测路径仍保存完整维度的 Beacon K/V。具体支持范围和已知问题见 [实现状态](docs/implementation_status.md)。
 
-## Environment
+## 目录
+
+```text
+SlimKV/
+├── slimkv/                  # 模型、配置、Memory、训练与数据工具
+│   ├── llama3/              # Llama3 低秩模型
+│   ├── qwen2/               # Qwen2/Qwen2.5 低秩模型
+│   ├── llama/              # 旧 Llama 基础支持
+│   ├── mistral/            # Mistral 基础支持
+│   └── latency/            # Llama latent cache 与 hybrid attention 原型
+├── main/                    # python -m main.<command> 命令入口
+├── scripts/                 # training、conversion、evaluation、benchmark、slurm、vllm
+├── config/                  # DeepSpeed、数据与分布式配置
+├── tools/                   # 仓库检查、GPU 与通信工具
+├── docs/                    # 训练、评测、实现状态与同步说明
+├── experiments/anchor_prototype/  # GitHub 早期 anchor 原型归档
+├── data/                    # 示例；结果、图、数据集与输出为本地产物
+└── model/                   # 本地权重，不进入 Git
+```
+
+## 安装
+
+在独立环境中先安装适合机器的 PyTorch，再安装项目。主实现使用 checkpoint 保存时的 Transformers 4.40 系列接口；依赖范围在 `pyproject.toml` 中记录。
+
 ```bash
-conda create beacon python=3.10.14
-
-conda activate beacon
-
-# You may need to adjust the cuda version
-conda install pytorch pytorch-cuda=12.1 -c pytorch -c nvidia
-pip install transformers deepspeed accelerate datasets peft pandas seaborn rouge fuzzywuzzy jieba python-Levenshtein
-pip install flash-attn --no-build-isolation
+git clone https://github.com/Strandding/SlimKV.git
+cd SlimKV
+python -m pip install -e .
+# 训练时安装可选依赖
+python -m pip install -e '.[training]'
+# CUDA、PyTorch 兼容后，再按需安装 FlashAttention2
+python -m pip install flash-attn --no-build-isolation
 ```
 
-## Usage
-```python
-import json
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+vLLM 基线使用独立环境，见 `scripts/vllm/`，避免其 Transformers 依赖改变主实现环境。
 
-model_id = "namespace-Pt/beacon-qwen-2-7b-instruct"
+## 路径配置
 
-tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained(
-    model_id, 
-    trust_remote_code=True, 
-    torch_dtype=torch.bfloat16, 
-    attn_implementation="flash_attention_2"
-)
+启动脚本会自动定位项目根目录，无需修改代码中的机器路径。变量示例见 [.env.example](.env.example)；文件不会自动加载，运行前在 shell 中 export。
 
-model = model.cuda().eval()
-
-with torch.no_grad():
-  # short context
-  messages = [{"role": "user", "content": "Tell me about yourself."}]
-  inputs = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_dict=True).to("cuda")
-  outputs = model.generate(**inputs, max_new_tokens=50)
-  print(f"Input Length: {inputs['input_ids'].shape[1]}")
-  print(f"Output:       {repr(tokenizer.decode(outputs[0], skip_special_tokens=True))}")
-
-  # reset memory before new generation task
-  model.memory.reset()
-
-  # long context
-  with open("data/toy/infbench.json", encoding="utf-8") as f:
-    example = json.load(f)
-  messages = [{"role": "user", "content": example["context"]}]
-  inputs = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_dict=True).to("cuda")
-  outputs = model.generate(**inputs, do_sample=False, top_p=1, temperature=1, max_new_tokens=20)[:, inputs["input_ids"].shape[1]:]
-  print("*"*20)
-  print(f"Input Length: {inputs['input_ids'].shape[1]}")
-  print(f"Answers:      {example['answer']}")
-  print(f"Prediction:   {tokenizer.decode(outputs[0], skip_special_tokens=True)}")
-```
-**NOTE**: It's okay to see warnings like `This is a friendly reminder - the current text generation call will exceed the model's predefined maximum length (32768). Depending on the model, you may observe exceptions, performance degradation, or nothing at all.` Just ignore it.
-
-
-## Data
-You should download the data for fine-tuning & evaluation then untar the file at anywhere you prefer, e.g. `/data`:
 ```bash
-# feel free to alternate /data to your prefered location
-wget https://huggingface.co/datasets/namespace-Pt/projects/resolve/main/long-llm.tar.gz?download=true -O /data/long-llm.tar.gz
-
-cd /data
-tar -xzvf long-llm.tar.gz
+export SLIMKV_DATA_ROOT=/path/to/long-llm
+export SLIMKV_BASE_MODEL_DIR=/path/to/base-models
+export SLIMKV_OUTPUT_DIR=/path/to/slimkv-outputs
+export MODEL_NAME_OR_PATH=/path/to/checkpoint-2000
+export CUDA_VISIBLE_DEVICES=0
+export NPROC_PER_NODE=1
 ```
 
-**IMPORTANT NOTE**
+训练、评测完成后默认退出。GPU 占用功能只有显式设置 `OCCUPY_AFTER_TRAIN=True`、`OCCUPY_AFTER_FINETUNE=True` 或 `OCCUPY_AFTER_EVAL=True` 才启用。
 
-For any path specified for `train_data` and `eval_data`: if it is prefixed with `long-llm:`, it will be solved to the relative path against [`data_root`](./src/args.py). 
-  - e.g. `long-llm:lm/pg19.json` becomes `${data_root}/lm/pg19.json`
-  - you can modify the default value of [`data_root`](./src/args.py), so that you don't need to type it for each command.
+## 使用
 
+```bash
+python -m main.train --help
+python -m main.convert_kv_lowrank --help
+python -m main.eval_longbench --help
+python -m main.benchmark_latency --help
 
-## Training
-See [training section](./examples/training.md).
-
-## Evaluation
-See [evaluation section](./examples/evaluation.md). 
-
-
-## Citation
-If you find this repository useful, please give us a star ⭐.
-
-To cite our work:
+bash scripts/evaluation/eval_longbench_llama31_8B.sh
+python tools/check_repository.py
 ```
+
+详见 [训练](docs/training.md)、[评测](docs/evaluation.md) 和 [本机与 H20 同步](docs/synchronization.md)。已有权重的 `beacon_*` 配置字段和 tensor 名称继续兼容；项目包名与新输出名称统一为 SlimKV。
+
+## 来源
+
+Beacon 分块压缩基础实现来自 [Activation Beacon](https://arxiv.org/abs/2401.03462)，模型实现保留原有作者和许可声明。仓库中的早期 anchor 原型独立归档，不参与主实现的安装。
+
+```bibtex
 @misc{zhang2024soaring,
-    title={Soaring from 4K to 400K: Extending LLM's Context with Activation Beacon}, 
-    author={Peitian Zhang and Zheng Liu and Shitao Xiao and Ninglu Shao and Qiwei Ye and Zhicheng Dou},
-    year={2024},
-    eprint={2401.03462},
-    archivePrefix={arXiv},
-    primaryClass={cs.CL}
+  title={Soaring from 4K to 400K: Extending LLM's Context with Activation Beacon},
+  author={Peitian Zhang and Zheng Liu and Shitao Xiao and Ninglu Shao and Qiwei Ye and Zhicheng Dou},
+  year={2024},
+  eprint={2401.03462},
+  archivePrefix={arXiv},
+  primaryClass={cs.CL}
 }
 ```

@@ -9,7 +9,7 @@ from accelerate import Accelerator
 from transformers import HfArgumentParser
 from torch.utils.data import DataLoader
 
-from src import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, split_file_dir_name_ext, evaluate_perplexity
+from slimkv import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, split_file_dir_name_ext, evaluate_perplexity
 
 
 @dataclass

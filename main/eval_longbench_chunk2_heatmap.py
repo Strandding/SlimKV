@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import HfArgumentParser
 
-from src import DefaultDataCollator, ModelArgs, apply_chat_template, get_model_and_tokenizer, makedirs
+from slimkv import DefaultDataCollator, ModelArgs, apply_chat_template, get_model_and_tokenizer, makedirs
 
 from .longbench_utils import DATASET2CATEGORY, DATASET2MAXNEWTOKENS, DATASET2PROMPT
 

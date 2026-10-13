@@ -10,7 +10,7 @@ from transformers.utils import logging
 from dataclasses import dataclass, field
 from collections import defaultdict
 
-from src import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, apply_chat_template, evaluate_nll, remove_eos
+from slimkv import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, apply_chat_template, evaluate_nll, remove_eos
 
 logger = logging.get_logger(__name__)
 

@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict
 
-from src import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, split_file_dir_name_ext, apply_chat_template
+from slimkv import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, split_file_dir_name_ext, apply_chat_template
 from .longbench_utils import qa_f1_score
 
 logger = logging.get_logger(__name__)

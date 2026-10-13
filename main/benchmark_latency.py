@@ -6,7 +6,7 @@ from typing import Dict, List
 
 import torch
 
-from src.latency.loader_latency import (
+from slimkv.latency.loader import (
     MODE_BEACON_DENSE,
     MODE_BEACON_LOWRANK_HYBRID,
     MODE_BEACON_LOWRANK_RECON,
