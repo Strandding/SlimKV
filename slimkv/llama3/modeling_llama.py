@@ -1109,8 +1109,9 @@ class LlamaAttention(nn.Module):
         chunk_fixed_beacon_k_rope = self.beacon_chunk_fixed_rope_for_beacon_k
         raw_nokrope = bool(getattr(self.config, "raw_nokrope", False))
 
-        # Raw-model mode: keep RoPE on Q but disable it on K.
-        if beacon_size <= 0 or beacon_indices is None:
+        # No Beacon metadata means native raw mode. With metadata, historical
+        # Beacon keys still need custom handling even when no new Beacon is added.
+        if beacon_indices is None:
             if raw_nokrope:
                 query_states_rope, _ = self.rotary_emb(query_states, key_states, position_ids)
                 return query_states_rope, key_states

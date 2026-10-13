@@ -13,9 +13,11 @@
 
 ## 已知问题
 
-以下问题来自源码检查与小型 FP32 CPU 输入验证，尚未在本次目录整理中改变算法行为：
+Llama 常规路径已修复无新 Beacon 时的历史 K RoPE 处理。CPU 回归验证覆盖纯 raw、包含新 Beacon、训练最后窗口、prefill 尾块、decode 和 chunk-fixed 历史缓存；完整权重生成质量仍需另行验证。
 
-- 常规 Llama/Qwen 路径在本步 `beacon_size<=0` 时会给历史 Beacon K 加 RoPE，与关闭 Beacon K RoPE 的配置不一致。
+以下问题仍待处理：
+
+- 常规 Qwen 路径在本步 `beacon_size<=0` 时会给历史 Beacon K 加 RoPE，与关闭 Beacon K RoPE 的配置不一致。
 - Hybrid 的 FA2 fallback 回到 eager 时，Memory 可能已经移除了因果 mask。请显式使用 eager。
 - Latency benchmark 的 warmup/repeat 之间没有重置 Memory，连续调用会累积上下文。
 - `beacon_lowrank_reconstruct` 使用完整维度缓存，不是论文中每步从 latent cache 重建历史 K/V 的基线。
