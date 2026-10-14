@@ -63,6 +63,7 @@ class LlamaMemory(Memory):
 
     def reset(self):
         super().reset()
+        self._static_decode_epoch = getattr(self, '_static_decode_epoch', 0) + 1
         self.window_beacon_activations = [(None, None) for _ in range(self.config.num_hidden_layers)]
         self._window_roles = None
         self._latent_cache_active = None
@@ -90,6 +91,7 @@ class LlamaMemory(Memory):
         # input history on the GPU; a later multi-token call can return to CPU.
         self._input_storage_device = input_ids.device if self._fast_decode_active else self._cpu
         if not self._fast_decode_active:
+            self._static_decode_epoch += 1
             self._decode_unpadded = None
             self._decode_role_buffer = None
             self._decode_bool_buffer = None

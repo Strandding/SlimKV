@@ -1,4 +1,4 @@
-"""Build only SlimKV's BF16 FA2 width-320 forward extension."""
+"""Build SlimKV's BF16 FA2 forward-only decode extension."""
 import argparse
 import hashlib
 import json
@@ -20,7 +20,8 @@ def main():
     from torch.utils.cpp_extension import load
     src, fa2, out = (Path(x).resolve() for x in (a.source_root, a.fa2_source, a.output_dir))
     out.mkdir(parents=True, exist_ok=True)
-    files = [src / 'kernels/fa2_decode/binding.cpp', src / 'kernels/fa2_decode/forward_320.cu']
+    files = [src / 'kernels/fa2_decode/binding.cpp', src / 'kernels/fa2_decode/forward_320.cu',
+             src / 'kernels/fa2_decode/forward_dense.cu']
     assert (fa2 / 'csrc/cutlass/include/cutlass/cutlass.h').exists()
     module = load(name='slimkv_fa2_decode_320', sources=[str(x) for x in files],
                   extra_include_paths=[str(fa2 / 'csrc/flash_attn'), str(fa2 / 'csrc/flash_attn/src'),

@@ -9,18 +9,41 @@
 
 namespace FLASH_NAMESPACE {
 void launch_decode_320(Flash_fwd_params& params, cudaStream_t stream);
+void launch_decode_dense(Flash_fwd_params& params, cudaStream_t stream);
+}
+
+// Follow FA2's occupancy heuristic so fixed cache buckets preserve the
+// original split boundaries and BF16 reduction order.
+int dense_splits(int grid, int sms, int blocks) {
+    if (grid >= 0.8f * sms) return 1;
+    const int limit = std::min({128, sms, blocks});
+    auto ceildiv = [](int a, int b) { return (a + b - 1) / b; };
+    std::vector<float> efficiencies(limit, 0.f);
+    float best = 0.f;
+    for (int s = 1; s <= limit; ++s) {
+        if (s > 1 && ceildiv(blocks, s) == ceildiv(blocks, s - 1)) continue;
+        const float waves = float(grid * s) / sms;
+        efficiencies[s - 1] = waves / std::ceil(waves);
+        best = std::max(best, efficiencies[s - 1]);
+    }
+    for (int s = 1; s <= limit; ++s) {
+        if (efficiencies[s - 1] >= 0.85 * best) return s;
+    }
+    return 1;
 }
 
 std::vector<at::Tensor> forward320(at::Tensor q, const at::Tensor& k,
                                   const at::Tensor& v, double scale,
-                                  bool causal, int splits, bool pack_q) {
+                                  bool causal, int splits, bool pack_q,
+                                  c10::optional<at::Tensor> cache_seqlens) {
     TORCH_CHECK(q.is_cuda() && k.is_cuda() && v.is_cuda(), "CUDA tensors required");
     TORCH_CHECK(q.device() == k.device() && q.device() == v.device(), "Same device required");
     TORCH_CHECK(q.scalar_type() == at::kBFloat16 && k.scalar_type() == at::kBFloat16
                 && v.scalar_type() == at::kBFloat16, "BF16 only");
     TORCH_CHECK(q.dim() == 4 && k.dim() == 4 && v.dim() == 4, "BSHD tensors required");
-    TORCH_CHECK(q.size(3) == 320 && k.size(3) == 320 && v.size(3) == 320,
-                "Pad transient Q/K/V to 320; persistent cache may retain actual rank");
+    const int width = q.size(3);
+    TORCH_CHECK((width == 128 || (width > 192 && width <= 256 && width % 8 == 0) || width == 320)
+                && k.size(3) == width && v.size(3) == width, "Supported FA2 decode widths: 128, 200-256, 320");
     TORCH_CHECK(q.stride(3) == 1 && k.stride(3) == 1 && v.stride(3) == 1,
                 "Last dimension must be contiguous");
     TORCH_CHECK(k.sizes() == v.sizes() && q.size(0) == k.size(0), "Invalid K/V shape");
@@ -35,7 +58,7 @@ std::vector<at::Tensor> forward320(at::Tensor q, const at::Tensor& k,
     TORCH_CHECK(prop->major >= 8, "Ampere or newer required");
     if (original_q == 1) causal = false;
     const bool packed = pack_q && original_q == 1 && original_heads > kv_heads;
-    if (packed) q = q.reshape({batch, kv_heads, original_heads / kv_heads, 320}).transpose(1, 2);
+    if (packed) q = q.reshape({batch, kv_heads, original_heads / kv_heads, width}).transpose(1, 2);
     const int queries = q.size(1), heads = q.size(2);
     auto out = at::empty_like(q);
     auto lse = at::empty({batch, heads, queries}, q.options().dtype(at::kFloat));
@@ -47,43 +70,61 @@ std::vector<at::Tensor> forward320(at::Tensor q, const at::Tensor& k,
     p.v_batch_stride = v.stride(0); p.v_row_stride = v.stride(1); p.v_head_stride = v.stride(2);
     p.o_batch_stride = out.stride(0); p.o_row_stride = out.stride(1); p.o_head_stride = out.stride(2);
     p.b = batch; p.h = heads; p.h_k = kv_heads; p.h_h_k_ratio = heads / kv_heads;
+    p.total_q = batch * queries;
     p.seqlen_q = queries; p.seqlen_k = key_length;
     p.seqlen_q_rounded = (queries + 127) / 128 * 128;
     p.seqlen_k_rounded = (key_length + 127) / 128 * 128;
-    p.d = 320; p.d_rounded = 320;
+    p.d = width; p.d_rounded = width == 320 ? 320 : (width <= 128 ? 128 : 256);
     p.scale_softmax = scale; p.scale_softmax_log2 = scale * std::log2(std::exp(1.0));
     p.p_dropout = 1.f; p.p_dropout_in_uint8_t = 255; p.rp_dropout = 1.f;
     p.scale_softmax_rp_dropout = scale;
     p.window_size_left = -1; p.window_size_right = causal ? 0 : -1;
     p.is_causal = causal; p.is_bf16 = true; p.is_seqlens_k_cumulative = true;
+    if (cache_seqlens.has_value()) {
+        const auto& lengths = cache_seqlens.value();
+        TORCH_CHECK(lengths.is_cuda() && lengths.device() == q.device()
+                    && lengths.scalar_type() == at::kInt && lengths.is_contiguous()
+                    && lengths.numel() == batch, "One CUDA int32 cache length per sequence required");
+        p.cu_seqlens_k = lengths.data_ptr<int>();
+        p.is_seqlens_k_cumulative = false;
+    }
     // Q is already reshaped into ordinary sequence/head strides. Keep the
     // upstream special KV-cache indexing flag disabled, as dense FA2 does.
     p.seqlenq_ngroups_swapped = false;
     const int n_blocks = (key_length + 63) / 64;
     if (splits == 0) {
         const int grid_heads = batch * heads;
-        splits = std::min({32, n_blocks, (prop->multiProcessorCount + grid_heads - 1) / grid_heads});
-        while (splits > 1 && (splits - 1) * ((n_blocks + splits - 1) / splits) >= n_blocks) --splits;
+        if (width < 320) {
+            const int block_n = width <= 128 ? 128 : 64;
+            splits = dense_splits(grid_heads, 2 * prop->multiProcessorCount,
+                                  (key_length + block_n - 1) / block_n);
+        } else {
+            splits = std::min({32, n_blocks, (prop->multiProcessorCount + grid_heads - 1) / grid_heads});
+            while (splits > 1 && (splits - 1) * ((n_blocks + splits - 1) / splits) >= n_blocks) --splits;
+        }
     }
-    TORCH_CHECK(splits >= 1 && splits <= 32, "Support 1-32 splits");
+    TORCH_CHECK(splits >= 1 && splits <= (width == 320 ? 32 : 128), "Invalid FA2 split count");
     p.num_splits = splits;
     at::Tensor out_accum, lse_accum;
     if (splits > 1) {
-        out_accum = at::empty({splits, batch, heads, queries, 320}, q.options().dtype(at::kFloat));
+        out_accum = at::empty({splits, batch, heads, queries, p.d_rounded}, q.options().dtype(at::kFloat));
         lse_accum = at::empty({splits, batch, heads, queries}, q.options().dtype(at::kFloat));
         p.oaccum_ptr = out_accum.data_ptr(); p.softmax_lseaccum_ptr = lse_accum.data_ptr();
     }
-    FLASH_NAMESPACE::launch_decode_320(p, at::cuda::getCurrentCUDAStream().stream());
+    if (width == 320) FLASH_NAMESPACE::launch_decode_320(p, at::cuda::getCurrentCUDAStream().stream());
+    else FLASH_NAMESPACE::launch_decode_dense(p, at::cuda::getCurrentCUDAStream().stream());
     if (packed) {
-        out = out.transpose(1, 2).reshape({batch, 1, original_heads, 320});
+        out = out.transpose(1, 2).reshape({batch, 1, original_heads, width});
         lse = lse.reshape({batch, original_heads, 1});
     }
     return {out, lse};
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("forward", &forward320, "FA2 BF16 decode width 320",
+    m.attr("supports_cache_seqlens") = true;
+    m.def("forward", &forward320, "FA2 BF16 decode with optional device cache lengths",
           pybind11::arg("q"), pybind11::arg("k"), pybind11::arg("v"),
           pybind11::arg("softmax_scale"), pybind11::arg("causal") = false,
-          pybind11::arg("num_splits") = 0, pybind11::arg("pack_q") = true);
+          pybind11::arg("num_splits") = 0, pybind11::arg("pack_q") = true,
+          pybind11::arg("cache_seqlens") = c10::nullopt);
 }

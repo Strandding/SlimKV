@@ -2657,25 +2657,50 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
             # t4 = time.time()
 
-            outputs = self._native_forward(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_values=past_key_values,
-                inputs_embeds=inputs_embeds,
-                use_cache=use_cache,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
-                labels=labels,
-                loss_weights=loss_weights,
-                num_logits_to_keep=chunk_logits,
-            )
+            static = None
+            if self.config._slimkv_decode_graph_step and self.memory._fast_decode_active:
+                from .static_decode import StaticDecode
+                if StaticDecode.eligible(self, input_ids, past_key_values, {
+                        'labels': labels, 'inputs_embeds': inputs_embeds,
+                        'output_attentions': output_attentions, 'output_hidden_states': output_hidden_states,
+                        'return_dict': return_dict}):
+                    first = past_key_values[0][0]
+                    latent_length = sum(0 if x is None else x.shape[2] for x in (first.history, first.window))
+                    if latent_length > 0:
+                        required = latent_length + past_key_values[0][2]
+                        capacity = max(64, (required + 63) // 64 * 64)
+                        static = getattr(self, '_static_decode', None)
+                        if (static is None or static.capacity != capacity
+                                or static.layers[0]['raw_k'].device != input_ids.device):
+                            static = self._static_decode = StaticDecode(self, capacity)
+            if static is not None:
+                logits = static.run(input_ids, position_ids, past_key_values)
+                outputs = ModelOutput(logits=logits, past_key_values=())
+            else:
+                outputs = self._native_forward(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    past_key_values=past_key_values,
+                    inputs_embeds=inputs_embeds,
+                    use_cache=use_cache,
+                    output_attentions=output_attentions,
+                    output_hidden_states=output_hidden_states,
+                    return_dict=return_dict,
+                    labels=labels,
+                    loss_weights=loss_weights,
+                    num_logits_to_keep=chunk_logits,
+                )
 
             # t5 = time.time()
 
             # update past_key_values
-            self.memory.update_memory(outputs.past_key_values)
+            if static is None:
+                self.memory.update_memory(outputs.past_key_values)
+                if hasattr(self, '_static_decode'):
+                    # Beacon insertion and diagnostic/multi-token calls use the
+                    # ordinary path. Refresh static buffers before the next Q1.
+                    self._static_decode.epoch = None
 
             # t6 = time.time()
 

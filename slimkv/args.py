@@ -164,6 +164,10 @@ class ModelArgs:
         default=None,
         metadata={'help': 'Use inference CUDA Graphs for fixed-shape decode layer operations.'},
     )
+    beacon_decode_graph_full: Optional[bool] = field(
+        default=None,
+        metadata={'help': 'Use whole-model B1 FA2 decode graphs when supported; False retains layer graphs.'},
+    )
     beacon_stride: Optional[int] = field(
         default=None,
         metadata={'help': 'The stride of the sliding window.'}

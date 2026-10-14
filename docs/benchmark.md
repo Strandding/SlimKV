@@ -49,7 +49,20 @@ python -m tools.validate_fa2_decode \
   --output data/results/fa2-kernel-validation.json
 ```
 
-The build manifest includes Torch/CUDA, upstream FA2/CUTLASS commits and source/binary SHA256. Standard FA2 serves widths ≤256; larger actual ranks are temporarily padded to 320 for computation. Persistent cache stores actual ranks, with no padding. A failed/mismatched extension import must be resolved before claiming a validated latent backend.
+The build manifest includes Torch/CUDA, upstream FA2/CUTLASS commits and source/binary SHA256. The extension supports width 128 for raw KV and widths 200–256/320 for static latent decode. Ordinary decode uses standard FA2 at widths ≤256. Larger actual ranks are temporarily padded to 320 for computation. Persistent cache stores actual ranks, with no padding.
+
+## B1 decode graphs
+
+With the rebuilt extension, `--beacon_decode_graph True` also enables whole-model graphs for eligible B1 single-token latent FA2 decode. KV buffers use fixed addresses and append in place. Beacon insertion, larger batches and diagnostic calls use the ordinary path. Set `--beacon_decode_graph_full False` to retain only the layer graphs.
+
+On H20 with the BF16 Llama-3.1-8B f4 checkpoint and t8f4, the same two prompts and 63 teacher-forced decode steps give the following medians after one warmup and four measurements. Timing includes forward and argmax.
+
+| Input tokens | Layer graphs (tokens/s) | Whole-model graphs (tokens/s) | Prefill (s) | Peak allocated (GiB) |
+| ---: | ---: | ---: | ---: | ---: |
+| 4,009 | 54.13 | 82.38 | 0.76 | 22.66 |
+| 6,194 | 55.08 | 82.09 | 1.21 | 22.72 |
+
+Peak allocation includes the model, cache, FA workspaces and retained graphs. In this comparison, all 64 logit steps match the original implementation bitwise. Greedy outputs and official scores also match on eight fixed LongBench-v1 samples from Qasper, HotpotQA, MultiFieldQA-en and LCC.
 
 ## Current FA2 and Graph comparison
 
@@ -63,7 +76,7 @@ python -m tools.benchmark_fa2_decode \
   --perf_sample_indices 0 2 --compare_b1
 ```
 
-`--compare_b1` compares compact full, reconstruction, legacy FA2, GPU bookkeeping and partial Graph in one model. Omit it for the three-path full/reconstruction/FA2 comparison. `--reference_decode_source` separately loads an archived decoder for a same-model control; it cannot be combined with `--compare_b1`.
+`--compare_b1` compares compact full, reconstruction, legacy FA2, GPU bookkeeping and Graph decode in one model. Omit it for the three-path full/reconstruction/FA2 comparison. `--reference_decode_source` separately loads an archived decoder for a same-model control; it cannot be combined with `--compare_b1`.
 
 Timing uses synchronized host wall time and includes forward, argmax, and synchronization boundaries. Tokenization, scoring, file IO, diagnostics and logit saving are outside the timing interval. Warmup includes Triton compilation and Graph capture. Each generated length of 64 contains the prefill first token and 63 decode steps, with no early EOS in the timing phase. All modes receive the same teacher-forced decode inputs; quality is evaluated separately with normal greedy generation. Four measurements per mode (two symmetric rounds) produce medians; retain every raw trial.
 

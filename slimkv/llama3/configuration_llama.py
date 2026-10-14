@@ -144,6 +144,7 @@ class LlamaConfig(PretrainedConfig):
         beacon_decode_backend="reconstruct",
         beacon_decode_fast=True,
         beacon_decode_graph=False,
+        beacon_decode_graph_full=True,
         beacon_stride=1024,
         beacon_attn="full-coverage",
         beacon_ratio=[2,4,8,16,32],
@@ -217,6 +218,7 @@ class LlamaConfig(PretrainedConfig):
         self.beacon_decode_backend = beacon_decode_backend
         self.beacon_decode_fast = beacon_decode_fast
         self.beacon_decode_graph = beacon_decode_graph
+        self.beacon_decode_graph_full = beacon_decode_graph_full
         self.beacon_stride = beacon_stride
         self.beacon_attn = beacon_attn
         self.beacon_ratio = beacon_ratio
