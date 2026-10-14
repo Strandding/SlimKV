@@ -32,7 +32,9 @@ def main():
     parser.add_argument('--samples_jsonl', required=True)
     parser.add_argument('--output_dir', required=True)
     parser.add_argument('--source_dir', default=None)
-    parser.add_argument('--attn_impl', choices=['eager', 'sdpa'], default='eager')
+    parser.add_argument('--attn_impl', choices=['eager', 'sdpa', 'flash_attention_2'], default='eager')
+    parser.add_argument('--forced_tokens_json', help='Optional mapping from sample index to fixed decode input tokens.')
+    parser.add_argument('--reference_decode_source', help='Optional prior fa2_decode.py for a same-model optimization control.')
     parser.add_argument('--beacon_ratio', type=int, default=8)
     parser.add_argument('--decode_tokens', type=int, default=64)
     parser.add_argument('--warmup', type=int, default=1)
@@ -43,7 +45,7 @@ def main():
     parser.add_argument('--skip_quality', action='store_true')
     parser.add_argument('--disable_optional_flash_import', action='store_true')
     args = parser.parse_args()
-    if args.decode_tokens < 2 or args.warmup < 1 or args.rounds < 1:
+    if args.decode_tokens < 2 or args.warmup < 1 or args.rounds < 1 or args.validation_steps < 1:
         parser.error('Require at least 2 generated tokens, 1 warmup and 1 round.')
     if args.source_dir:
         import sys
@@ -61,6 +63,11 @@ def main():
     torch.manual_seed(42)
     torch.set_num_threads(8)
     samples = [json.loads(x) for x in Path(args.samples_jsonl).read_text().splitlines()]
+    supplied_tokens = json.loads(Path(args.forced_tokens_json).read_text()) if args.forced_tokens_json else None
+    if supplied_tokens is not None:
+        for index in args.perf_sample_indices:
+            if len(supplied_tokens[str(index)]) < args.decode_tokens - 1:
+                parser.error('Supplied decode inputs must cover all measured steps.')
     if any(i < 0 or i >= len(samples) for i in args.perf_sample_indices):
         parser.error('perf_sample_indices must refer to supplied samples.')
     outdir = Path(args.output_dir)
@@ -70,6 +77,18 @@ def main():
         dtype='bf16', attn_impl=args.attn_impl, chat_template='llama-3',
         beacon_ratio=[args.beacon_ratio], beacon_ratio_mix='sequence'), device='cuda:0')
     model.eval()
+    from slimkv.llama3 import modeling_llama, fa2_decode as decode_backend
+    actual_decode = decode_backend.decode
+    reference_decode = None
+    if args.reference_decode_source:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('slimkv.llama3._decode_reference', args.reference_decode_source)
+        reference_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reference_module)
+        reference_decode = reference_module.decode
+    modes = ['full_compact', 'reconstruct'] + (['fa2_reference'] if reference_decode else []) + ['fa2']
+    order = modes + list(reversed(modes))
+    quality_modes = ['reconstruct'] + (['fa2_reference'] if reference_decode else []) + ['fa2']
     state = {'compact_sink': False}
     install_compact_sink_control(model.memory, state)
     encoded = []
@@ -93,7 +112,9 @@ def main():
         'timing': 'Synchronized host wall time; tokenization/file IO excluded; no logits recording.',
         'decode_steps': args.decode_tokens - 1,
         'performance_inputs': 'Identical teacher-forced decode tokens from the full_compact warmup; quality uses normal greedy generation.',
-        'measurement_order_per_round': ['full_compact', 'reconstruct', 'fa2', 'fa2', 'reconstruct', 'full_compact'],
+        'supplied_tokens_sha256': hashlib.sha256(Path(args.forced_tokens_json).read_bytes()).hexdigest() if args.forced_tokens_json else None,
+        'measurement_order_per_round': order,
+        'reference_decode_sha256': hashlib.sha256(Path(args.reference_decode_source).read_bytes()).hexdigest() if reference_decode else None,
         'memory': 'CUDA live allocated bytes, peak allocated bytes and unique persistent K/V storage; reserved allocator bytes excluded.',
         'full_compact': 'Full cache with first sink views cloned in the harness; same values and attention math.',
     }
@@ -105,7 +126,8 @@ def main():
     def set_mode(mode):
         model.memory.reset()
         model.config.beacon_cache_mode = 'full' if mode == 'full_compact' else 'latent'
-        model.config.beacon_decode_backend = 'fa2' if mode == 'fa2' else 'reconstruct'
+        model.config.beacon_decode_backend = 'fa2' if mode.startswith('fa2') else 'reconstruct'
+        modeling_llama.fa2_decode = reference_decode if mode == 'fa2_reference' else actual_decode
         state['compact_sink'] = mode == 'full_compact'
         gc.collect()
         torch.cuda.synchronize()
@@ -180,14 +202,16 @@ def main():
             ids = torch.tensor([encoded[sample_index]], device='cuda:0')
             mask = torch.ones_like(ids)
             reference_tokens = None
-            forced_tokens = None
+            forced_tokens = (torch.tensor([supplied_tokens[str(sample_index)]], device='cuda:0')
+                             if supplied_tokens is not None else None)
             warmups = []
-            for mode in ['full_compact', 'reconstruct', 'fa2']:
+            for mode in modes:
                 for _ in range(args.warmup):
                     warmup = measure(ids, mask, mode)
                     if reference_tokens is None:
                         reference_tokens = warmup['generated_token_ids']
-                        forced_tokens = torch.tensor([reference_tokens], device='cuda:0')
+                        if forced_tokens is None:
+                            forced_tokens = torch.tensor([reference_tokens], device='cuda:0')
                     warmup['same_generated_tokens_as_reference'] = warmup['generated_token_ids'] == reference_tokens
                     warmups.append(warmup)
             runs = []
@@ -203,7 +227,7 @@ def main():
                       'peak_cuda_allocated_bytes', 'prefill_peak_cuda_allocated_bytes',
                       'decode_peak_cuda_allocated_bytes']
             medians = {mode: {key: statistics.median(r[key] for r in runs if r['mode'] == mode)
-                              for key in fields} for mode in ['full_compact', 'reconstruct', 'fa2']}
+                              for key in fields} for mode in modes}
             result['performance'].append({'sample_index': sample_index, 'task': sample['task'],
                                           'id': sample['_id'], 'input_tokens': ids.shape[1],
                                           'input_ids_sha256': hashlib.sha256(ids.cpu().numpy().tobytes()).hexdigest(),
@@ -222,7 +246,7 @@ def main():
                 return real_forward(q, k, v, scale, causal)
 
             validation_steps = min(args.validation_steps, args.decode_tokens - 1)
-            for mode in ['reconstruct', 'fa2']:
+            for mode in quality_modes:
                 set_mode(mode)
                 with patch.object(backend, 'flash_forward', observed_forward):
                     output = model(input_ids=ids, attention_mask=mask)
@@ -243,6 +267,8 @@ def main():
                 'argmax_agreements': (vectors['fa2'].argmax(-1) == vectors['reconstruct'].argmax(-1)).tolist(),
                 'kernel_calls': dict(calls), 'tensor_file': tensor_file.name,
                 'tensor_sha256': hashlib.sha256(tensor_file.read_bytes()).hexdigest(),
+                'optimized_bitwise_equal_to_reference': torch.equal(vectors['fa2'].contiguous().view(torch.uint8), vectors['fa2_reference'].contiguous().view(torch.uint8)) if reference_decode else None,
+                'optimized_max_abs_error_to_reference': (vectors['fa2'] - vectors['fa2_reference']).abs().max().item() if reference_decode else None,
             })
             assert any(key.startswith('320:') for key in calls)
             save()
@@ -273,7 +299,7 @@ def main():
                    'input_tokens': ids.shape[1], 'answers': sample['answers'],
                    'all_classes': sample['all_classes'],
                    'input_ids_sha256': hashlib.sha256(ids.cpu().numpy().tobytes()).hexdigest()}
-            for mode in ['reconstruct', 'fa2']:
+            for mode in quality_modes:
                 set_mode(mode)
                 eos = qa_eos if sample['task'] in qa_tasks else raw_eos
                 generated = model.generate(input_ids=ids, attention_mask=mask, do_sample=False,
@@ -298,7 +324,7 @@ def main():
             by_task[row['task']].append(row)
         result['task_scores'] = {task: {mode: scorer(task, [r[mode]['prediction'] for r in rows],
                                                     [r['answers'] for r in rows], rows[0]['all_classes'])
-                                      for mode in ['reconstruct', 'fa2']} for task, rows in by_task.items()}
+                                      for mode in quality_modes} for task, rows in by_task.items()}
         result['complete'] = True
         save()
     print('FA2_DECODE_BENCHMARK_COMPLETE', len(result['quality']), flush=True)

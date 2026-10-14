@@ -55,6 +55,10 @@ def project_value(output, weight, kv_heads):
 
 def merge_attention(raw_out, raw_lse, latent_out, latent_lse):
     """Outputs in BHQD and LSE in BHQ; merge before rounding to model dtype."""
+    from .decode_ops import fused_merge
+    fused = fused_merge(raw_out, raw_lse, latent_out, latent_lse)
+    if fused is not None:
+        return fused
     total = torch.logaddexp(raw_lse, latent_lse)
     raw_mass = torch.exp(raw_lse - total).unsqueeze(-1)
     latent_mass = torch.exp(latent_lse - total).unsqueeze(-1)
@@ -101,13 +105,6 @@ def decode(attention, hidden, position_ids, past_key_value, forward=None):
     latent_v = cat_tensor([pv.history, pv.window, vl], dim=2)
     sink_len = 0 if pk.sink is None else pk.sink.shape[2]
     history_len = 0 if pk.history is None else pk.history.shape[2]
-    old_window_len = 0 if pk.window_roles is None else pk.window_roles.numel()
-    device = hidden.device
-    positions = [torch.arange(sink_len, device=device)]
-    if pk.window_raw_indices is not None:
-        positions.append(pk.window_raw_indices + sink_len + history_len)
-    positions.append(torch.tensor([sink_len + history_len + old_window_len], device=device))
-    raw_positions = torch.cat(positions).unsqueeze(0)
     rope = attention.rotary_emb
     if (type(rope).__name__ in ('RotaryEmbedding', 'LinearScalingRotaryEmbedding', 'Llama3RotaryEmbedding')
             and position_ids.shape[-1] <= rope.max_seq_len_cached):
@@ -120,10 +117,26 @@ def decode(attention, hidden, position_ids, past_key_value, forward=None):
             sine = rope.sin_cached[ids].to(x.dtype).unsqueeze(1)
             return x * cosine + rotate_half(x) * sine
 
-        q, raw_k = rotate(q, position_ids[:, -length:]), rotate(raw_k, raw_positions)
+        from .decode_ops import fused_rope
+        fused = fused_rope(q, raw_k, rope, position_ids[:, -length:], pk.window_raw_indices,
+                           sink_len, history_len)
+        if fused is not None:
+            q, raw_k = fused
+        else:
+            positions = [position_ids[0, :sink_len]]
+            if pk.window_raw_indices is not None:
+                positions.append(pk.window_raw_indices + sink_len + history_len)
+            positions.append(position_ids[0, -length:][:1])
+            raw_positions = torch.cat(positions).unsqueeze(0)
+            q, raw_k = rotate(q, position_ids[:, -length:]), rotate(raw_k, raw_positions)
     else:
         # Other RoPE variants can add query temperature or change frequencies.
         # Preserve their API with dummy keys carrying the actual Q positions.
+        positions = [position_ids[0, :sink_len]]
+        if pk.window_raw_indices is not None:
+            positions.append(pk.window_raw_indices + sink_len + history_len)
+        positions.append(position_ids[0, -length:][:1])
+        raw_positions = torch.cat(positions).unsqueeze(0)
         rope_positions = torch.cat([raw_positions, position_ids[:, -length:]], dim=1)
         dummy = new_k.new_zeros(batch, attention.num_key_value_heads, length, attention.head_dim)
         q, rotated = rope(q, torch.cat([raw_k, dummy], dim=2), rope_positions)

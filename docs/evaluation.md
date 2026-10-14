@@ -16,7 +16,7 @@ bash scripts/evaluation/eval_longbench_llama31_8B.sh
 
 Llama3 常规入口新增 `--beacon_cache_mode`：默认 `auto` 在兼容配置的推理中保存低维 Beacon K/V；`full` 用于完整缓存对照；`latent` 显式要求低维缓存，配置不兼容时会报错。当前低维存储支持 interleave、window=stride、单窗口编码、正 token 压缩比、K/V 均为低秩，且不启用 chunk-fixed K RoPE、K positional residual 或 beacon_skip。训练始终保留完整缓存；切换训练状态或模式前先重置 Memory。验证使用 greedy 生成。
 
-同一权重的对照可在调用 `main.eval_longbench` 时分别传入 `--beacon_cache_mode full` 和 `--beacon_cache_mode latent`，保持其他参数一致。小规模评测可以设置 `--tasks qasper hotpotqa --max_samples_per_task 2`。当前 H20 验证显式使用 `--attn_impl eager`；SDPA 已做 CPU 回归，FA2 尚未做此次 GPU 验收。
+同一权重的对照可在调用 `main.eval_longbench` 时分别传入 `--beacon_cache_mode full` 和 `--beacon_cache_mode latent`，保持其他参数一致。小规模评测可以设置 `--tasks qasper hotpotqa --max_samples_per_task 2`。当前 H20 验证显式使用 `--attn_impl eager`；SDPA 已做 CPU 回归，标准 FA2 prefill 与 latent FA2 decode 的 H20 GPU 验证见下节。
 
 `BEACON_RATIO` 是 token 压缩比例，不是低秩特征压缩比例。平均 f4 checkpoint 配合 token ratio 4/8 分别对应名义 t4f4/t8f4；raw tail 和 sink 会使实际压缩比低于名义值。
 
@@ -63,19 +63,50 @@ python -m tools.validate_fa2_decode \
   --output data/results/fa2-kernel-validation.json
 ```
 
-模型入口通过 `--beacon_cache_mode latent --beacon_decode_backend fa2` 启用。验证采用 `--attn_impl eager` 控制原始维度 prefill；decode 由独立的 FA2 后端接管。
+模型入口通过 `--beacon_cache_mode latent --beacon_decode_backend fa2` 启用。初次验证使用 eager prefill；当前可设置 `--attn_impl flash_attention_2`，让 prefill 使用标准 128 维 FA2，decode 使用独立的 latent FA2 后端。CUDA BF16/FP16 且 Triton 可用时，decode 自动融合 RoPE 和 softmax 合并；CPU、梯度计算或缺少 Triton 时保留 Torch 路径。320 维扩展仍只支持 BF16、SM90。首次 Triton JIT 在预热阶段完成。
 
 ```bash
 python -m tools.benchmark_fa2_decode \
   --model_name_or_path /path/to/checkpoint-2000 \
   --samples_jsonl /path/to/samples.jsonl \
   --output_dir data/results/fa2-benchmark \
-  --attn_impl eager --beacon_ratio 8 \
+  --attn_impl flash_attention_2 --beacon_ratio 8 \
   --decode_tokens 64 --warmup 1 --rounds 2 \
   --perf_sample_indices 0 2
 ```
 
 性能阶段在同一模型、同一环境下交替 full_compact → reconstruct → fa2 → fa2 → reconstruct → full_compact，每轮各两次。decode 输入固定为 full_compact 预热产生的 token，使各模式处理同一输入；计时包含实际 model forward、argmax 和 CUDA 同步边界，tokenization、诊断和 IO 在计时外。质量阶段单独使用正常 greedy 生成。工具另外保存两条输入的 teacher-forced logits 和 kernel 调用覆盖；BF16 运算顺序不同，输出不保证逐位相等。具体结果见 [实现状态](implementation_status.md)。
+
+性能对照还可传入 `--forced_tokens_json /path/to/tokens.json`，文件为样本索引到 decode 输入 token 列表的 JSON 对象；它让 eager/FA2 prefill 和优化前后处理完全相同的 decode 输入。`--reference_decode_source /path/to/previous/fa2_decode.py` 加载兼容的旧 decoder，只切换计算函数，复用同一个模型和参数；性能顺序扩展为四种模式再反序，各模式每轮两次。`--skip_quality` 可用于只复测性能。默认另外保存 16 步 teacher-forced logits；旧 decoder 对照同时报告优化后是否逐位相等。
+
+profiling 与无 profiling 的计时分开运行：
+
+```bash
+nsys profile --trace=cuda,nvtx,osrt --sample=none --cpuctxsw=none \
+  --capture-range=cudaProfilerApi --capture-range-end=stop \
+  -o data/results/slimkv-decode \
+  python -m tools.profile_fa2 --mode model --phase decode \
+  --model_name_or_path /path/to/checkpoint-2000 \
+  --samples_jsonl /path/to/samples.jsonl --sample_index 2 \
+  --output_dir data/results/slimkv-decode-data
+```
+
+`--phase prefill` 采集 prefill；`--mode capture` 保存第 0、2、28 层真实的 raw/latent Q/K/V、LSE 和输出。对其中一个 case 使用 NCU：
+
+```bash
+ncu --nvtx --nvtx-include 'kernel_probe/' \
+  --kernel-name-base demangled --kernel-name 'regex:.*flash_fwd.*' \
+  --launch-count 1 --replay-mode kernel \
+  --section LaunchStats --section SpeedOfLight \
+  --section MemoryWorkloadAnalysis --section SchedulerStats \
+  --section WarpStateStats --section SourceCounters --import-source yes \
+  --export data/results/slimkv-kernel \
+  python -m tools.profile_fa2 --mode kernel \
+  --case_file /path/to/captured-case.pt \
+  --output_dir data/results/slimkv-kernel-data
+```
+
+GPU 融合算子的独立验证入口为 `python -m tools.validate_decode_ops --output data/results/decode-ops.json`。Nsys/NCU 会增加运行开销；它们的 duration 用于定位问题，正式性能使用前述独立 benchmark 中位数。
 
 ## NIAH 与其他任务
 

@@ -127,6 +127,43 @@ LongBench-v1 复用此前八条原始样本和同一生成配置，两个版本�
 
 原始结果、不可变 source_v1/v1b/v2、编译命令和 SHA manifest、CPU/GPU/sanitizer 日志、预测、计时与显存记录在 H20 `data/results/fa2_decode_20261014/`；本机对应 `/data/workspace/slimkv_analysis/fa2_decode_20261014/` 保存 SHA receipt 和独立审核。完整 logits tensor 保留在 H20；独立 tensor 审核读取实际文件。两轮 GPU suite 均正常退出，原占卡程序已恢复。启用及构建命令见 [评测说明](evaluation.md)。
 
+
+## FA2 prefill、Nsys/NCU 与融合优化（2026-10-14）
+
+在同一 H20、f4 BF16 checkpoint、Torch 2.11.0+cu129、FA2 2.8.3、Triton 3.6.0 下，补测 `attn_impl=flash_attention_2` 的标准 128 维 prefill＋global latent FA2 decode。eager/FA2 两次对照使用同一不可变源码、相同 prompt 与事先固定的 decode 输入；prefill 保持原始维度计算与低维持久存储。各模式一次预热、两轮对称顺序、每模式四次中位数，质量阶段单独 greedy。
+
+| 实际输入 token | eager prefill（ms） | FA2 prefill（ms） | 耗时减少 |
+|---|---:|---:|---:|
+| 4009 | 867.59 | 736.25 | 15.14% |
+| 6194 | 1398.39 | 1168.39 | 16.45% |
+
+随后在独立运行中用 Nsys 2025.3.1 和 NCU 2025.2.1 分析，profiling 的时间不用于正式速度比较。Nsys 通过 CPU CUDA API correlation 与嵌套 NVTX，将全部 prefill/decode kernel 关联到实际层与操作：
+
+- baseline 的 16 步 decode 有 41,292 个 GPU kernel，kernel 累计忙碌时间约 172.08 ms，GPU 时间跨度约 757.58 ms。raw/latent FA2 kernel（包括 latent split combine）分别累计 4.26/9.87 ms；大量发射、位置数据拷贝和小算子是可优化部分。这些时间含 profiling 开销，不能直接当作无 profiling 的 30 ms/token 耗时分解。
+- softmax 合并每层有 11 个 kernel，16 步合计 5,632 个。每层创建 GPU 位置 scalar 引入 8 字节拷贝，层内共 512 次；全 trace 有 636 次 stream synchronize。
+- NCU 使用真实模型第 2、28 层的保存输入，独立 replay 320 维 main kernel。Q1 是 13 个 block、约 11.3 μs；新 Beacon Q2 是 96 个 block、约 58.2–58.8 μs。两者均为 255 个寄存器，共享内存限制每 SM 驻留一个 block，实测有 register spilling。raw 128 维 case 约 9.28 μs。五个 replay 的输出和 LSE 相对保存结果差为 0；NCU duration 仅作诊断，不当无 profiling 微基准。
+
+针对这些证据实现了两项融合：`decode_kernels.py` 一次完成 Q 和 raw K 的 RoPE；一次完成 logaddexp、两个分支权重及输出合并。RoPE 保留 BF16 每次乘法和加法后的舍入；merge 使用 libdevice exp/log1p，关闭 FMA 合并。位置从已有 GPU metadata 读取，省掉逐层 CPU→GPU scalar 拷贝。CUDA BF16/FP16 且 Triton 可用时使用融合，CPU、需要输入梯度或缺少 Triton 时保留 Torch 路径。prefill、训练、global rank、320 维 FA2 二进制与权重不改。
+
+最终对照在同一个模型对象中，仅切换旧 decoder 函数与优化后的函数，复用同一参数、同一 FA2 prefill、同一固定 decode 输入。顺序为 full_compact → reconstruct → fa2_reference → fa2 再反序，两轮，每个输入每模式四次，共 32 次测量；首 token 来自 prefill，63 次 decode。
+
+| 输入 token | 完整缓存 FA2（ms/token） | latent 重建＋FA2 | 优化前 latent FA2 | 融合后 latent FA2 |
+|---|---:|---:|---:|---:|
+| 4009 | 25.903 | 40.987 | 29.893 | 24.246 |
+| 6194 | 25.845 | 40.941 | 29.307 | 23.857 |
+
+相对优化前，融合后减少 decode 耗时 18.89% / 18.60%；相对完整缓存标准 FA2 对照减少 6.40% / 7.69%。此结果只覆盖当前两个输入、B1、BF16、固定生成长度。不同上下文、批量和完整 benchmark 仍需单独验证；不将 profiler 的 kernel 加速直接等同于整个模型的加速。
+
+优化后 Nsys 的同一 16 步 decode 有 25,356 个 kernel（−38.59%）；merge 为 512 个 kernel（每层 11→1），层内 8 字节位置拷贝 512→0，stream synchronize 636→124。kernel 累计忙碌时间约 139.99 ms、GPU 时间跨度约 580.19 ms；profiling 数字只用于确认实现机制。MLP、raw/latent FA2 的 GPU 累计时间基本不变，改善集中于其他 attention 小算子与合并。
+
+25 项实际模型 CPU 回归通过；48 个独立 GPU 融合 case 覆盖 B1/B2、Q1/Q2、不同 raw 长度、sink0/1、BF16/FP16、leading strides 和全 mask 的 latent 行，RoPE 与 merge 均与 Torch 参考逐位相同。四个 compute-sanitizer memcheck case 为 0 errors。两条真实输入各保存 17×128256 个 logits，优化前后及同模型切换对照在 CPU 上核对全部逐位相同。
+
+LongBench-v1 原八条样本上，融合前后全部生成 token 相同；FA2 后端分数仍为 Qasper21.88、HotpotQA100、MultiFieldQA-en40.28、LCC75。eager prefill 与 FA2 prefill 的 latent decode 结果有 7/8 条生成 token 相同，LCC22 后半段不同，首行评分相同；FA2 prefill 的 reconstruct 对照 Qasper 为23.49，浮点计算路径不同不保证所有模式逐位相等。
+
+剩余空间：decode 仍有许多 Torch/CPU 发射与动态 cache 操作，预分配缓存和 CUDA Graph 是后续方向；320 维 Q2 kernel 的 tile/GQA packing、共享内存和 spilling 仍值得调优，但其当前占比小于全模型的发射开销。prefill 的 Nsys kernel 累计时间约 57% 在 MLP；Beacon 投影的冗余计算和重建也可进一步分析。上述方向未在本次实现，不据此承诺额外速度收益。
+
+H20 原始 `.nsys-rep`、SQLite、五个 `.ncu-rep` 和 metrics CSV、真实 kernel 输入、logits、immutable source_baseline/source_optimized/source_abba 与所有预测保存在 `data/results/fa2_profile_20261014/`。本机 `/data/workspace/slimkv_analysis/fa2_profile_20261014/` 保存源码/小文件 SHA receipt、独立评分与计时审核、tensor 审核和 profiler 汇总；大型报告及 tensor 留在 H20。GPU 队列均正常结束、占卡恢复。构建及 profiling 命令见 [评测说明](evaluation.md)。
+
 ## 待处理问题
 
 以下问题仍待处理：
