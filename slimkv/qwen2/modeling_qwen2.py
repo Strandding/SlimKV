@@ -365,6 +365,7 @@ class Qwen2Attention(nn.Module):
         svd_device="cpu",
         svd_partition="global",
         return_singular_values=False,
+        svd_factors=None,
     ):
         if "k" not in self.config.beacon_param:
             raise ValueError("Cannot convert beacon K projection because `k` is not enabled in beacon_param.")
@@ -386,7 +387,10 @@ class Qwen2Attention(nn.Module):
                 f"Requested global rank {global_rank} exceeds the maximum feasible rank {max_rank}."
             )
 
-        u, s, vh = torch.linalg.svd(dense_weight, full_matrices=False)
+        if svd_factors is None:
+            u, s, vh = torch.linalg.svd(dense_weight, full_matrices=False)
+        else:
+            u, s, vh = svd_factors
         singular_values = s.detach().cpu()
         u = u[:, :global_rank]
         s = s[:global_rank]
@@ -430,6 +434,7 @@ class Qwen2Attention(nn.Module):
         svd_device="cpu",
         svd_partition="global",
         return_singular_values=False,
+        svd_factors=None,
     ):
         if "v" not in self.config.beacon_param:
             raise ValueError("Cannot convert beacon V projection because `v` is not enabled in beacon_param.")
@@ -451,7 +456,10 @@ class Qwen2Attention(nn.Module):
                 f"Requested global rank {global_rank} exceeds the maximum feasible rank {max_rank}."
             )
 
-        u, s, vh = torch.linalg.svd(dense_weight, full_matrices=False)
+        if svd_factors is None:
+            u, s, vh = torch.linalg.svd(dense_weight, full_matrices=False)
+        else:
+            u, s, vh = svd_factors
         singular_values = s.detach().cpu()
         u = u[:, :global_rank]
         s = s[:global_rank]

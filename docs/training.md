@@ -37,7 +37,7 @@ SVD_DEVICE=cpu \
 bash scripts/conversion/convert_llama31_8B_layerwise_lowrank.sh
 ```
 
-This preset performs global SVD with separate explicit K/V rank lists. Its rank lists are explicit presets; automatic rank allocation is not implemented. For an intended layer-adaptive experiment, supply both lists:
+This preset performs global SVD with separate explicit K/V rank lists. Its rank lists are explicit presets. For an intended layer-adaptive experiment, supply both lists:
 
 ```bash
 export BEACON_K_LATENT_HEAD_DIM_LIST='...'
@@ -48,6 +48,30 @@ export BEACON_V_LATENT_HEAD_DIM_LIST='...'
 List entries are dimensions averaged over KV heads; actual global rank is `num_key_value_heads * latent_head_dim`. Lists must match the layer count; K and V can differ. Use the actual checkpoint's lists when continuing that experiment. Do not replace a layer-adaptive list with a uniform compression ratio.
 
 The general entry is `python -m main.convert_kv_lowrank --help`. Global SVD supports Llama3 and Qwen2; per-head SVD is a Llama3 option. The converter saves weights, config, tokenizer, optional spectra plot and singular-value `.pt` records. CPU SVD avoids a GPU allocation but can be expensive for full-sized checkpoints.
+
+### Automatic equal-energy allocation
+
+Use `--rank_allocation equal_energy` to allocate K and V ranks independently from pretrained raw-token projection spectra, following paper Eqs. 5–9. `--feature_compression_ratio` sets the feature budget, independently of token compression. The paper's rank-floor coefficient is `--rank_floor_ratio 0.5`. Replace `4` below with `2` or `8` for other feature budgets.
+
+```bash
+python -m main.convert_kv_lowrank \
+  --model_name_or_path /path/to/Llama-3.1-8B-Instruct \
+  --output_dir /path/to/initialized-lowrank-f4 \
+  --beacon_param q k v \
+  --beacon_skip_rope_for_beacon_k True \
+  --beacon_chunk_fixed_rope_for_beacon_k False \
+  --rank_allocation equal_energy \
+  --feature_compression_ratio 4 \
+  --rank_floor_ratio 0.5 \
+  --svd_device cpu \
+  --save_dtype bf16
+```
+
+The allocator finds the largest feasible common energy threshold, applies the rank floor, then assigns remaining capacity by normalized marginal energy gain. Global ranks are rounded upward to multiples of the KV head count while remaining within each projection's budget. If a budget is not divisible by that count, the unassignable remainder is reported. Automatic allocation requires global, independent, non-headwise K/V projections.
+
+This mode initializes Beacon K/V from truncated SVD of **raw-token** K/V weights. Existing Beacon K/V weights are replaced; the backbone is unchanged. Manual conversion retains its existing behavior and remains the default. Do not combine automatic allocation with explicit latent dimensions or rank lists.
+
+The output config contains the allocated K/V lists and `beacon_rank_allocation`. `rank_allocation.json` records thresholds, requested/used budgets, rank floors and retained energy. The SVD factors are reused for initialization rather than recomputed. Use the saved lists unchanged for pretraining and finetuning.
 
 ## Pretraining and finetuning
 

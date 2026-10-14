@@ -9,7 +9,7 @@ The paper's efficiency protocol uses Llama-3.1-8B on an A100 80GB with batch siz
 
 | Stage | Available entry | Required author assets / remaining work |
 |---|---|---|
-| Initialization | `main.convert_kv_lowrank`; conversion presets | Exact per-layer K/V rank lists, initialization checkpoint revision; automatic equal-energy/floor/budget allocator absent |
+| Initialization | `main.convert_kv_lowrank`; conversion presets | Exact initialization checkpoint revision and per-result rank lists; equal-energy/floor/budget allocation is available |
 | Pretraining | `main.train`; Llama/Qwen2 presets | Exact 0.5B-token processed RedPajama manifest, schedule, seeds and training environment |
 | Finetuning | Same Trainer; finetuning presets | Exact 0.2B-token mixture and generated GPT/needle data, model-only versus resumable state policy |
 | LongBench | `main.eval_longbench` | Final weights for each backbone/compression ratio and full outputs/configs/task sets |
@@ -40,7 +40,7 @@ See the [paper](https://arxiv.org/abs/2610.02953) for experimental settings. The
 
 1. Redistributable SlimKV checkpoints/tokenizers and immutable hashes, plus base-model provenance and terms.
 2. Exact training-data revisions, processed/generated mixtures, sample/seed manifests and final configuration for each result.
-3. Final rank lists and the missing automatic allocation implementation or reproducible derivation.
+3. Final rank lists and exact allocation arguments/base-model revisions for each result.
 4. Complete evaluation outputs and the paper-specific efficiency/judge/ablation harnesses.
 
 See [backend support](implementation_status.md) for cache eligibility and remaining implementation gaps.

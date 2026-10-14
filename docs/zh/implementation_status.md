@@ -21,12 +21,14 @@ Global coupled rank缓存形状[B,1,N,R]，超过256的rank使用BF16 SM90扩展
 
 Fast默认True，仅eligible FA2；Graph默认False，只捕获norm及attention之后MLP/residual，Q1/Q2和B分开缓存。Attention/KV更新仍eager；CPU/梯度/诊断fallback，dtype/device变化清图。
 
+`main.convert_kv_lowrank` 已实现等能量阈值、秩下限和剩余预算分配，K/V 预算独立，秩按 KV head 粒度对齐。用法见[自动初始化](training.md#自动等能量秩分配)。
+
 ## 已知问题和未完成项
 
 - Qwen无新Beacon时历史K的RoPE问题仍未修；Llama对应路径已修并有回归。
 - 独立 latency 原型的 FA2 fallback 可能丢 causal mask，Value bias 缺概率质量系数；该原型应使用不带 bias 的 Value up-projection。
 - 历史benchmark warmup/repeat未reset，reconstruct标签实际为完整cache，不等于论文latent-cache Recon。
-- 自动equal-energy+rank-floor+budget分配缺失；Qwen latent cache和Qwen3 MoE不支持。
+- Qwen latent cache 和 Qwen3 MoE 仍不支持。
 - 全量LongBench、多seed NIAH judge、随机字符/attention统计、shared-context多请求和论文A100完整效率协议未贯通。
 - vLLM仅基线wrapper，paged/continuous batching未实现；Graph工作区、动态KV拼接和host gaps仍需优化。
 

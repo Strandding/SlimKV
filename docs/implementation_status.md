@@ -24,6 +24,8 @@ Ranks are global and coupled across KV heads: cached shapes are `[B,1,N,R]`. Ran
 
 `beacon_decode_fast=True` is the default for eligible FA2 decode and retains GPU token bookkeeping. `beacon_decode_graph=False` is the default; opt-in partial Graph captures input norm and post-attention norm/MLP/residual segments, separately for Q1/Q2 and batch shapes. Attention and dynamic KV updates remain eager. CPU/gradient and diagnostics fall back; dtype/device changes clear Graph caches.
 
+Floor-constrained equal-energy rank allocation and residual budget completion are available in `main.convert_kv_lowrank`. K/V budgets are independent and ranks align to the KV head count. See [automatic initialization](training.md#automatic-equal-energy-allocation).
+
 ## Known issues retained for follow-up
 
 - Ordinary Qwen decode can apply RoPE to historical Beacon K when no new Beacon is inserted, despite the disabled Beacon K RoPE setting. Llama's corresponding path has a regression-tested fix.
@@ -36,7 +38,6 @@ Ranks are global and coupled across KV heads: cached shapes are `[B,1,N,R]`. Ran
 
 | Manuscript component / experiment | Current gap |
 |---|---|
-| Floor-constrained equal-energy rank allocation and residual budget | Explicit lists only; automatic allocator absent |
 | Qwen2.5 and Qwen3 MoE latent inference | Qwen2 full cache only; Qwen3 MoE unsupported |
 | Full LongBench at all ratios / backbones | Entrypoint present; final checkpoints, manifests, complete reruns missing |
 | Three-seed NIAH with manuscript judge | Current judge/aggregation differ; final protocol not integrated |

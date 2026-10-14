@@ -26,9 +26,33 @@ SVD_DEVICE=cpu \
 bash scripts/conversion/convert_llama31_8B_layerwise_lowrank.sh
 ```
 
-默认 rank 列表是显式预设，自动 rank 分配尚未实现。逐层实验必须显式传 `BEACON_K_LATENT_HEAD_DIM_LIST` 和 `BEACON_V_LATENT_HEAD_DIM_LIST`；每层各一个正整数，列表长度匹配层数。元素为平均每个 KV head 的维度参数，全局 rank 为 KV head 数乘该值，K/V 可不同。初始化、预训练、微调都必须用同一列表。
+此预设的默认 rank 列表是显式配置。逐层实验必须显式传 `BEACON_K_LATENT_HEAD_DIM_LIST` 和 `BEACON_V_LATENT_HEAD_DIM_LIST`；每层各一个正整数，列表长度匹配层数。元素为平均每个 KV head 的维度参数，全局 rank 为 KV head 数乘该值，K/V 可不同。初始化、预训练、微调都必须用同一列表。
 
 通用入口 `python -m main.convert_kv_lowrank --help` 支持 Llama3/Qwen2 global SVD，Llama3 还有 per-head 选项。转换保存模型、配置、tokenizer，可选 spectra 图和奇异值 tensor。
+
+### 自动等能量秩分配
+
+`--rank_allocation equal_energy` 根据预训练 raw-token K/V 投影的奇异值谱，按论文 Eq. 5–9 分别分配 K 和 V 的秩预算。`--feature_compression_ratio` 控制特征压缩，与 token 压缩独立。论文的秩下限系数为 `--rank_floor_ratio 0.5`。以下为 f4 初始化，将 `4` 改为 `2` 或 `8` 即可选择其他特征预算。
+
+```bash
+python -m main.convert_kv_lowrank \
+  --model_name_or_path /path/to/Llama-3.1-8B-Instruct \
+  --output_dir /path/to/initialized-lowrank-f4 \
+  --beacon_param q k v \
+  --beacon_skip_rope_for_beacon_k True \
+  --beacon_chunk_fixed_rope_for_beacon_k False \
+  --rank_allocation equal_energy \
+  --feature_compression_ratio 4 \
+  --rank_floor_ratio 0.5 \
+  --svd_device cpu \
+  --save_dtype bf16
+```
+
+算法求出预算内最大的共同能量阈值，施加秩下限，再按归一化边际能量增益分配剩余容量。全局秩向上对齐到 KV head 数的倍数，同时不超出各自的预算。不能整除该粒度的预算余量会记录在报告中。自动模式要求 global、独立 K/V 和非 headwise 投影。
+
+自动模式从 **raw-token** K/V 的截断 SVD 初始化 Beacon K/V，会替换已有的 Beacon K/V 权重，基座不变。手工转换仍为默认模式，保留原有行为。自动模式不能同时传入显式 latent 维度或逐层秩列表。
+
+输出 config 保存 K/V 秩列表和 `beacon_rank_allocation`；`rank_allocation.json` 记录阈值、请求与实际预算、秩下限和保留能量。初始化复用已经计算的 SVD 分解，不重复计算。预训练和微调须沿用输出的秩列表。
 
 ## 训练示例
 
