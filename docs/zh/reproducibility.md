@@ -31,4 +31,4 @@ python -m tools.record_run \
 
 保持data选择顺序、模板、ratio、window/stride、K/V rank、RoPE、dtype/backend、EOS和GPU一致。失败日志保留，但不计为成功benchmark；不要删慢trial美化结果。
 
-作者仍需提供公开论文链接/发表信息、原创许可证、可分发权重/tokenizer/hash和基座来源、处理数据与seed manifests、最终rank及自动算法、完整评测/efficiency/judge/ablation资产。Figure3已从稿件提取，但不是功能完成声明。历史记录有[中文](../archive/validation_20261014_zh.md)与[英文](../archive/validation_20261014.md)，当前契约见[状态](implementation_status.md)。
+论文已公开为 [arXiv:2610.02953](https://arxiv.org/abs/2610.02953)，2026年10月2日提交，页面注明 EMNLP 2026 Main Conference（Oral）接收。公开 arXiv 引用已补充，后续可加入正式 proceedings 信息。作者仍需提供原创许可证、可分发权重/tokenizer/hash和基座来源、处理数据与seed manifests、最终rank及自动算法、完整评测/efficiency/judge/ablation资产。Figure3已从稿件提取，但不是功能完成声明。历史记录有[中文](../archive/validation_20261014_zh.md)与[英文](../archive/validation_20261014.md)，当前契约见[状态](implementation_status.md)。

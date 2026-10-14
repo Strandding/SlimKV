@@ -1,58 +1,64 @@
-# SlimKV：联合 token 与特征维度 KV Cache 压缩及无需重建的 Beacon 注意力
+# SlimKV
 
-[English](README.md) · [快速开始](docs/zh/quickstart.md) · [论文复现](docs/zh/reproducibility.md) · [实现状态](docs/zh/implementation_status.md)
+**联合 Token–Feature KV Cache 压缩与无需重建的 Beacon 注意力**
 
-SlimKV 通过训练紧凑的 Beacon 记忆，同时减少长上下文 KV Cache 的 token 数量和特征维度。
+**EMNLP 2026 Main Conference（Oral）**
 
-**发布状态：研究实现。** 尚未确认公开论文地址、模型下载地址和发表会议。下面的论文结果来自作者提供的稿件，不代表当前仓库已完成全部复现。
+[论文](https://arxiv.org/abs/2610.02953) · [代码](https://github.com/Strandding/SlimKV) · [English](README.md)
 
-## 方法概览
+## 概览
 
-- **联合 token–feature 压缩**：Beacon 总结已完成的上下文窗口，低秩 K/V 投影继续压缩每个 Beacon 的特征。
-- **逐层自适应低秩表示**：不同层的 K/V rank 分配容量。当前代码接受显式 rank 列表并支持 SVD 初始化，尚未实现论文中的自动预算分配算法。
-- **无需重建的 Beacon 注意力**：Beacon K 不使用 K-side RoPE；raw K 和所有 Q 保留 RoPE，使 latent attention 可以通过 query/output 投影完成。
+SlimKV 同时压缩 KV Cache 的 token 数量和特征维度，用于长上下文大模型推理。它通过训练紧凑的 Beacon 记忆和逐层自适应低秩 K/V 表示，在固定缓存预算下改善精度与显存之间的权衡。
 
-训练和 prefill 的注意力仍在原始维度计算。兼容配置下的 Llama3 推理存储低维 Beacon K/V；默认 decode 先重建，再计算标准注意力。可选 FA2 decode 直接计算全局 latent Beacon 注意力，并与完整维度的 raw/sink 分支合并。Qwen2 支持低秩训练，但常规推理仍保存完整维度缓存。
+传统特征压缩通常需要先重建完整维度的 Key，再应用 RoPE。我们发现，去掉 key-side RoPE 对 Beacon Keys 的影响显著小于对 raw-token Keys 的影响。SlimKV 利用这种位置不对称性，在关闭 Beacon K-RoPE 的约束下训练低秩投影，同时保留 raw K 和所有 Q 的 RoPE，从而在 decode 中直接计算 latent-space attention，避免历史 Beacon K/V 的完整维度重建。
 
-## 方法图
+在 LongBench 上，SlimKV 在4×和8×压缩下保留超过96%的 Full KV 得分，在16×和32×压缩下优于所评测的基线。128K上下文下，t4f4配置实现7.34× attention加速和3.38×端到端decode加速。
 
-![论文 Figure 3](docs/assets/method.svg)
+## 方法
 
-该图复用作者提供稿件的 Figure 3，展示论文设计。当前重建与 latent decode 路径的区别见 [英文 README 示意图](README.md#method-overview)；方法图不意味着全部论文实验已复现。
+![SlimKV 方法概览](docs/assets/method.svg)
 
-## 主要结果
+SlimKV 将已完成的上下文窗口逐步压缩为 Beacon 记忆。Backbone 保持冻结，Beacon K/V 投影直接在目标低秩约束下训练。逐层 rank 根据各层低秩结构的差异分配容量，而不是给所有层相同维度。
 
-**论文报告数据**，来源为 Table 2、Table 6 和 §5.4：
+Decode 时，attention scores 和 Value 聚合在缓存的 latent Beacon 状态上完成。Query 投影到 latent Key 空间，attention 输出通过 Value basis 映射回原始空间，因此无需重建历史 Beacon K/V。Raw tail 和 sink 仍保留完整维度缓存。
 
-| 指标 | Llama-3.1-8B | Qwen2.5-14B |
-|---|---:|---:|
-| Full KV 的 LongBench 平均分 | 49.50 | 51.52 |
-| SlimKV-f4，名义 16×（t4f4） | 46.36 | 46.23 |
-| SlimKV-f4，名义 32×（t8f4） | 44.75 | 45.09 |
-| 128K t4f4 attention 加速 | 7.34× | — |
-| 128K t4f4 每 token decode 加速 | 3.38× | — |
-| 11.5K t4f4 / t8f4 峰值显存减少倍数 | 2.71× / 2.82× | — |
+<img src="docs/assets/positional_asymmetry.svg" width="560" alt="K-RoPE 消融下的 LongBench 比较">
 
-论文效率协议使用 A100 80GB、B1、BF16、eager，以及长上下文 synthetic Full KV。这些不是 H20 FA2 后端的实测数据。Token × feature 压缩是名义比例；raw tail/sink 使实际缓存比例降低。
+*去掉 raw-token K-RoPE 会造成显著退化，Beacon Keys 对此更不敏感。SlimKV 在无 Beacon K-RoPE 的约束下学习低秩记忆（Figure 2）。*
 
-**仓库局部验证**：H20、私有 f4 BF16 checkpoint，8 条 LongBench-v1 样本及 2 条计时输入。标准 FA2 prefill 加局部 Graph 的 decode，在 4009 / 6194 token 输入上为 18.38 / 18.67 ms/token；同轮 compact full 对照为 26.34 / 26.40 ms/token。B1 Graph 额外持有约 515.75 MiB。它们是 smoke/scaling 数据，不是完整 LongBench 结果。[协议、范围和证据](docs/zh/benchmark.md)。
+## 结果
+
+| **96%+** | **7.34×** | **3.38×** |
+|:---:|:---:|:---:|
+| 4× / 8× 压缩下保留的 Full KV LongBench 得分 | 128K attention 加速 | 128K 端到端 decode 加速 |
+
+上述速度来自 Llama-3.1-8B 的 t4f4 配置，使用 A100 80GB、BF16 和 eager。完整结果与评测协议见[论文](https://arxiv.org/abs/2610.02953)。
+
+<img src="docs/assets/longbench.svg" width="640" alt="Table 4 的低压缩比 LongBench 结果">
+
+*4×和8×压缩下的 LongBench 平均分（Table 4）。AB 表示 Activation Beacon。*
+
+<img src="docs/assets/efficiency.svg" width="640" alt="Table 6 的 attention 和端到端 decode 加速">
+
+*32K–128K上下文下的 attention 与每 token decode 加速（Table 6）。*
+
+Benchmark 脚本和 H20 FA2 局部测量见[性能评测](docs/zh/benchmark.md)。
 
 ## 安装
 
-使用独立 Python 3.11 环境，先安装匹配硬件的 PyTorch，再执行：
+使用 Python 3.11，先安装匹配硬件的 PyTorch，再执行：
 
 ```bash
 git clone https://github.com/Strandding/SlimKV.git
 cd SlimKV
 python -m pip install -e .
-python -m pip check
 ```
 
-模型实现要求 Transformers 4.40.x，已验证 4.40.2。最小 eager 推理不需要 FlashAttention；训练和 kernel 环境要求见 [安装说明](docs/zh/installation.md)。
+模型代码使用 Transformers 4.40.x，已验证4.40.2。Eager推理不需要 FlashAttention。训练依赖和可选 FA2 扩展见[安装说明](docs/zh/installation.md)。
 
-## 快速开始
+## 使用
 
-需要**训练后的 SlimKV checkpoint**，包含 config、完整权重及 tokenizer。单独的 Llama 基座不包含训练后的 SlimKV 投影。目前无公开权重下载地址，请从作者处获取或按训练说明构建。
+需要训练后的 SlimKV checkpoint，包含权重、配置和 tokenizer。目前尚未公开托管 checkpoint，可按[训练说明](docs/zh/training.md)初始化和训练。
 
 ```bash
 python -m main.infer \
@@ -61,58 +67,39 @@ python -m main.infer \
   --max_new_tokens 32
 ```
 
-默认 BF16、cuda:0、eager、greedy、重建后端，并读取 checkpoint 的 rank 和 Beacon 配置。长上下文使用 `--prompt_file`；短 prompt 可能未完成一个 Beacon 窗口。[Python API 与 FA2](docs/zh/quickstart.md)。
+长上下文使用 `--prompt_file /path/to/context.txt`。示例从 checkpoint 读取 rank 和 Beacon 设置，在 cuda:0 上进行 BF16 greedy 推理。
 
-## 复现实验入口
+默认后端存储低维 Beacon K/V，在注意力计算前重建。Llama3 另支持可选的免重建 FA2 decode；训练和 prefill 在原始注意力维度计算。[快速开始](docs/zh/quickstart.md)提供 Python API 和后端选项。
 
-| 阶段 | 入口 | 文档 |
+## 复现
+
+从仓库根目录启动，模型、数据和输出路径由 [.env.example](.env.example) 中的环境变量配置。
+
+| 阶段 | 入口 | 说明 |
 |---|---|---|
-| SVD 初始化 | `python -m main.convert_kv_lowrank --help` | [训练](docs/zh/training.md) |
-| 预训练 | `scripts/training/train_llama_8B.sh` | [训练](docs/zh/training.md) |
-| 微调 | `scripts/training/finetune_llama_8B.sh` | [训练](docs/zh/training.md) |
+| 低秩初始化 | `python -m main.convert_kv_lowrank --help` | [训练](docs/zh/training.md) |
+| 预训练 | `bash scripts/training/train_llama_8B.sh` | [训练](docs/zh/training.md) |
+| 微调 | `bash scripts/training/finetune_llama_8B.sh` | [训练](docs/zh/training.md) |
 | LongBench | `python -m main.eval_longbench --help` | [评测](docs/zh/evaluation.md) |
-| NIAH / accuracy | `python -m main.eval_needle --help` | [评测](docs/zh/evaluation.md) |
-| 耗时与显存 | `python -m tools.benchmark_fa2_decode --help` | [benchmark](docs/zh/benchmark.md) |
+| NIAH | `python -m main.eval_needle --help` | [评测](docs/zh/evaluation.md) |
+| 耗时与显存 | `python -m tools.benchmark_fa2_decode --help` | [性能评测](docs/zh/benchmark.md) |
 
-从仓库根目录启动，路径用环境变量覆盖。[.env.example](.env.example) 不会自动加载。完整论文复现还缺资源和协议，见 [复现说明](docs/zh/reproducibility.md)。
-
-## 目录
-
-```text
-slimkv/                     模型、配置、Memory、训练工具
-  llama3/                   Llama3 低秩缓存与可选 latent FA2
-  qwen2/                    Qwen2 低秩训练，完整维度缓存
-  latency/                  独立研究原型
-main/                       Python 命令入口
-scripts/                    conversion / training / evaluation / benchmark / slurm / vllm
-config/                     数据和分布式配置
-kernels/fa2_decode/          BF16 SM90 width-320 forward
-tools/                     评测、验证、provenance 与硬件工具
-tests/                     CPU 回归；GPU 验证入口在 tools
-docs/                      英文指南、zh 中文指南及 archive 历史记录
-experiments/anchor_prototype/  不参与主安装的早期原型
-requirements/              CPU CI 约束
-data/toy/                  小样例；其他数据、结果和权重保留在本地
-```
-
-[模块与工具对应表](docs/zh/structure.md)。CPU 检查：`python tools/check_repository.py` 和 `python -m unittest discover -s tests -v`。
+最终 checkpoint 和处理后的训练数据 manifests 仍需发布。[复现指南](docs/zh/reproducibility.md)列出所需资源与实验协议，[模块说明](docs/zh/structure.md)介绍源码组织，[实现状态](docs/zh/implementation_status.md)记录待完成的论文组件。
 
 ## 引用
 
-作者列表来自稿件，未杜撰年份、会议、DOI 或 arXiv ID。
-
 ```bibtex
-@unpublished{teng_slimkv,
+@misc{teng2026slimkv,
   title = {SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention},
   author = {Teng, Zihan and Zhao, Jiayu and Ren, Wentao and Fan, Minhao and Ma, Tianrui and Chen, Song and Liu, Weichen},
-  note = {Unpublished manuscript}
+  year = {2026},
+  eprint = {2610.02953},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.LG},
+  url = {https://arxiv.org/abs/2610.02953}
 }
 ```
 
-[CITATION.cff](CITATION.cff) 提供机器可读信息。
+## 致谢与许可
 
-## 致谢和许可
-
-SlimKV 基于 [Activation Beacon](https://github.com/FlagOpen/FlagEmbedding/tree/master/research/Long_LLM/activation_beacon)、Transformers 和 FlashAttention。保留上游版权、许可及归属，[第三方声明](THIRD_PARTY_NOTICES.md) 附对应文本。
-
-**SlimKV 原创贡献的许可证尚待作者决定**，本次没有代选。上游组件、模型和数据各自的许可继续适用。
+SlimKV 基于 [Activation Beacon](https://github.com/FlagOpen/FlagEmbedding/tree/master/research/Long_LLM/activation_beacon)、Hugging Face Transformers 和 [FlashAttention](https://github.com/Dao-AILab/flash-attention)。归属和许可见[第三方声明](THIRD_PARTY_NOTICES.md)。SlimKV 原创贡献的许可证尚待确定。

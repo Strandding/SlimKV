@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use SlimKV, cite the supplied manuscript. Publication metadata is pending."
+message: "If you use SlimKV, cite the public arXiv paper listed below."
 type: software
 title: "SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention"
 repository-code: "https://github.com/Strandding/SlimKV"
@@ -19,9 +19,15 @@ authors:
   - family-names: Liu
     given-names: Weichen
 preferred-citation:
-  type: unpublished
+  type: article
   title: "SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention"
-  notes: "Unpublished manuscript; venue, year, DOI and public paper URL are not confirmed."
+  year: 2026
+  date-published: "2026-10-02"
+  url: "https://arxiv.org/abs/2610.02953"
+  identifiers:
+    - type: other
+      value: "arXiv:2610.02953"
+  notes: "The arXiv record states acceptance to EMNLP 2026 Main Conference (Oral). This citation identifies the arXiv version; proceedings metadata are not included."
   authors:
     - family-names: Teng
       given-names: Zihan

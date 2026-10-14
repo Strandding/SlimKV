@@ -44,9 +44,11 @@ The helper does not launch work, reset seeds or modify numerical settings. JSON 
 
 Keep data selection/order, chat template, token ratio, window/stride, independent K/V rank lists, RoPE policy, dtype, backend, generation/stopping policy and GPU hardware fixed for a controlled comparison. Retain raw trials and failed-run logs separately, without counting failures as successful benchmark measurements.
 
-## Resources needed for a public paper release
+## Resources needed for a complete reproducibility release
 
-1. Public manuscript URL and confirmed publication metadata (venue/year/identifier).
+The paper is public as [arXiv:2610.02953](https://arxiv.org/abs/2610.02953), submitted October 2, 2026. Its arXiv record states acceptance to EMNLP 2026 Main Conference (Oral). Proceedings metadata can be added when available. Remaining resources:
+
+1. Final proceedings citation metadata, when available; the public arXiv citation is already recorded.
 2. Explicit license for original SlimKV contributions; upstream notices are already retained.
 3. Redistributable SlimKV checkpoints/tokenizers and immutable hashes, plus base-model provenance and terms.
 4. Exact training-data revisions, processed/generated mixtures, sample/seed manifests and final configuration for each result.

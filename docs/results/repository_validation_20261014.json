@@ -33,8 +33,15 @@
   "gpu_tests_this_refresh": false,
   "remaining_author_decisions": [
     "Public checkpoint release and weight identity",
-    "Public paper link/publication metadata",
     "Original SlimKV project license",
     "Exact data/rank/config manifests and paper-specific protocol implementations"
-  ]
+  ],
+  "paper_metadata": {
+    "url": "https://arxiv.org/abs/2610.02953",
+    "arxiv_id": "2610.02953",
+    "submitted": "2026-10-02",
+    "acceptance_status_source": "arXiv abstract page comments",
+    "acceptance_status": "EMNLP 2026 Main Conference (Oral)",
+    "proceedings_metadata": "Not supplied"
+  }
 }
