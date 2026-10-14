@@ -32,7 +32,7 @@ def main():
     parser.add_argument('--samples_jsonl', required=True)
     parser.add_argument('--output_dir', required=True)
     parser.add_argument('--source_dir', default=None)
-    parser.add_argument('--attn_impl', choices=['eager', 'sdpa', 'flash_attention_2'], default='eager')
+    parser.add_argument('--attn_impl', choices=['eager', 'flash_attention_2'], default='eager')
     parser.add_argument('--forced_tokens_json', help='Optional mapping from sample index to fixed decode input tokens.')
     parser.add_argument('--reference_decode_source', help='Optional prior fa2_decode.py for a same-model optimization control.')
     parser.add_argument('--compare_b1', action='store_true', help='Compare legacy, GPU bookkeeping, and partial CUDA Graph decode in the same model.')

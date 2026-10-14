@@ -34,15 +34,14 @@ The preset uses BF16 greedy inference, token ratio 4, latent KV storage, origina
 | Environment settings | Prefill | Beacon decode | Default Graph setting |
 | --- | --- | --- | --- |
 | `ATTN_IMPL=eager` | Eager | Reconstruct, then eager attention | Off |
-| `ATTN_IMPL=sdpa` | PyTorch SDPA | Reconstruct, then SDPA | Off |
 | `ATTN_IMPL=flash_attention_2 DECODE_BACKEND=reconstruct` | FA2 | Reconstruct, then FA2 | Off |
 | `ATTN_IMPL=flash_attention_2` | FA2 | Reconstruction-free latent FA2 | On |
 
-For example, prefix the launcher with `ATTN_IMPL=eager` to use eager throughout. Eager reconstruction requires no FlashAttention installation or width-320 extension. An explicit `DECODE_BACKEND=fa2` can also combine eager or SDPA prefill with latent FA2 decode, which still requires FA2. `DECODE_GRAPH=False` disables the optional Graphs independently.
+For example, prefix the launcher with `ATTN_IMPL=eager` to use eager throughout. Eager reconstruction requires no FlashAttention installation or width-320 extension. An explicit `DECODE_BACKEND=fa2` can also combine eager prefill with latent FA2 decode, which still requires FA2. This hybrid uses FA2 during decode; reconstruction-free eager decode is not implemented. `DECODE_GRAPH=False` disables the optional Graphs independently.
 
 Result directories include both attention choices, keeping different paths separate by default. When using `python -m main.eval_longbench` directly, select both `--attn_impl` and `--beacon_decode_backend` explicitly; the script's automatic pairing applies to its environment variables.
 
-FA2 must be installed. Global latent ranks up to 256 use standard FA2. Ranks from 257 to 320 require the BF16 SM90 extension and `SLIMKV_FA2_DECODE_EXTENSION_DIR`; see [build instructions](benchmark.md#building-the-width-320-extension). Larger ranks and other projection structures should use reconstruction decode. For that path, set `DECODE_BACKEND=reconstruct ATTN_IMPL=sdpa` before the launcher. Optional fast decode currently supports Llama3, not Qwen2.
+FA2 must be installed. Global latent ranks up to 256 use standard FA2. Ranks from 257 to 320 require the BF16 SM90 extension and `SLIMKV_FA2_DECODE_EXTENSION_DIR`; see [build instructions](benchmark.md#building-the-width-320-extension). Larger ranks and other projection structures should use reconstruction decode. For that path, set `DECODE_BACKEND=reconstruct ATTN_IMPL=eager` before the launcher. Optional fast decode currently supports Llama3, not Qwen2.
 
 The **final chat-formatted input** is limited to 31500 tokens. Longer inputs retain the first 15750 and last 15750 tokens, without decoding and re-encoding. Few-shot and code tasks retain their existing template behavior. The direct Python entry keeps its historical truncation before chat formatting unless `--truncate_after_chat True` is supplied.
 

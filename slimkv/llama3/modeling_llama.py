@@ -1826,7 +1826,6 @@ class LlamaFlashAttention2(LlamaAttention):
 
 LLAMA_ATTENTION_CLASSES = {
     "eager": LlamaAttention,
-    "sdpa": LlamaSdpaAttention,
     "flash_attention_2": LlamaFlashAttention2,
 }
 
@@ -1951,7 +1950,7 @@ class LlamaPreTrainedModel(PreTrainedModel):
     _no_split_modules = ["LlamaDecoderLayer"]
     _skip_keys_device_placement = "past_key_values"
     _supports_flash_attn_2 = True
-    _supports_sdpa = True
+    _supports_sdpa = False
     _supports_cache_class = True
 
     def _init_weights(self, module):

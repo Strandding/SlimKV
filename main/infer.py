@@ -12,7 +12,7 @@ def main():
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--dtype', choices=['bf16', 'fp16', 'fp32'], default='bf16')
     parser.add_argument('--chat_template', default='llama-3')
-    parser.add_argument('--attn_impl', choices=['eager', 'sdpa', 'flash_attention_2'], default='eager')
+    parser.add_argument('--attn_impl', choices=['eager', 'flash_attention_2'], default='eager')
     parser.add_argument('--beacon_cache_mode', choices=['auto', 'full', 'latent'], default='auto')
     parser.add_argument('--beacon_decode_backend', choices=['reconstruct', 'fa2'], default='reconstruct')
     parser.add_argument('--beacon_decode_graph', action='store_true')

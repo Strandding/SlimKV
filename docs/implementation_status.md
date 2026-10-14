@@ -7,7 +7,7 @@ The table below describes the available cache and attention paths. Existing `bea
 
 | Path | Persistent Beacon K/V | Attention computation | Validation / scope |
 |---|---|---|---|
-| Llama3, compatible `auto`/`latent`, default `reconstruct` backend | Actual low-rank features | Original-dimension prefill and reconstructed decode | CPU global/headwise/grouped/bias/SDPA regressions; local BF16 generation |
+| Llama3, compatible `auto`/`latent`, default `reconstruct` backend | Actual low-rank features | Original-dimension prefill and reconstructed decode | CPU global/headwise/grouped/bias regressions; local BF16 generation |
 | Llama3, `latent` + `fa2` decode | Global low-rank features | Original-dimension prefill; raw/sink FA2 + latent Beacon FA2 with one merged softmax in decode | BF16; equal-length unpadded aligned batches |
 | Llama3 training, `full`, incompatible `auto`; Qwen2 | Full-dimensional K/V | Standard attention | Low-rank training code and conversion available; no Qwen latent-cache backend |
 | `slimkv/latency` | Prototype-specific latent K/V | Independent eager hybrid attention | Separate loader; not the default production/model API |

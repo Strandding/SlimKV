@@ -32,7 +32,7 @@ def main():
     parser.add_argument('--samples_jsonl', required=True)
     parser.add_argument('--output_dir', required=True)
     parser.add_argument('--source_dir', default=None)
-    parser.add_argument('--attn_impl', choices=['eager', 'sdpa'], default='eager')
+    parser.add_argument('--attn_impl', choices=['eager', 'flash_attention_2'], default='eager')
     parser.add_argument('--beacon_ratio', type=int, default=8)
     parser.add_argument('--decode_tokens', type=int, default=64)
     parser.add_argument('--warmup', type=int, default=1)

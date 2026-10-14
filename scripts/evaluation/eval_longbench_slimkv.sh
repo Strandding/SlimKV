@@ -13,7 +13,7 @@ Environment: PYTHON, CUDA_VISIBLE_DEVICES, OUTPUT_DIR, RESULT_DIR, TASKS,
 BEACON_RATIO, BATCH_SIZE, MAX_BATCH_TOKENS, MAX_LENGTH, MAX_SAMPLES_PER_TASK,
 DECODE_BACKEND, ATTN_IMPL, DECODE_GRAPH, LOAD_RESULT, MAP_NUM_PROC.
 TASKS is a space-separated task list or 'english'/'all'.
-ATTN_IMPL=eager or sdpa defaults to reconstruction decode with Graphs disabled.
+ATTN_IMPL=eager defaults to reconstruction decode with Graphs disabled.
 ATTN_IMPL=flash_attention_2 defaults to latent FA2 decode with Graphs enabled.
 Set DECODE_BACKEND explicitly to select a different prefill/decode combination.
 HELP
@@ -31,8 +31,8 @@ BEACON_RATIO="${BEACON_RATIO:-4}"
 ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 case "${ATTN_IMPL}" in
   flash_attention_2) backend_default=fa2 ;;
-  eager|sdpa) backend_default=reconstruct ;;
-  *) echo "ERROR: ATTN_IMPL must be eager, sdpa or flash_attention_2." >&2; exit 2 ;;
+  eager) backend_default=reconstruct ;;
+  *) echo "ERROR: ATTN_IMPL must be eager or flash_attention_2." >&2; exit 2 ;;
 esac
 DECODE_BACKEND="${DECODE_BACKEND:-${backend_default}}"
 case "${DECODE_BACKEND}" in

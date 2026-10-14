@@ -46,7 +46,7 @@ class ModelArgs:
     )
     attn_impl: Optional[str] = field(
         default="flash_attention_2",
-        metadata={'help': 'The implementation of attention.'}
+        metadata={'help': 'The attention implementation.', 'choices': ['eager', 'flash_attention_2']}
     )
 
     max_length: int = field(
@@ -347,6 +347,10 @@ class ModelArgs:
             json.dump(self.to_dict(), f)
 
     def __post_init__(self):
+        if self.attn_impl is None:
+            self.attn_impl = 'eager'
+        if self.attn_impl not in ['eager', 'flash_attention_2']:
+            raise ValueError('attn_impl must be eager or flash_attention_2.')
         if self.train_data is not None:
             self.train_data = self.resolve_path(self.train_data)
 

@@ -13,6 +13,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RepositoryToolsTest(unittest.TestCase):
+    def test_attention_backends_are_explicit(self):
+        from slimkv import ModelArgs
+        from slimkv.llama3.modeling_llama import LLAMA_ATTENTION_CLASSES
+        from slimkv.qwen2.modeling_qwen2 import QWEN2_ATTENTION_CLASSES
+        supported = {'eager', 'flash_attention_2'}
+        self.assertEqual(set(LLAMA_ATTENTION_CLASSES), supported)
+        self.assertEqual(set(QWEN2_ATTENTION_CLASSES), supported)
+        self.assertEqual(ModelArgs(attn_impl=None).attn_impl, 'eager')
+        for choice in supported:
+            self.assertEqual(ModelArgs(attn_impl=choice).attn_impl, choice)
+        with self.assertRaisesRegex(ValueError, 'eager or flash_attention_2'):
+            ModelArgs(attn_impl='sdpa')
+
     def test_manifest_records_actual_inputs_and_redacts_nested_credentials(self):
         import hashlib
         with tempfile.TemporaryDirectory() as tmp:

@@ -72,7 +72,6 @@ class ReconstructionCacheTest(unittest.TestCase):
             ('eager', True, True, 1, False),
             ('eager', True, True, 2, False),
             ('eager', False, False, 1, True),
-            ('sdpa', False, False, 1, False),
         ]:
             with self.subTest(backend=backend, bias=bias, headwise=headwise, group=group, shared=shared):
                 settings = dict(attn_impl=backend, attention_bias=bias,
