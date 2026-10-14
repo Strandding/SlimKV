@@ -2,7 +2,7 @@
 
 [中文](zh/evaluation.md)
 
-The Llama3 preset evaluates 15 English and code subsets. The training corpus is Chinese-only, so Chinese evaluation subsets are excluded. `passage_count` is excluded separately. `passage_retrieval_en`, `lcc` and `repobench-p` are included. Use `TASKS=all` to evaluate all LongBench-v1 subsets.
+The Llama3 preset evaluates 14 English and code subsets. The training corpus is Chinese-only, so Chinese evaluation subsets are excluded. The synthetic subsets `passage_count` and `passage_retrieval_en` are excluded separately. `lcc` and `repobench-p` are included. Use `TASKS=all` to evaluate all LongBench-v1 subsets.
 
 ## Prepare data
 

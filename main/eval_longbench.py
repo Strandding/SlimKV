@@ -169,7 +169,7 @@ class Args(ModelArgs):
 
     tasks: List[str] = field(
         default_factory=lambda: list(ENGLISH_TASKS),
-        metadata={'help': 'Task names, english (15 tasks), or all (including Chinese and passage_count).'}
+        metadata={'help': 'Task names, english (14 tasks), or all (including Chinese and synthetic tasks).'}
     )
     newline_as_eos: bool = field(
         default=True,

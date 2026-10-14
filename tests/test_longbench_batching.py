@@ -19,8 +19,8 @@ from tools.download_longbench import extract_tasks
 
 class LengthBatchingTest(unittest.TestCase):
     def test_english_preset_and_selected_archive_extraction(self):
-        self.assertEqual(len(ENGLISH_TASKS), 15)
-        self.assertIn('passage_retrieval_en', ENGLISH_TASKS)
+        self.assertEqual(len(ENGLISH_TASKS), 14)
+        self.assertNotIn('passage_retrieval_en', ENGLISH_TASKS)
         self.assertIn('repobench-p', ENGLISH_TASKS)
         self.assertNotIn('passage_count', ENGLISH_TASKS)
         self.assertFalse(any(name.endswith('_zh') for name in ENGLISH_TASKS))

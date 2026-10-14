@@ -34,8 +34,7 @@ MAX_SAMPLES_PER_TASK="${MAX_SAMPLES_PER_TASK:-}"
 EVAL_SAMPLE_SEED="${EVAL_SAMPLE_SEED:-42}"
 EVAL_SAMPLE_SHUFFLE="${EVAL_SAMPLE_SHUFFLE:-True}"
 
-# --- LongBench tasks (Chinese subsets excluded by default) ---
-# Excluded: multifieldqa_zh, dureader, vcsum, lsht, passage_retrieval_zh.
+# --- LongBench tasks (Chinese and synthetic subsets excluded by default) ---
 TASKS=(
   narrativeqa
   qasper
@@ -49,8 +48,6 @@ TASKS=(
   trec
   triviaqa
   samsum
-  passage_count
-  passage_retrieval_en
   lcc
   repobench-p
 )

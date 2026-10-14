@@ -6,7 +6,7 @@ if [[ "${1:-}" == "--help" ]]; then
 Usage: MODEL_NAME_OR_PATH=/path/to/checkpoint EVAL_DATA=/path/to/longbench \
        bash scripts/evaluation/eval_longbench_slimkv.sh [evaluator arguments]
 
-Defaults: 15 English/code tasks, token ratio 4, BF16, final input limit 31500,
+Defaults: 14 English/code tasks, token ratio 4, BF16, final input limit 31500,
 head/tail truncation, latent FA2 decode, CUDA Graphs, batch limit 32.
 Feature ranks are read from the checkpoint; use an f4 checkpoint for t4f4.
 Environment: PYTHON, CUDA_VISIBLE_DEVICES, OUTPUT_DIR, RESULT_DIR, TASKS,
@@ -34,7 +34,7 @@ else
   graph_default=False
 fi
 # The training corpus is Chinese-only, so the English preset excludes Chinese tasks.
-# Passage counting is excluded separately; English retrieval and code tasks remain.
+# Passage counting and retrieval are excluded separately; code tasks remain.
 read -r -a tasks <<< "${TASKS:-english}"
 sample_args=()
 if [[ -n "${MAX_SAMPLES_PER_TASK:-}" ]]; then

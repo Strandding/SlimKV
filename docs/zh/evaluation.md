@@ -2,7 +2,7 @@
 
 [English](../evaluation.md)
 
-Llama3 预设评测 15 个英文及代码子集。训练语料只有中文，因此排除中文评测子集。`passage_count` 单独排除，保留 `passage_retrieval_en`、`lcc` 和 `repobench-p`。设置 `TASKS=all` 可评测 LongBench-v1 全部子集。
+Llama3 预设评测 14 个英文及代码子集。训练语料只有中文，因此排除中文评测子集。Synthetic 子集 `passage_count` 和 `passage_retrieval_en` 单独排除，保留 `lcc` 和 `repobench-p`。设置 `TASKS=all` 可评测 LongBench-v1 全部子集。
 
 ## 准备数据
 
