@@ -153,7 +153,8 @@ class ModelArgs:
     )
     beacon_decode_backend: Optional[str] = field(
         default=None,
-        metadata={'help': 'Llama3 decode backend: reconstruct (default) or inference-only latent FA2.'},
+        metadata={'help': 'Llama3 decode: reconstruct, latent (uses attn_impl), or fa2 (legacy explicit FA2).',
+                  'choices': ['reconstruct', 'latent', 'fa2']},
     )
     beacon_decode_fast: Optional[bool] = field(
         default=None,

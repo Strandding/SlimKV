@@ -9,18 +9,19 @@ The table below describes the available cache and attention paths. Existing `bea
 |---|---|---|---|
 | Llama3, compatible `auto`/`latent`, default `reconstruct` backend | Actual low-rank features | Original-dimension prefill and reconstructed decode | CPU global/headwise/grouped/bias regressions; local BF16 generation |
 | Llama3, `latent` + `fa2` decode | Global low-rank features | Original-dimension prefill; raw/sink FA2 + latent Beacon FA2 with one merged softmax in decode | BF16; equal-length unpadded aligned batches |
+| Llama3, latent cache + `latent` decode strategy | Global low-rank features | Original-dimension prefill; direct Beacon decode uses eager or FA2 according to `attn_impl` | Eager works on CPU/GPU, including unequal K/V ranks; same aligned-batch requirements |
 | Llama3 training, `full`, incompatible `auto`; Qwen2 | Full-dimensional K/V | Standard attention | Low-rank training code and conversion available; no Qwen latent-cache backend |
 | `slimkv/latency` | Prototype-specific latent K/V | Independent eager hybrid attention | Separate loader; not the default production/model API |
 
 `auto` stores latent K/V only for supported inference configurations; `full` forces the full cache; explicit `latent` rejects incompatible configurations. Training retains the existing full-dimensional computation/cache and gradients. Raw-token tail and sink K/V stay full-dimensional in every latent path. Temporary width padding for FA2 is not persistent cache padding.
 
-## Latent cache and FA2 requirements
+## Latent cache and direct decode requirements
 
-Latent cache: interleave insertion, window=stride, one-window encoding, positive token ratio, low-rank K and V; no chunk-fixed Beacon K RoPE, K positional residual, or beacon_skip. FA2 additionally requires full-coverage, attend_prev, global Linear up-projection, no Beacon K RoPE, raw K RoPE, and no latent relative-position bias. Inspect `LlamaMemory` and `fa2_decode.py` for eligibility checks.
+Latent cache: interleave insertion, window=stride, one-window encoding, positive token ratio, low-rank K and V; no chunk-fixed Beacon K RoPE, K positional residual, or beacon_skip. Both direct eager and FA2 decode additionally require full-coverage, attend_prev, global Linear up-projection, no Beacon K RoPE, raw K RoPE, and no latent relative-position bias. Inspect `LlamaMemory`, `latent_decode.py` and `fa2_decode.py` for eligibility checks.
 
-Eligible FA2 decode accepts one new raw token per sequence, with one additional Beacon query on insertion steps. Equal-length, unpadded dense batches share the insertion schedule but have independent token/KV rows. Multi-raw-token calls use the reconstruction path. Padding is explicitly rejected for latent FA2 decode. This is not variable-length continuous batching.
+Eligible direct latent decode accepts one new raw token per sequence, with one additional Beacon query on insertion steps. Equal-length, unpadded dense batches share the insertion schedule but have independent token/KV rows. Multi-raw-token calls use the reconstruction path. Padding is explicitly rejected for direct latent decode. This is not variable-length continuous batching.
 
-Ranks are global and coupled across KV heads: cached shapes are `[B,1,N,R]`. Ranks above 256 use the custom BF16 SM90 extension, with temporary padding to width 320. Raw attention uses head dimension 128 and the scale remains `1/sqrt(128)`. K/V rank lists are independent.
+Ranks are global and coupled across KV heads: cached shapes are `[B,1,N,R]`. FA2 ranks above 256 use the custom BF16 SM90 extension, with temporary padding to width 320. Eager computes directly at the actual K/V ranks without padding or a width-320 limit. Raw attention uses the original head dimension and scale; for Llama-3.1-8B these are 128 and `1/sqrt(128)`. K/V rank lists are independent.
 
 `beacon_decode_fast=True` is the default for eligible FA2 decode and retains GPU token bookkeeping. `beacon_decode_graph=False` is the default; opt-in partial Graph captures input norm and post-attention norm/MLP/residual segments, separately for Q1/Q2 and batch shapes. Attention and dynamic KV updates remain eager. CPU/gradient and diagnostics fall back; dtype/device changes clear Graph caches.
 

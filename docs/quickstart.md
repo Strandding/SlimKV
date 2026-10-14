@@ -47,18 +47,27 @@ Memory persists across forward calls. Reset it between independent requests and 
 
 ## Optional reconstruction-free decode
 
-After installing FA2 and building any required width-320 extension:
+For eager decode over compressed Beacon K/V, no FlashAttention installation is needed:
+
+```bash
+python -m main.infer \
+  --model_name_or_path /path/to/slimkv-checkpoint \
+  --attn_impl eager --beacon_cache_mode latent --beacon_decode_backend latent \
+  --prompt_file /path/to/context.txt
+```
+
+For FlashAttention, install FA2 and build any required width-320 extension:
 
 ```bash
 export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
 python -m main.infer \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --attn_impl flash_attention_2 \
-  --beacon_cache_mode latent --beacon_decode_backend fa2 \
+  --beacon_cache_mode latent --beacon_decode_backend latent \
   --beacon_decode_graph --prompt_file /path/to/context.txt
 ```
 
-Graph is optional and disabled by default. This uses standard original-dimension FA2 prefill and direct global-latent Beacon attention during eligible decode steps. The model supports aligned, equal-length unpadded dense batches; this CLI intentionally demonstrates one request. Ragged/paged serving and Qwen latent decode are not implemented. [Build, validation, benchmark](benchmark.md).
+Graph is optional and disabled by default. Both paths use original-dimension prefill and direct global-latent Beacon attention during eligible decode steps. `beacon_decode_backend=latent` follows `attn_impl`; `reconstruct` restores Beacon K/V first, while the legacy value `fa2` explicitly selects latent FA2 decode. The model supports aligned, equal-length unpadded dense batches; this CLI intentionally demonstrates one request. Ragged/paged serving and Qwen latent decode are not implemented. [Build, validation, benchmark](benchmark.md).
 
 ## No-checkpoint smoke test
 

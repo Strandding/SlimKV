@@ -1,5 +1,6 @@
 """Inference-only latent Beacon storage with ordinary full-dimensional attention."""
 from ..memory import Memory, cat_tensor, slice_tensor
+from .latent_decode import uses_latent_decode, uses_fa2_decode
 
 
 def _length(tensor):
@@ -79,7 +80,7 @@ class LlamaMemory(Memory):
             not self.training and labels is None and input_ids is not None
             and input_ids.ndim == 2 and input_ids.shape[1] == 1
             and self.latent_cache_active and self.finish
-            and self._cache_decode_backend == 'fa2'
+            and uses_fa2_decode(self.config)
             and getattr(self.config, 'beacon_decode_fast', True)
             and getattr(self.config, '_slimkv_decode_fast_step', False)
             and skip_first is None and skip_last is None
@@ -162,7 +163,7 @@ class LlamaMemory(Memory):
     def _select_cache_mode(self):
         mode = getattr(self.config, 'beacon_cache_mode', 'auto')
         backend = getattr(self.config, 'beacon_decode_backend', 'reconstruct')
-        if backend not in ('reconstruct', 'fa2'):
+        if backend not in ('reconstruct', 'latent', 'fa2'):
             raise ValueError(f'Unknown beacon_decode_backend: {backend}')
         if self._cache_decode_backend is None:
             self._cache_decode_backend = backend
@@ -187,7 +188,7 @@ class LlamaMemory(Memory):
                              'non-overlapping window, low-rank K/V, and no fixed-RoPE, '
                              'K residual or beacon_skip overrides.')
         active = not self.training and mode != 'full' and supported
-        if not self.training and backend == 'fa2' and (
+        if not self.training and uses_latent_decode(self.config) and (
             not active or self.config.beacon_attn != 'full-coverage'
             or not self.config.beacon_attend_prev
             or not getattr(self.config, 'beacon_skip_rope_for_beacon_k', False)
@@ -196,7 +197,7 @@ class LlamaMemory(Memory):
             or getattr(self.config, 'beacon_headwise_up_proj', False)
             or getattr(self.config, 'beacon_latent_rpb', False)
         ):
-            raise ValueError('FA2 decode requires latent storage, full-coverage, attend_prev, '
+            raise ValueError('Latent decode requires latent storage, full-coverage, attend_prev, '
                              'raw K RoPE, unrotated Beacon K, global up projections '
                              'and no latent relative-position bias.')
         if self._latent_cache_active is None:
@@ -261,7 +262,7 @@ class LlamaMemory(Memory):
                 self.window_beacon_activations[idx] = (window_k, window_v)
         self._window_roles = None if self._is_full_window else (
             self._fast_window_roles if self._fast_decode_active else indices != 0)
-        if self._cache_decode_backend == 'fa2':
+        if uses_latent_decode(self.config):
             self._window_raw_indices = None if self._is_full_window else (
                 self._fast_window_raw_indices if self._fast_decode_active else (indices == 0).nonzero().flatten())
 

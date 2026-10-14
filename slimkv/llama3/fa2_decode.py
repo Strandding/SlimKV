@@ -9,6 +9,7 @@ import torch.nn.functional as F
 
 from ..memory import cat_tensor
 from .memory import ReconstructionCache, ReconstructionCacheUpdate
+from .latent_decode import eager_forward, uses_latent_decode, uses_fa2_decode
 
 
 def flash_forward(q, k, v, scale, causal=False):
@@ -67,7 +68,7 @@ def merge_attention(raw_out, raw_lse, latent_out, latent_lse):
 
 def eligible(attention, hidden_states, past_key_value, output_attentions):
     return (getattr(attention.config, '_slimkv_decode_step', False)
-            and getattr(attention.config, 'beacon_decode_backend', 'reconstruct') == 'fa2'
+            and uses_latent_decode(attention.config)
             and isinstance(past_key_value[0], ReconstructionCache)
             and not attention.training and not output_attentions
             and hidden_states.shape[0] > 0 and hidden_states.shape[1] in (1, 2))
@@ -77,13 +78,13 @@ def decode(attention, hidden, position_ids, past_key_value, forward=None):
     """One raw token, optionally followed by its newly inserted Beacon."""
     pk, pv, size, indices = past_key_value
     if forward is None:
-        forward = flash_forward
+        forward = flash_forward if uses_fa2_decode(attention.config) else eager_forward
     batch, length, _ = hidden.shape
     if size not in (0, 1) or length != size + 1:
-        raise ValueError('FA2 decode expects one raw token followed by at most one Beacon.')
+        raise ValueError('Latent decode expects one raw token followed by at most one Beacon.')
     uk, uv = attention.beacon_k_up_proj, attention.beacon_v_up_proj
     if not isinstance(uk, torch.nn.Linear) or not isinstance(uv, torch.nn.Linear):
-        raise ValueError('FA2 decode currently requires globally coupled Linear up projections.')
+        raise ValueError('Latent decode currently requires globally coupled Linear up projections.')
     raw_hidden = hidden[:, :1]
     q = attention.q_proj(hidden)
     new_k = attention.k_proj(raw_hidden).reshape(batch, 1, attention.num_key_value_heads,

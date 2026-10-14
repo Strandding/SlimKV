@@ -212,7 +212,7 @@ class LlamaConfig(PretrainedConfig):
         if beacon_cache_mode not in ("auto", "full", "latent"):
             raise ValueError(f"Unknown beacon_cache_mode: {beacon_cache_mode}")
         self.beacon_cache_mode = beacon_cache_mode
-        if beacon_decode_backend not in ('reconstruct', 'fa2'):
+        if beacon_decode_backend not in ('reconstruct', 'latent', 'fa2'):
             raise ValueError(f'Unknown beacon_decode_backend: {beacon_decode_backend}')
         self.beacon_decode_backend = beacon_decode_backend
         self.beacon_decode_fast = beacon_decode_fast

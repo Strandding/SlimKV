@@ -14,8 +14,10 @@ BEACON_RATIO, BATCH_SIZE, MAX_BATCH_TOKENS, MAX_LENGTH, MAX_SAMPLES_PER_TASK,
 DECODE_BACKEND, ATTN_IMPL, DECODE_GRAPH, LOAD_RESULT, MAP_NUM_PROC.
 TASKS is a space-separated task list or 'english'/'all'.
 ATTN_IMPL=eager defaults to reconstruction decode with Graphs disabled.
-ATTN_IMPL=flash_attention_2 defaults to latent FA2 decode with Graphs enabled.
+ATTN_IMPL=flash_attention_2 defaults to latent decode with Graphs enabled.
 Set DECODE_BACKEND explicitly to select a different prefill/decode combination.
+DECODE_BACKEND=reconstruct or latent selects reconstruction or direct latent attention.
+The legacy value fa2 explicitly selects latent FA2, independent of ATTN_IMPL.
 HELP
   exit 0
 fi
@@ -30,15 +32,22 @@ BATCH_SIZE="${BATCH_SIZE:-32}"
 BEACON_RATIO="${BEACON_RATIO:-4}"
 ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 case "${ATTN_IMPL}" in
-  flash_attention_2) backend_default=fa2 ;;
+  flash_attention_2) backend_default=latent ;;
   eager) backend_default=reconstruct ;;
   *) echo "ERROR: ATTN_IMPL must be eager or flash_attention_2." >&2; exit 2 ;;
 esac
 DECODE_BACKEND="${DECODE_BACKEND:-${backend_default}}"
 case "${DECODE_BACKEND}" in
   fa2) decode_fast=True; graph_default=True ;;
+  latent)
+    if [[ "${ATTN_IMPL}" == "flash_attention_2" ]]; then
+      decode_fast=True; graph_default=True
+    else
+      decode_fast=False; graph_default=False
+    fi
+    ;;
   reconstruct) decode_fast=False; graph_default=False ;;
-  *) echo "ERROR: DECODE_BACKEND must be reconstruct or fa2." >&2; exit 2 ;;
+  *) echo "ERROR: DECODE_BACKEND must be reconstruct, latent or fa2." >&2; exit 2 ;;
 esac
 # The training corpus is Chinese-only, so the English preset excludes Chinese tasks.
 # Passage counting and retrieval are excluded separately; code tasks remain.

@@ -193,7 +193,7 @@ python -m main.infer \
 
 长上下文使用 `--prompt_file /path/to/context.txt`。示例从 checkpoint 读取 rank 和 Beacon 设置，在 cuda:0 上进行 BF16 greedy 推理。
 
-默认后端存储低维 Beacon K/V，在注意力计算前重建。Llama3 另支持可选的免重建 FA2 decode；训练和 prefill 在原始注意力维度计算。[快速开始](quickstart.md)提供 Python API 和后端选项。
+默认后端存储低维 Beacon K/V，在注意力计算前重建。Llama3 另支持免重建 eager 和 FA2 decode；训练和 prefill 在原始注意力维度计算。[快速开始](quickstart.md)提供 Python API 和后端选项。
 
 ## 复现
 

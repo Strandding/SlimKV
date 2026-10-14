@@ -14,7 +14,7 @@ def main():
     parser.add_argument('--chat_template', default='llama-3')
     parser.add_argument('--attn_impl', choices=['eager', 'flash_attention_2'], default='eager')
     parser.add_argument('--beacon_cache_mode', choices=['auto', 'full', 'latent'], default='auto')
-    parser.add_argument('--beacon_decode_backend', choices=['reconstruct', 'fa2'], default='reconstruct')
+    parser.add_argument('--beacon_decode_backend', choices=['reconstruct', 'latent', 'fa2'], default='reconstruct')
     parser.add_argument('--beacon_decode_graph', action='store_true')
     args = parser.parse_args()
     if args.max_new_tokens < 1:

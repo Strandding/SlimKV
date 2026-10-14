@@ -34,14 +34,17 @@ bash scripts/evaluation/eval_longbench_slimkv.sh
 | 环境变量 | Prefill | Beacon decode | 默认 Graph 设置 |
 | --- | --- | --- | --- |
 | `ATTN_IMPL=eager` | Eager | 重建后使用 eager attention | 关闭 |
+| `ATTN_IMPL=eager DECODE_BACKEND=latent` | Eager | 免重建 latent eager | 关闭 |
 | `ATTN_IMPL=flash_attention_2 DECODE_BACKEND=reconstruct` | FA2 | 重建后使用 FA2 | 关闭 |
 | `ATTN_IMPL=flash_attention_2` | FA2 | 免重建 latent FA2 | 开启 |
 
-例如，在启动命令前设置 `ATTN_IMPL=eager`，即可全程使用 eager；该重建路径无需安装 FlashAttention 或构建320维扩展。显式设置 `DECODE_BACKEND=fa2` 也可组合 eager prefill 与 latent FA2 decode，此时仍需 FA2。该混合路径在 decode 时使用 FA2，目前尚未实现免重建 eager decode。`DECODE_GRAPH=False` 可单独关闭 Graph。
+`DECODE_BACKEND=reconstruct` 在 attention 前重建 Beacon K/V；`DECODE_BACKEND=latent` 直接在压缩后的 Beacon K/V 上计算，使用所选 `ATTN_IMPL`。Eager 的两条路径都无需安装 FlashAttention 或构建320维扩展。Latent eager 使用 FP32 attention scores 和加权求和，支持 K/V rank 不同，并保留原始 head 的缩放系数。
+
+旧的 `DECODE_BACKEND=fa2` 保留为显式 latent FA2 decode，不受 prefill 选择影响，兼容原有命令。`DECODE_GRAPH=False` 可单独关闭 Graph。
 
 默认结果目录包含两项后端名称，各路径分别保存。直接使用 `python -m main.eval_longbench` 时，应显式选择 `--attn_impl` 和 `--beacon_decode_backend`；脚本自动配对只作用于其环境变量。
 
-需安装 FA2。全局 latent rank 不超过 256 时使用标准 FA2；257–320 需 BF16 SM90 扩展，并设置 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，详见[英文构建说明](../benchmark.md#building-the-width-320-extension)。更大 rank 或其他投影结构应使用重建路径，在启动前设置 `DECODE_BACKEND=reconstruct ATTN_IMPL=eager`。当前快速 decode 路径支持 Llama3，尚不支持 Qwen2。
+选择任一 FlashAttention 路径都需安装 FA2。全局 latent rank 不超过 256 时使用标准 FA2；257–320 需 BF16 SM90 扩展，并设置 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，详见[英文构建说明](../benchmark.md#building-the-width-320-extension)。Latent eager 没有320维上限。两条直接 latent 路径都要求 global Linear up 投影及[对应缓存/RoPE 配置](implementation_status.md)。其他投影结构使用重建路径。当前直接 latent decode 支持 Llama3，尚不支持 Qwen2。
 
 **最终包含 chat template 的输入**上限为 31500 tokens，超过时保留前 15750 和后 15750，不做 decode/re-encode。Few-shot 和代码任务沿用原有模板规则。直接使用 Python 入口时，默认保留历史的 chat template 之前截断规则，需显式增加 `--truncate_after_chat True` 才采用新协议。
 
@@ -64,7 +67,7 @@ t8f4 可设置 `BEACON_RATIO=8`，并使用独立结果目录。脚本名之后�
 
 ## 结果与耗时
 
-默认保存到 `data/results/longbench/slimkv-t4-flash_attention_2-fa2/`：
+默认保存到 `data/results/longbench/slimkv-t4-flash_attention_2-latent/`：
 
 | 文件 | 内容 |
 | --- | --- |

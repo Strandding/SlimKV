@@ -53,6 +53,7 @@ if is_flash_attn_2_available():
 
 from .memory import LlamaMemory, ReconstructionCache, ReconstructionCacheUpdate
 from .fa2_decode import eligible as fa2_eligible, decode as fa2_decode
+from .latent_decode import uses_latent_decode, uses_fa2_decode
 from ..modeling_utils import optional_grad_ctx, compute_loss, build_beacon_loss_weights, get_rope, ModelOutput
 
 
@@ -1342,7 +1343,7 @@ class LlamaAttention(nn.Module):
                 return None
             selected = latent[:, roles]
             batch, length, rank = selected.shape
-            if getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2':
+            if uses_latent_decode(self.config):
                 return selected.unsqueeze(1).contiguous()
             return selected.reshape(batch, length, self.num_key_value_heads,
                                     rank // self.num_key_value_heads).transpose(1, 2).contiguous()
@@ -2204,7 +2205,7 @@ class LlamaModel(LlamaPreTrainedModel):
         # BEACON: separately embed ordinal tokens and beacon tokens because ordinal tokens do not receive gradients
         if (beacon_size == 1 and input_ids.ndim == 2 and input_ids.shape[1] == 2
                 and getattr(self.config, '_slimkv_decode_step', False)
-                and getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2'
+                and uses_fa2_decode(self.config)
                 and getattr(self.config, 'beacon_decode_fast', True)):
             inputs_embeds = torch.cat([self.embed_tokens(input_ids[:, :1]),
                                        self.beacon_embed_tokens(input_ids[:, 1:] - self.config.vocab_size)], dim=1)
@@ -2586,12 +2587,12 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         decode_step = (not self.training and kwargs.get('labels') is None
                        and input_ids is not None and input_ids.ndim == 2 and input_ids.shape[1] == 1
                        and self.memory.all_input_ids is not None)
-        if decode_step and getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2':
+        if decode_step and uses_latent_decode(self.config):
             old_mask = self.memory.all_attention_mask
             if self.memory._decode_unpadded is None:
                 self.memory._decode_unpadded = not bool((old_mask == 0).any())
             if not self.memory._decode_unpadded or (attention_mask is not None and (attention_mask == 0).any()):
-                raise ValueError('FA2 latent decode requires an unpadded batch with aligned sequence lengths.')
+                raise ValueError('Latent decode requires an unpadded batch with aligned sequence lengths.')
         self.config._slimkv_decode_step = decode_step
         requested_attentions = kwargs.get('output_attentions')
         if requested_attentions is None:
@@ -2601,7 +2602,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             requested_hidden = self.config.output_hidden_states
         self.config._slimkv_decode_fast_step = decode_step and not requested_attentions
         self.config._slimkv_decode_graph_step = (
-            decode_step and getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2'
+            decode_step and uses_latent_decode(self.config)
             and not requested_hidden and not requested_attentions)
         try:
             return self._beacon_forward_impl(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
