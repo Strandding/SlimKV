@@ -12,7 +12,7 @@ SlimKV 同时压缩 KV Cache 的 token 数量和特征维度，用于长上下�
 
 传统特征压缩通常需要先重建完整维度的 Key，再应用 RoPE。我们发现，去掉 key-side RoPE 对 Beacon Keys 的影响显著小于对 raw-token Keys 的影响。SlimKV 利用这种位置不对称性，在关闭 Beacon K-RoPE 的约束下训练低秩投影，同时保留 raw K 和所有 Q 的 RoPE，从而在 decode 中直接计算 latent-space attention，避免历史 Beacon K/V 的完整维度重建。
 
-在 LongBench 上，SlimKV 在4×和8×压缩下保留超过96%的 Full KV 得分，在16×和32×压缩下优于所评测的基线。128K上下文下，t4f4配置实现7.34× attention加速和3.38×端到端decode加速。
+在 LongBench 上，SlimKV 在16×和32×压缩下优于所评测的基线，并在4×和8×压缩下保留超过96%的 Full KV 得分。128K上下文下，t4f4配置实现7.34× attention加速和3.38×端到端decode加速。
 
 ## 方法
 
@@ -32,37 +32,54 @@ Decode 时，attention scores 和 Value 聚合在缓存的 latent Beacon 状态�
 
 ## 结果
 
+SlimKV 的主要结果集中在16×和32×压缩。在这两个压缩比下，SlimKV 在 Llama-3.1-8B 和 Qwen2.5-14B 上均取得了所评测方法中最高的 LongBench 平均分。
+
 <table align="center">
   <thead>
     <tr>
-      <th align="center"><strong>96%+</strong></th>
+      <th align="center"><strong>16× / 32×</strong></th>
       <th align="center"><strong>7.34×</strong></th>
       <th align="center"><strong>3.38×</strong></th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td align="center">4× / 8× 压缩下保留的 Full KV LongBench 得分</td>
+      <td align="center">高压缩比下领先的 LongBench 结果</td>
       <td align="center">128K attention 加速</td>
       <td align="center">128K 端到端 decode 加速</td>
     </tr>
   </tbody>
 </table>
 
-上述速度来自 Llama-3.1-8B 的 t4f4 配置，使用 A100 80GB、BF16 和 eager。完整结果与评测协议见[论文](https://arxiv.org/abs/2610.02953)。
+### 16× / 32× LongBench
 
 <div align="center">
 
-| 模型 | 压缩比 | KVZip | PALU | Activation Beacon | SlimKV-f2 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
-| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
-| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
-| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
+| 压缩比 | 方法 | Llama-3.1-8B | Qwen2.5-14B |
+| :---: | :---: | :---: | :---: |
+| 1× | Full KV | 49.50 | 51.52 |
+| 16× | KVZip | 28.96 | 13.18 |
+| 16× | PALU | 18.92 | 27.70 |
+| 16× | SnapKV | 45.60 | 45.81 |
+| 16× | Activation Beacon | 45.30 | 44.15 |
+| 16× | SlimKV-f2 (t8f2) | 46.19 | **46.48** |
+| 16× | SlimKV-f4 (t4f4) | **46.36** | 46.23 |
+| 16× | SlimKV-f8 (t2f8) | 45.05 | 44.33 |
+| 32× | KVZip | 9.40 | 5.12 |
+| 32× | PALU | 4.79 | 9.25 |
+| 32× | SnapKV | 43.24 | 42.28 |
+| 32× | Activation Beacon | 43.67 | 42.76 |
+| 32× | SlimKV-f2 (t16f2) | 42.91 | 44.66 |
+| 32× | SlimKV-f4 (t8f4) | **44.75** | **45.09** |
+| 32× | SlimKV-f8 (t4f8) | 43.93 | 44.69 |
 
 </div>
 
-<p align="center"><em>4×和8×压缩下的 LongBench 平均分（Table 4）。SlimKV-f2 使用2×特征压缩。</em></p>
+平均分来自论文 Table 2，粗体标出各压缩比和模型下的最佳压缩结果。t$n$f$m$ 表示$n$倍 token 压缩和$m$倍特征压缩。
+
+### 解码效率
+
+速度来自 Llama-3.1-8B，使用 A100 80GB、BF16 和 eager。上方7.34×和3.38×对应128K时的t4f4配置，完整16×/32×结果如下。
 
 <div align="center">
 
@@ -81,7 +98,25 @@ Decode 时，attention scores 和 Value 聚合在缓存的 latent Beacon 状态�
 
 <p align="center"><em>相对 Full KV 的 attention 与每 token decode 加速（Table 6）。Recon 表示重建版本。</em></p>
 
-Benchmark 脚本和 H20 FA2 局部测量见[性能评测](docs/zh/benchmark.md)。
+<details>
+<summary>4× / 8× 压缩的补充结果</summary>
+
+在较低压缩比下，SlimKV-f2 保留超过96%的 Full KV LongBench 得分。以下是 Table 4 的平均分。
+
+<div align="center">
+
+| 模型 | 压缩比 | KVZip | PALU | Activation Beacon | SlimKV-f2 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
+| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
+| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
+| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
+
+</div>
+
+</details>
+
+完整实验协议见[论文](https://arxiv.org/abs/2610.02953)，脚本和 H20 FA2 局部测量见[性能评测](docs/zh/benchmark.md)。
 
 ## 安装
 

@@ -12,7 +12,7 @@ SlimKV compresses both the number of cached tokens and their feature dimensions 
 
 Conventional feature compression often reconstructs full-dimensional Keys before applying RoPE. We find that Beacon Keys are much less sensitive to removing key-side RoPE than raw-token Keys. SlimKV trains low-rank Beacon projections under this constraint while retaining RoPE for raw-token Keys and all Queries. This positional asymmetry enables reconstruction-free latent-space attention during decoding.
 
-On LongBench, SlimKV retains over 96% of the full-cache score at 4× and 8× compression and outperforms the evaluated baselines at 16× and 32×. At 128K context length, the t4f4 configuration achieves 7.34× attention speedup and 3.38× end-to-end decoding speedup over Full KV.
+On LongBench, SlimKV outperforms the evaluated baselines at 16× and 32× compression and retains over 96% of the full-cache score at 4× and 8×. At 128K context length, the t4f4 configuration achieves 7.34× attention speedup and 3.38× end-to-end decoding speedup over Full KV.
 
 ## Method
 
@@ -32,37 +32,54 @@ During decoding, attention scores and value aggregation operate on cached latent
 
 ## Results
 
+Our main evaluation targets 16× and 32× KV cache compression. At both ratios, SlimKV achieves the highest LongBench averages among the evaluated methods on Llama-3.1-8B and Qwen2.5-14B.
+
 <table align="center">
   <thead>
     <tr>
-      <th align="center"><strong>96%+</strong></th>
+      <th align="center"><strong>16× / 32×</strong></th>
       <th align="center"><strong>7.34×</strong></th>
       <th align="center"><strong>3.38×</strong></th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td align="center">Full KV LongBench score retained at 4× / 8× compression</td>
+      <td align="center">Leading LongBench results under high compression</td>
       <td align="center">Attention speedup at 128K</td>
       <td align="center">End-to-end decoding speedup at 128K</td>
     </tr>
   </tbody>
 </table>
 
-The speedups above use t4f4 on Llama-3.1-8B, measured with BF16 eager execution on an A100 80GB. Full results and the evaluation protocol are in the [paper](https://arxiv.org/abs/2610.02953).
+### LongBench at 16× / 32× compression
 
 <div align="center">
 
-| Backbone | Compression | KVZip | PALU | Activation Beacon | SlimKV-f2 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
-| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
-| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
-| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
+| Compression | Method | Llama-3.1-8B | Qwen2.5-14B |
+| :---: | :---: | :---: | :---: |
+| 1× | Full KV | 49.50 | 51.52 |
+| 16× | KVZip | 28.96 | 13.18 |
+| 16× | PALU | 18.92 | 27.70 |
+| 16× | SnapKV | 45.60 | 45.81 |
+| 16× | Activation Beacon | 45.30 | 44.15 |
+| 16× | SlimKV-f2 (t8f2) | 46.19 | **46.48** |
+| 16× | SlimKV-f4 (t4f4) | **46.36** | 46.23 |
+| 16× | SlimKV-f8 (t2f8) | 45.05 | 44.33 |
+| 32× | KVZip | 9.40 | 5.12 |
+| 32× | PALU | 4.79 | 9.25 |
+| 32× | SnapKV | 43.24 | 42.28 |
+| 32× | Activation Beacon | 43.67 | 42.76 |
+| 32× | SlimKV-f2 (t16f2) | 42.91 | 44.66 |
+| 32× | SlimKV-f4 (t8f4) | **44.75** | **45.09** |
+| 32× | SlimKV-f8 (t4f8) | 43.93 | 44.69 |
 
 </div>
 
-<p align="center"><em>LongBench averages at 4× and 8× compression (Table 4). SlimKV-f2 uses 2× feature compression.</em></p>
+Averages from Table 2. Bold marks the best compressed result for each backbone and ratio. t$n$f$m$ denotes $n$× token compression and $m$× feature compression.
+
+### Decoding efficiency
+
+Measured on Llama-3.1-8B with BF16 eager execution on an A100 80GB. The headline 7.34× and 3.38× speedups use t4f4 at 128K. Both compression settings are shown below.
 
 <div align="center">
 
@@ -81,7 +98,25 @@ The speedups above use t4f4 on Llama-3.1-8B, measured with BF16 eager execution 
 
 <p align="center"><em>Attention and per-token decoding speedups over Full KV (Table 6). Recon is the reconstruction-based variant.</em></p>
 
-Benchmark scripts and local H20 FA2 measurements are documented in [benchmarking](docs/benchmark.md).
+<details>
+<summary>Additional results at 4× / 8× compression</summary>
+
+At lower compression ratios, SlimKV-f2 retains over 96% of the Full KV LongBench score. Averages from Table 4:
+
+<div align="center">
+
+| Backbone | Compression | KVZip | PALU | Activation Beacon | SlimKV-f2 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
+| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
+| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
+| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
+
+</div>
+
+</details>
+
+See the [paper](https://arxiv.org/abs/2610.02953) for the full protocol and [benchmarking](docs/benchmark.md) for scripts and local H20 FA2 measurements.
 
 ## Installation
 
