@@ -106,6 +106,30 @@ def build_window_length_distribution(input_ids_list, window_size: Optional[int])
     }
 
 
+class EqualLengthBatchSampler:
+    """Batch equal-length inputs without introducing padding into Beacon memory."""
+
+    def __init__(self, input_ids, batch_size, max_batch_tokens=None):
+        if batch_size < 1:
+            raise ValueError('batch_size must be positive')
+        if max_batch_tokens is not None and max_batch_tokens < 1:
+            raise ValueError('max_batch_tokens must be positive')
+        groups = defaultdict(list)
+        for index, tokens in enumerate(input_ids):
+            groups[len(tokens)].append(index)
+        self.batches = []
+        for length, indices in sorted(groups.items(), reverse=True):
+            limit = batch_size if max_batch_tokens is None else min(
+                batch_size, max(1, max_batch_tokens // max(length, 1)))
+            self.batches.extend(indices[start:start + limit] for start in range(0, len(indices), limit))
+
+    def __iter__(self):
+        return iter(self.batches)
+
+    def __len__(self):
+        return len(self.batches)
+
+
 @dataclass
 class Args(ModelArgs):
     eval_data: str = field(
@@ -157,6 +181,18 @@ class Args(ModelArgs):
     sample_shuffle: bool = field(
         default=True,
         metadata={'help': 'Shuffle before applying max_samples_per_task.'}
+    )
+    group_by_input_length: bool = field(
+        default=False,
+        metadata={'help': 'Batch exactly equal-length inputs without padding; preserves each input.'}
+    )
+    num_logits_to_keep: Optional[int] = field(
+        default=None,
+        metadata={'help': 'Optional inference logit limit, supported by the SlimKV Llama3 model.'}
+    )
+    max_batch_tokens: Optional[int] = field(
+        default=None,
+        metadata={'help': 'Limit total input tokens in each equal-length batch; a single input is always retained.'}
     )
 
     do_sample: bool = False
@@ -317,9 +353,11 @@ def main():
 
         if not (args.load_result and os.path.exists(result_path)):
             data_collator = DefaultDataCollator(tokenizer=tokenizer)
+            batching = ({'batch_sampler': EqualLengthBatchSampler(dataset['input_ids'], args.batch_size, args.max_batch_tokens)}
+                        if args.group_by_input_length else {'batch_size': args.batch_size})
             dataloader = DataLoader(
                 dataset, 
-                batch_size=args.batch_size, 
+                **batching,
                 collate_fn=data_collator,
                 # only pin memory when no gpu
                 pin_memory=not args.cpu,
@@ -376,6 +414,8 @@ def main():
                     model.memory.reset()
 
                 kwargs = {"max_new_tokens": max_new_tokens, "pad_token_id": pad_token_id}
+                if args.num_logits_to_keep is not None:
+                    kwargs['num_logits_to_keep'] = args.num_logits_to_keep
                 if task in ["2wikimqa", "hotpotqa", "musique", "multifieldqa_en", "qasper", "narrativeqa", "samsum"]:
                     kwargs["eos_token_id"] = eos_token_id
 
@@ -386,8 +426,8 @@ def main():
                 )
                 if isinstance(output, torch.Tensor):
                     # 1, max_new_tokens
-                    total_input_tokens += input_length * batch_size_actual
-                    total_output_tokens += (output.shape[1] - input_length) * batch_size_actual
+                    total_input_tokens += int(x['attention_mask'].sum())
+                    total_output_tokens += int((output[:, input_length:] != pad_token_id).sum())
                     output = output[:, input_length:]
                     output = tokenizer.batch_decode(output, skip_special_tokens=True)
                 elif isinstance(output, list):
@@ -417,10 +457,11 @@ def main():
                     for line in f:
                         item = json.loads(line)
                         preds.append(item["pred"])
-                        indices.append(len(indices))
+                        indices.append(item.get('index', len(indices)))
 
         if accelerator.process_index == 0:
             answers = raw_dataset["answers"]
+            answers = [answers[index] for index in indices]
             lengths = raw_dataset["length"]
             all_classes = raw_dataset["all_classes"][0]
             score = scorer(task, preds, answers, all_classes)
@@ -453,6 +494,7 @@ def main():
                     del sample["language"]
                     del sample["_id"]
                     sample["pred"] = pred
+                    sample['index'] = index
                     f.write(json.dumps(sample, ensure_ascii=False) + "\n")
 
     if accelerator.process_index == 0:

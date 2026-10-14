@@ -2523,6 +2523,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         loss_weights: Optional[torch.FloatTensor] = None,
+        num_logits_to_keep: int = 0,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -2554,6 +2555,8 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         )
 
         hidden_states = outputs[0]
+        if num_logits_to_keep > 0 and labels is None and not self.training:
+            hidden_states = hidden_states[:, -num_logits_to_keep:]
         logits = self.lm_head(hidden_states)
         logits = logits.float()
 
@@ -2615,6 +2618,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         past_key_values: Optional[List[torch.FloatTensor]] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
+        num_logits_to_keep: int = 0,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -2623,6 +2627,10 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
     ):
         # t1 = time.time()
         self.config._beacon_runtime_chunk_idx = -1
+        keep_last_logits = num_logits_to_keep > 0 and labels is None and not self.training
+        # Interleaved Beacons can occupy the last position. Retain enough raw
+        # positions before Memory removes Beacon logits, even at token ratio 1.
+        chunk_logits = 2 * num_logits_to_keep if keep_last_logits and self.config.beacon_pos == 'interleave' else 0
 
         # initialize cache
         self.memory.prepare(
@@ -2661,6 +2669,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
                 return_dict=return_dict,
                 labels=labels,
                 loss_weights=loss_weights,
+                num_logits_to_keep=chunk_logits,
             )
 
             # t5 = time.time()
@@ -2683,6 +2692,8 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
         # output loss, past_key_values, and perplexity
         outputs = self.memory.output(outputs)
+        if keep_last_logits:
+            outputs['logits'] = outputs['logits'][:, -num_logits_to_keep:]
         self.config._beacon_runtime_chunk_idx = -1
 
         # t9 = time.time()
@@ -2710,6 +2721,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         attention_mask=None,
         inputs_embeds=None,
         cache_position=None,
+        num_logits_to_keep=None,
         **kwargs,
     ):
         if past_key_values:
@@ -2743,7 +2755,9 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             }
         )
 
-        for extra_key in ("position_embeddings", "num_logits_to_keep"):
+        if num_logits_to_keep is not None:
+            model_inputs['num_logits_to_keep'] = num_logits_to_keep
+        for extra_key in ("position_embeddings",):
             if extra_key in kwargs and kwargs[extra_key] is not None:
                 model_inputs[extra_key] = kwargs[extra_key]
 

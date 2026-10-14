@@ -36,7 +36,11 @@ The preset's task set excludes Chinese subsets. Check the task list rather than 
 
 ## Controls and outputs
 
-`--beacon_cache_mode full` and `--beacon_cache_mode latent` compare caches using the same checkpoint. `--beacon_decode_backend fa2 --attn_impl flash_attention_2` opts into eligible latent decode and standard FA2 prefill; build requirements are in [benchmark](benchmark.md). Use B1 for general QA evaluation: padded variable-length batches do not satisfy latent FA2 decode eligibility.
+`--beacon_cache_mode full` and `--beacon_cache_mode latent` compare caches using the same checkpoint. `--beacon_decode_backend fa2 --attn_impl flash_attention_2` opts into eligible latent decode and standard FA2 prefill; build requirements are in [benchmark](benchmark.md).
+
+For Llama3 batched inference, add `--group_by_input_length True --batch_size 32 --num_logits_to_keep 1`. The evaluator groups exactly equal-length inputs, preserves every sample and scores predictions against their original indices. Smaller groups use smaller batches. Padded variable-length batches are not supported by latent FA2 decode. `--max_batch_tokens` can cap total input tokens per batch to fit long contexts in memory.
+
+`--num_logits_to_keep 1` computes only the raw-token logits needed for generation, reducing the vocabulary projection cost of each prefill window. Training and the default full-logit forward path are unchanged. Measure both prefill and decode when choosing the batch limit. `--beacon_decode_graph True` enables the optional decode CUDA Graphs.
 
 Independent requests must reset `model.memory`; the evaluation entry resets between batches. Preserve greedy decoding, chat template, token ratio, RoPE flags, task-specific generation caps and stopping rules. QA can stop on newline; code completion is handled separately. Floating-point path changes need not preserve generated tokens.
 
