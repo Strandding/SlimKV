@@ -27,7 +27,7 @@ bash scripts/evaluation/eval_longbench_slimkv.sh
 
 默认采用 BF16 greedy 推理、token ratio 4、latent KV 存储、原始维度 FA2 prefill、latent-space FA2 Beacon decode、CUDA Graph 和 `num_logits_to_keep=1`。Beacon K 不加 RoPE，各层 rank 和投影结构从 checkpoint 读取。
 
-需安装 FA2。全局 latent rank 不超过 256 时使用标准 FA2；257–320 需 BF16 SM90 扩展，并设置 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，详见[构建说明](benchmark.md#building-the-width-320-extension)。更大 rank 或其他投影结构应使用重建路径，在启动前设置 `DECODE_BACKEND=reconstruct ATTN_IMPL=sdpa`。当前快速 decode 路径支持 Llama3，尚不支持 Qwen2。
+需安装 FA2。全局 latent rank 不超过 256 时使用标准 FA2；257–320 需 BF16 SM90 扩展，并设置 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，详见[英文构建说明](../benchmark.md#building-the-width-320-extension)。更大 rank 或其他投影结构应使用重建路径，在启动前设置 `DECODE_BACKEND=reconstruct ATTN_IMPL=sdpa`。当前快速 decode 路径支持 Llama3，尚不支持 Qwen2。
 
 **最终包含 chat template 的输入**上限为 31500 tokens，超过时保留前 15750 和后 15750，不做 decode/re-encode。Few-shot 和代码任务沿用原有模板规则。直接使用 Python 入口时，默认保留历史的 chat template 之前截断规则，需显式增加 `--truncate_after_chat True` 才采用新协议。
 
