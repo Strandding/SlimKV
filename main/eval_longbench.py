@@ -2,6 +2,7 @@ import os
 import datasets
 import json
 import time
+import csv
 import torch
 import sys
 from tqdm import tqdm
@@ -15,9 +16,30 @@ from transformers.utils import logging
 from torch.utils.data import DataLoader
 
 from slimkv import ModelArgs, DefaultDataCollator, FileLogger, get_model_and_tokenizer, makedirs, apply_chat_template
-from .longbench_utils import DATASET2PROMPT, DATASET2MAXNEWTOKENS, DATASET2CATEGORY, scorer
+from .longbench_utils import DATASET2PROMPT, DATASET2MAXNEWTOKENS, DATASET2CATEGORY, ENGLISH_TASKS, scorer
 
 logger = logging.get_logger(__name__)
+
+
+def save_json(path, value):
+    """Replace reports atomically so readers never see a partial JSON file."""
+    temporary = makedirs(path + '.tmp')
+    with open(temporary, 'w', encoding='utf-8') as stream:
+        json.dump(value, stream, ensure_ascii=False, indent=2)
+    os.replace(temporary, path)
+
+
+def save_task_timings(result_dir, rows):
+    path = os.path.join(result_dir, 'task_timings.csv')
+    with open(path + '.tmp', 'w', encoding='utf-8', newline='') as stream:
+        writer = csv.DictWriter(stream, fieldnames=[
+            'task', 'score', 'num_samples', 'time_sec', 'sec_per_sample',
+            'input_tokens', 'output_tokens', 'output_tokens_per_sec',
+            'peak_gpu_memory_mb', 'preprocess_sec', 'model_load_sec',
+        ], extrasaction='ignore')
+        writer.writeheader()
+        writer.writerows(rows)
+    os.replace(path + '.tmp', path)
 
 
 def _format_metric(metric):
@@ -146,8 +168,8 @@ class Args(ModelArgs):
     )
 
     tasks: List[str] = field(
-        default_factory=lambda: ['narrativeqa', 'qasper', 'multifieldqa_en', 'hotpotqa', '2wikimqa', 'musique', 'gov_report', 'qmsum', 'multi_news', 'trec', 'triviaqa', 'samsum', 'lcc', 'repobench-p'],
-        metadata={'help': 'Which dataset to evaluate?'}
+        default_factory=lambda: list(ENGLISH_TASKS),
+        metadata={'help': 'Task names, english (15 tasks), or all (including Chinese and passage_count).'}
     )
     newline_as_eos: bool = field(
         default=True,
@@ -161,6 +183,10 @@ class Args(ModelArgs):
     truncate_from_middle: bool = field(
         default=True,
         metadata={'help': 'Truncate inputs from the middle.'}
+    )
+    truncate_after_chat: bool = field(
+        default=False,
+        metadata={'help': 'Apply the input limit to final chat-formatted tokens, without decode/re-encode.'}
     )
     load_result: bool = field(
         default=False,
@@ -198,7 +224,7 @@ class Args(ModelArgs):
     do_sample: bool = False
 
 
-def process_longbench(data, indices, tokenizer, chat_template, task, max_length=31500, truncate_from_middle=True, question_only=False):
+def process_longbench(data, indices, tokenizer, chat_template, task, max_length=31500, truncate_from_middle=True, question_only=False, truncate_after_chat=False):
     outputs = {'input_ids': [], 'attention_mask': [], "index": []}
 
     for input, context, index in zip(data['input'], data['context'], indices):
@@ -207,7 +233,9 @@ def process_longbench(data, indices, tokenizer, chat_template, task, max_length=
         prompt_template = DATASET2PROMPT[task]
         prompt = prompt_template.format(input=input, context=context)
 
-        if truncate_from_middle:
+        if truncate_after_chat:
+            pass
+        elif truncate_from_middle:
             tokenized_prompt = tokenizer.encode(prompt)
             if len(tokenized_prompt) > max_length:
                 half = int(max_length / 2)
@@ -227,6 +255,16 @@ def process_longbench(data, indices, tokenizer, chat_template, task, max_length=
         else:
             encoded = tokenizer(prompt)
 
+        if truncate_after_chat and len(encoded['input_ids']) > max_length:
+            if truncate_from_middle:
+                head = max_length // 2
+                tail = max_length - head
+                positions = list(range(head)) + list(range(len(encoded['input_ids']) - tail, len(encoded['input_ids'])))
+            else:
+                positions = list(range(len(encoded['input_ids']) - max_length, len(encoded['input_ids'])))
+            encoded = {key: [values[position] for position in positions]
+                       for key, values in encoded.items()}
+
         outputs["input_ids"].append(encoded["input_ids"])
         outputs["attention_mask"].append(encoded["attention_mask"])
         outputs["index"].append(index)
@@ -238,9 +276,36 @@ def process_longbench(data, indices, tokenizer, chat_template, task, max_length=
 def main():
     parser = HfArgumentParser([Args])
     args = parser.parse_args_into_dataclasses()[0]
+    if args.max_length < 1 or (args.max_samples_per_task is not None and args.max_samples_per_task < 1):
+        raise ValueError('Input length and sample limits must be positive.')
+    if args.tasks == ['all']:
+        tasks = list(DATASET2PROMPT.keys())
+    elif args.tasks == ['english']:
+        tasks = list(ENGLISH_TASKS)
+    else:
+        tasks = args.tasks
+    if not tasks or len(tasks) != len(set(tasks)) or any(task not in DATASET2PROMPT for task in tasks):
+        raise ValueError('Specify unique, supported LongBench-v1 tasks.')
+
+    result_dir = os.path.join(args.output_dir, args.result_dir)
+    configuration = asdict(args)
+    config_path = os.path.join(result_dir, 'config.json')
+    if args.load_result and os.path.exists(config_path):
+        with open(config_path, encoding='utf-8') as stream:
+            previous = json.load(stream)
+        changed = [key for key, value in configuration.items()
+                   if key != 'load_result' and previous.get(key) != value]
+        if changed:
+            raise ValueError(f'Saved result configuration differs: {", ".join(changed)}. Use a new result_dir.')
 
     accelerator = Accelerator(cpu=args.cpu)
+    load_start = time.monotonic()
     model, tokenizer = get_model_and_tokenizer(args, device=accelerator.device)
+    if accelerator.device.type == 'cuda':
+        torch.cuda.synchronize(accelerator.device)
+    model_load_sec = time.monotonic() - load_start
+    if accelerator.process_index == 0:
+        save_json(config_path, configuration)
 
     if hasattr(model, "generation_config"):
         eos_token_id = model.generation_config.eos_token_id
@@ -271,15 +336,12 @@ def main():
     if hasattr(model, "generation_config") and model.generation_config.pad_token_id is None:
         model.generation_config.pad_token_id = pad_token_id
 
-    if args.tasks == ["all"]:
-        tasks = list(DATASET2PROMPT.keys())
-    else:
-        tasks = args.tasks
-
+    preprocess_times = {}
     with accelerator.main_process_first():
         all_datasets = {}
 
         for task in tasks:
+            preprocess_start = time.monotonic()
             process_fn = partial(
                 process_longbench,
                 tokenizer=tokenizer,
@@ -288,6 +350,7 @@ def main():
                 max_length=args.max_length,
                 truncate_from_middle=args.truncate_from_middle,
                 question_only=args.question_only,
+                truncate_after_chat=args.truncate_after_chat,
             )
 
             path = os.path.join(args.eval_data, f"{task}.jsonl")
@@ -320,8 +383,7 @@ def main():
                 print(f"[map] done task={task}", flush=True)
 
             all_datasets[task] = (raw_dataset, dataset)
-
-    result_dir = os.path.join(args.output_dir, args.result_dir)
+            preprocess_times[task] = time.monotonic() - preprocess_start
 
     if accelerator.process_index == 0:
         from tools.record_run import record_run
@@ -331,12 +393,18 @@ def main():
 
     metrics = {}
     length_distributions = {}
+    timing_rows = []
 
     stat_window_size = args.beacon_window
     if stat_window_size is None and hasattr(model, "config"):
         stat_window_size = getattr(model.config, "beacon_window", None)
 
     for i, task in enumerate(all_datasets.keys()):
+        task_number = i
+        # Release captured shapes from earlier tasks while keeping the loaded model.
+        for layer in getattr(getattr(model, 'model', None), 'layers', []):
+            if hasattr(layer, '_decode_graphs'):
+                layer._decode_graphs = None
         if accelerator.process_index == 0:
             logger.info(f"Evaluating {task} ({i + 1} / {len(all_datasets)})...")
 
@@ -379,12 +447,20 @@ def main():
             max_new_tokens = DATASET2MAXNEWTOKENS[task]
 
             # --- Efficiency metrics collection ---
-            task_start_time = time.time()
+            batch_size_counts = defaultdict(int)
             total_input_tokens = 0
             total_output_tokens = 0
             peak_memory_mb = 0.0
-            if torch.cuda.is_available():
-                torch.cuda.reset_peak_memory_stats()
+            if accelerator.device.type == 'cuda':
+                torch.cuda.synchronize(accelerator.device)
+                torch.cuda.reset_peak_memory_stats(accelerator.device)
+            task_start_time = time.monotonic()
+            if accelerator.process_index == 0:
+                save_json(os.path.join(result_dir, 'progress.json'), {
+                    'status': 'generating', 'pid': os.getpid(), 'task': task,
+                    'generated_samples': 0, 'total_samples': len(raw_dataset),
+                    'completed_tasks': [name for name in tasks if name in metrics],
+                })
 
             if accelerator.process_index == 0:
                 try:
@@ -410,6 +486,7 @@ def main():
                 index = x.pop("index").tolist()
                 input_length = x["input_ids"].shape[1]
                 batch_size_actual = x["input_ids"].shape[0]
+                batch_size_counts[str(batch_size_actual)] += 1
 
                 # NOTE: important to reset memory for every batch
                 if hasattr(model, "memory"):
@@ -442,11 +519,19 @@ def main():
                 if accelerator.process_index == 0:
                     preds.extend(output)
                     indices.extend(index)
+                    save_json(os.path.join(result_dir, 'progress.json'), {
+                        'status': 'generating', 'pid': os.getpid(), 'task': task,
+                        'generated_samples': len(preds), 'total_samples': len(raw_dataset),
+                        'generation_sec': round(time.monotonic() - task_start_time, 2),
+                        'batch_size_counts': dict(batch_size_counts),
+                        'completed_tasks': [name for name in tasks if name in metrics],
+                    })
 
             # --- Record efficiency metrics for this task ---
-            task_elapsed = time.time() - task_start_time
-            if torch.cuda.is_available():
-                peak_memory_mb = torch.cuda.max_memory_allocated() / (1024 ** 2)
+            if accelerator.device.type == 'cuda':
+                torch.cuda.synchronize(accelerator.device)
+                peak_memory_mb = torch.cuda.max_memory_allocated(accelerator.device) / (1024 ** 2)
+            task_elapsed = time.monotonic() - task_start_time
         else:
             if accelerator.process_index == 0:
                 preds = []
@@ -462,6 +547,8 @@ def main():
                         indices.append(item.get('index', len(indices)))
 
         if accelerator.process_index == 0:
+            if sorted(indices) != list(range(len(raw_dataset))):
+                raise ValueError(f'{task}: predictions must cover every selected sample exactly once.')
             answers = raw_dataset["answers"]
             answers = [answers[index] for index in indices]
             lengths = raw_dataset["length"]
@@ -483,11 +570,28 @@ def main():
                     "output_tokens": total_output_tokens,
                     "output_tokens_per_sec": round(throughput, 1),
                     "peak_gpu_memory_mb": round(peak_memory_mb, 1),
+                    'preprocess_sec': round(preprocess_times[task], 2),
+                    'model_load_sec': round(model_load_sec, 2) if task_number == 0 else 0.0,
+                    'batch_size_counts': dict(batch_size_counts),
+                    'timing_scope': 'Generation wall time includes prefill, decode, data transfer, text decoding and progress writes; excludes model loading and dataset preprocessing.',
+                    'world_size': accelerator.num_processes,
                 }
                 metrics[f"{task}_efficiency"] = eff
                 print(f"[efficiency] {task}: {json.dumps(eff)}", flush=True)
+                timing = dict(eff, task=task, score=score)
+                save_json(os.path.join(result_dir, f'{task}.timing.json'), timing)
+            else:
+                timing_path = os.path.join(result_dir, f'{task}.timing.json')
+                timing = None
+                if os.path.exists(timing_path):
+                    with open(timing_path, encoding='utf-8') as stream:
+                        timing = json.load(stream)
+                    metrics[f'{task}_efficiency'] = {key: value for key, value in timing.items() if key not in ['task', 'score']}
+            if timing is not None:
+                timing_rows.append(dict(timing, score=score))
+                save_task_timings(result_dir, timing_rows)
 
-            with open(makedirs(result_path), "w", encoding="utf-8") as f:
+            with open(makedirs(result_path + '.tmp'), "w", encoding="utf-8") as f:
                 f.write(json.dumps(score, ensure_ascii=False) + "\n")
                 for index, pred in zip(indices, preds):
                     sample = raw_dataset[index]
@@ -498,6 +602,7 @@ def main():
                     sample["pred"] = pred
                     sample['index'] = index
                     f.write(json.dumps(sample, ensure_ascii=False) + "\n")
+            os.replace(result_path + '.tmp', result_path)
 
     if accelerator.process_index == 0:
         # save config
@@ -537,6 +642,11 @@ def main():
             metrics["avg"] = avg
 
         print_task_score_table(tasks, metrics)
+        save_json(os.path.join(result_dir, 'scores.json'), dict(task_metrics, avg=metrics.get('avg')))
+        save_json(os.path.join(result_dir, 'progress.json'), {
+            'status': 'complete', 'pid': os.getpid(), 'completed_tasks': tasks,
+            'num_samples': sum(len(raw) for raw, _ in all_datasets.values()),
+        })
 
         file_logger = FileLogger(makedirs(os.path.join(args.output_dir, "metrics.log")))
         file_logger.log(metrics, Args=asdict(args), Category_Metrics=category_metrics, Length_Distributions=length_distributions)

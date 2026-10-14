@@ -1,59 +1,79 @@
-# Accuracy evaluation
+# LongBench-v1 evaluation
 
 [中文](zh/evaluation.md)
-Evaluation entry points run from the repository root. A trained SlimKV checkpoint and the exact task data are required. Default reconstruction, optional latent FA2 decode and the independent latency prototype have different semantics; see [implementation status](implementation_status.md).
 
-## LongBench-v1
+The Llama3 preset evaluates 15 English and code subsets. The training corpus is Chinese-only, so Chinese evaluation subsets are excluded. `passage_count` is excluded separately. `passage_retrieval_en`, `lcc` and `repobench-p` are included. Use `TASKS=all` to evaluate all LongBench-v1 subsets.
 
-Prepare official task JSONL files from [THUDM/LongBench](https://huggingface.co/datasets/THUDM/LongBench), with each task at `<dataset_dir>/<task>.jsonl`. Use LongBench-v1, not LongBench-v2. Keep the downloaded dataset revision and hashes with your results.
+## Prepare data
 
-A small, bounded run:
+Download the official [LongBench-v1 archive](https://huggingface.co/datasets/zai-org/LongBench/tree/main) and extract the selected task files:
 
 ```bash
-python -m main.eval_longbench \
-  --model_name_or_path /path/to/slimkv-checkpoint \
-  --eval_data /path/to/longbench \
-  --output_dir data/results/longbench --result_dir smoke \
-  --enable_beacon --attn_impl eager --dtype bf16 --chat_template llama-3 \
-  --beacon_ratio 8 --beacon_ratio_mix sequence \
-  --tasks qasper hotpotqa --max_samples_per_task 2 \
-  --sample_seed 42 --sample_shuffle False --batch_size 1
+python -m tools.download_longbench --output_dir data/datasets/longbench
 ```
 
-This selects the first two original rows of each task; it does not reproduce the historical length-filtered sample selection. For those benchmark fixtures, use [fixture preparation](benchmark.md#preparing-small-longbench-v1-fixtures). Evaluation honors its existing `max_length` and task truncation/template behavior; preserve these settings when comparing runs.
+The downloader pins revision `5e628be450b7e67fb7ae6e201bd6d8f7056f7672` and records archive and task-file SHA256 hashes in `dataset_manifest.json`. If `data.zip` is already available locally, add `--archive /path/to/data.zip`. Existing task files with different contents are never overwritten. This uses v1 JSONL files, excluding LongBench-E and LongBench-v2.
 
-For the full preset:
+## Run SlimKV
+
+Use a trained Llama3 SlimKV checkpoint containing weights, config and tokenizer. Feature ranks come from the checkpoint. An f4 checkpoint with `BEACON_RATIO=4` gives nominal t4f4, or 16× token-feature compression.
 
 ```bash
-MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
+MODEL_NAME_OR_PATH=/path/to/slimkv-f4-checkpoint \
 EVAL_DATA=/path/to/longbench \
-CUDA_VISIBLE_DEVICES=0 NPROC_PER_NODE=1 \
-BEACON_RATIO=8 ATTN_IMPL=eager \
-bash scripts/evaluation/eval_longbench_llama31_8B.sh
+CUDA_VISIBLE_DEVICES=0 \
+bash scripts/evaluation/eval_longbench_slimkv.sh
 ```
 
-The preset's task set excludes Chinese subsets. Check the task list rather than calling it the full bilingual benchmark. `BEACON_RATIO` controls **token** compression; feature compression comes from checkpoint ranks. t8f4 nominally means 8× token and 4× feature compression, not 32× reduction in total GPU memory.
+The preset uses BF16 greedy inference, token ratio 4, latent KV storage, original-dimension FA2 prefill, latent-space FA2 Beacon decode, CUDA Graphs and `num_logits_to_keep=1`. Beacon Keys skip RoPE. It reads layer ranks and projection structure from the checkpoint.
 
-## Controls and outputs
+FA2 must be installed. Global latent ranks up to 256 use standard FA2. Ranks from 257 to 320 require the BF16 SM90 extension and `SLIMKV_FA2_DECODE_EXTENSION_DIR`; see [build instructions](benchmark.md#building-the-width-320-extension). Larger ranks and other projection structures should use reconstruction decode. For that path, set `DECODE_BACKEND=reconstruct ATTN_IMPL=sdpa` before the launcher. Optional fast decode currently supports Llama3, not Qwen2.
 
-`--beacon_cache_mode full` and `--beacon_cache_mode latent` compare caches using the same checkpoint. `--beacon_decode_backend fa2 --attn_impl flash_attention_2` opts into eligible latent decode and standard FA2 prefill; build requirements are in [benchmark](benchmark.md).
+The **final chat-formatted input** is limited to 31500 tokens. Longer inputs retain the first 15750 and last 15750 tokens, without decoding and re-encoding. Few-shot and code tasks retain their existing template behavior. The direct Python entry keeps its historical truncation before chat formatting unless `--truncate_after_chat True` is supplied.
 
-For Llama3 batched inference, add `--group_by_input_length True --batch_size 32 --num_logits_to_keep 1`. The evaluator groups exactly equal-length inputs, preserves every sample and scores predictions against their original indices. Smaller groups use smaller batches. Padded variable-length batches are not supported by latent FA2 decode. `--max_batch_tokens` can cap total input tokens per batch to fit long contexts in memory.
+Batch size is an upper limit of 32. Only inputs with exactly equal token lengths share a batch, preserving every selected input without padding. Most distinct lengths run at batch 1. `BATCH_SIZE` and `MAX_BATCH_TOKENS` control memory use. The default token budget is `BATCH_SIZE × MAX_LENGTH`; choose limits for your GPU and checkpoint.
 
-`--num_logits_to_keep 1` computes only the raw-token logits needed for generation, reducing the vocabulary projection cost of each prefill window. Training and the default full-logit forward path are unchanged. Measure both prefill and decode when choosing the batch limit. `--beacon_decode_graph True` enables the optional decode CUDA Graphs.
+## Small runs and resume
 
-Independent requests must reset `model.memory`; the evaluation entry resets between batches. Preserve greedy decoding, chat template, token ratio, RoPE flags, task-specific generation caps and stopping rules. QA can stop on newline; code completion is handled separately. Floating-point path changes need not preserve generated tokens.
+Run the first two rows of two subsets:
 
-Under `<output_dir>/<result_dir>/`, task `.json` files contain the score on the first line followed by prediction records, and `config.json` saves arguments. `run_manifest.json` records argument configuration, actual source hashes, checkpoint config and task-file hashes, software versions and GPU properties. Aggregate logs are written under `output_dir`. Config hashes do not identify weight bytes: retain/hash exact shards separately. Use environment-based Hugging Face authentication rather than putting credentials in logged CLI flags.
+```bash
+MODEL_NAME_OR_PATH=/path/to/slimkv-f4-checkpoint \
+EVAL_DATA=/path/to/longbench \
+TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 RESULT_DIR=smoke \
+bash scripts/evaluation/eval_longbench_slimkv.sh
+```
 
-## Other accuracy entry points
+To evaluate t8f4, set `BEACON_RATIO=8` and use a separate result directory. Additional evaluator arguments can follow the script name. `bash scripts/evaluation/eval_longbench_slimkv.sh --help` lists the environment controls.
 
-| Evaluation | Entry point | Additional inputs / caveats |
-|---|---|---|
-| Needle-in-a-Haystack | `python -m main.eval_needle --help` | Local haystack, optional judge dependencies/API credentials; current judging and three-seed aggregation do not reproduce the paper |
-| Synthetic passkey retrieval | `python -m main.eval_passkey --help` | Generated contexts, explicit seed and length/depth settings; not the paper NIAH protocol |
-| LM perplexity | `python -m main.eval_lm --help` | Local evaluation data and matching tokenization/stride |
-| Generation / MMLU / topic | `main.eval_generation`, `main.eval_mmlu`, `main.eval_topic` | Existing entry points; inspect `--help` and required schemas; not all are paper experiments |
-| Probe / heatmap | `main.eval_longbench_beacon_probe`, `main.eval_longbench_chunk2_heatmap` | Diagnostic ablations, not official aggregate quality evaluation |
+Set `LOAD_RESULT=True` to reuse completed task files and their original timing records. Saved configuration must match, apart from `load_result`. Incomplete tasks rerun from the beginning. Keep checkpoint weights and task files unchanged when resuming, and use a new `RESULT_DIR` for a different protocol. Timing records are not invented for older prediction files that lack them.
 
-A CPU-only smoke test is `python -m unittest discover -s tests -v`; it downloads no data. It proves local mechanics, not trained-model quality.
+## Results and timing
+
+Results default to `data/results/longbench/slimkv-t4/`:
+
+| File | Contents |
+| --- | --- |
+| `<task>.json` | Score on the first line, followed by predictions and original sample indices |
+| `<task>.timing.json` | Generation time, token counts, batch sizes and peak allocated GPU memory |
+| `task_timings.csv` | One row per completed timed subset, updated after each subset |
+| `scores.json` | Subset scores and their unweighted average |
+| `progress.json` | Snapshot updated after each batch, with completed tasks and current sample count |
+| `config.json`, `run_manifest.json` | Arguments, source hashes, checkpoint config/task-file hashes, software and hardware |
+
+`time_sec` measures generation wall time, including prefill, decode, data transfer, text decoding and progress writes. Model loading and dataset preprocessing are reported separately. This is not attention kernel time. The preset uses one process on one GPU; progress is a saved snapshot and does not prove a process is still alive. Config hashes do not identify weight bytes, so retain the exact checkpoint with each run.
+
+The average covers only the selected tasks. The English preset is not the full bilingual LongBench score. `BEACON_RATIO` controls token compression, while feature compression comes from checkpoint ranks. Their product does not describe total GPU memory reduction.
+
+Independent batches reset `model.memory`. QA tasks use the existing newline stopping rule, and each subset keeps its generation cap and metric. Batched floating-point computation can produce different generated tokens from batch 1.
+
+## Other entry points
+
+The older `eval_longbench_llama31_8B.sh` and Qwen presets remain available with their existing defaults. For reproducible length-selected latency fixtures, use [fixture preparation](benchmark.md#preparing-small-longbench-v1-fixtures).
+
+| Evaluation | Entry point | Inputs |
+| --- | --- | --- |
+| Needle-in-a-Haystack | `python -m main.eval_needle --help` | Local haystack and optional judge |
+| Synthetic passkey retrieval | `python -m main.eval_passkey --help` | Seed, lengths and depths |
+| LM perplexity | `python -m main.eval_lm --help` | Local data and matching tokenization/stride |
+| Diagnostics | `main.eval_longbench_beacon_probe`, `main.eval_longbench_chunk2_heatmap` | Probe and attention analysis |

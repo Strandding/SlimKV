@@ -206,7 +206,7 @@ Run the following entry points from the repository root. Model, data and output 
 | Low-rank initialization | `python -m main.convert_kv_lowrank --help` | [Training](docs/training.md) |
 | Pretraining | `bash scripts/training/train_llama_8B.sh` | [Training](docs/training.md) |
 | Finetuning | `bash scripts/training/finetune_llama_8B.sh` | [Training](docs/training.md) |
-| LongBench | `python -m main.eval_longbench --help` | [Evaluation](docs/evaluation.md) |
+| LongBench-v1 | `bash scripts/evaluation/eval_longbench_slimkv.sh` | [Evaluation](docs/evaluation.md) |
 | Needle-in-a-Haystack | `python -m main.eval_needle --help` | [Evaluation](docs/evaluation.md) |
 | Latency and memory | `python -m tools.benchmark_fa2_decode --help` | [Benchmarking](docs/benchmark.md) |
 

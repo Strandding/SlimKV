@@ -206,7 +206,7 @@ python -m main.infer \
 | 低秩初始化 | `python -m main.convert_kv_lowrank --help` | [训练](training.md) |
 | 预训练 | `bash scripts/training/train_llama_8B.sh` | [训练](training.md) |
 | 微调 | `bash scripts/training/finetune_llama_8B.sh` | [训练](training.md) |
-| LongBench | `python -m main.eval_longbench --help` | [评测](evaluation.md) |
+| LongBench-v1 | `bash scripts/evaluation/eval_longbench_slimkv.sh` | [评测](evaluation.md) |
 | NIAH | `python -m main.eval_needle --help` | [评测](evaluation.md) |
 | 耗时与显存 | `python -m tools.benchmark_fa2_decode --help` | [性能评测](benchmark.md) |
 

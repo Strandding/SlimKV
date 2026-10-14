@@ -8,6 +8,14 @@ from typing import List
 from collections import Counter
 from rouge import Rouge
 
+# The training corpus is Chinese-only, so this preset excludes Chinese tasks.
+# Passage counting is excluded separately; English retrieval and code tasks remain.
+ENGLISH_TASKS = [
+    'narrativeqa', 'qasper', 'multifieldqa_en', 'hotpotqa', '2wikimqa',
+    'musique', 'gov_report', 'qmsum', 'multi_news', 'trec', 'triviaqa',
+    'samsum', 'passage_retrieval_en', 'lcc', 'repobench-p',
+]
+
 
 def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""

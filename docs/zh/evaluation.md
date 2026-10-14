@@ -1,32 +1,79 @@
-# 精度评测
+# LongBench-v1 评测
 
 [English](../evaluation.md)
 
-使用训练后的 checkpoint 和本地 [LongBench-v1](https://huggingface.co/datasets/THUDM/LongBench)，每个 task 放在 `<dataset_dir>/<task>.jsonl`。记录数据 revision 和 hash，不要与 v2 混用。
+Llama3 预设评测 15 个英文及代码子集。训练语料只有中文，因此排除中文评测子集。`passage_count` 单独排除，保留 `passage_retrieval_en`、`lcc` 和 `repobench-p`。设置 `TASKS=all` 可评测 LongBench-v1 全部子集。
+
+## 准备数据
+
+下载官方 [LongBench-v1 压缩包](https://huggingface.co/datasets/zai-org/LongBench/tree/main)，提取所选子集：
 
 ```bash
-python -m main.eval_longbench \
-  --model_name_or_path /path/to/slimkv-checkpoint \
-  --eval_data /path/to/longbench \
-  --output_dir data/results/longbench --result_dir smoke \
-  --enable_beacon --attn_impl eager --dtype bf16 --chat_template llama-3 \
-  --beacon_ratio 8 --beacon_ratio_mix sequence \
-  --tasks qasper hotpotqa --max_samples_per_task 2 \
-  --sample_seed 42 --sample_shuffle False --batch_size 1
+python -m tools.download_longbench --output_dir data/datasets/longbench
 ```
 
-这是每任务原始前两行，不是历史 length 2500–6000 的选样。历史 fixtures 用 [benchmark 工具](benchmark.md) 选。评测入口保留现有 max_length/模板/截断规则，比较时要一致。
+工具固定数据 revision `5e628be450b7e67fb7ae6e201bd6d8f7056f7672`，将压缩包和各任务文件的 SHA256 保存到 `dataset_manifest.json`。已有 `data.zip` 时，添加 `--archive /path/to/data.zip`，无需下载。不会覆盖内容不同的已有任务文件。使用 v1 JSONL，不混用 LongBench-E 或 LongBench-v2。
 
-完整预设：设置 MODEL_NAME_OR_PATH、EVAL_DATA、CUDA_VISIBLE_DEVICES=0、NPROC_PER_NODE=1、BEACON_RATIO=8、ATTN_IMPL=eager，再启动 `scripts/evaluation/eval_longbench_llama31_8B.sh`。预设排除了中文子集，不能称完整双语 LongBench。BEACON_RATIO 是 token 压缩；feature ratio 来自 checkpoint，整体显存不直接按两者乘积降低。
+## 运行 SlimKV
 
-对照使用相同权重分别传 `--beacon_cache_mode full` / `latent`。启用 latent FA2 需相应后端和扩展。
+使用包含权重、config 和 tokenizer 的 Llama3 SlimKV checkpoint。特征 rank 从 checkpoint 读取。f4 权重搭配 `BEACON_RATIO=4` 即 t4f4，标称 token-feature 压缩比为 16×。
 
-Llama3 批量推理可增加 `--group_by_input_length True --batch_size 32 --num_logits_to_keep 1`。评测器将长度完全相同的输入分到一批，保留全部样本，并按原始索引对齐预测和答案。样本不足时使用较小 batch。latent FA2 decode 暂不支持变长 padding；可用 `--max_batch_tokens` 限制每批输入 token 总数，控制长上下文显存。
+```bash
+MODEL_NAME_OR_PATH=/path/to/slimkv-f4-checkpoint \
+EVAL_DATA=/path/to/longbench \
+CUDA_VISIBLE_DEVICES=0 \
+bash scripts/evaluation/eval_longbench_slimkv.sh
+```
 
-`--num_logits_to_keep 1` 只计算生成需要的 raw-token logits，减少每个 prefill 窗口的词表投影开销，训练和默认完整 logits 路径保持不变。选择 batch 上限时应同时测量 prefill 和 decode。`--beacon_decode_graph True` 启用可选的 decode CUDA Graph。
+默认采用 BF16 greedy 推理、token ratio 4、latent KV 存储、原始维度 FA2 prefill、latent-space FA2 Beacon decode、CUDA Graph 和 `num_logits_to_keep=1`。Beacon K 不加 RoPE，各层 rank 和投影结构从 checkpoint 读取。
 
-独立 batch 会 reset Memory；生成模板、EOS、换行停止、code 补全和 greedy 设置保持一致，浮点后端差异不保证逐 token 一致。
+需安装 FA2。全局 latent rank 不超过 256 时使用标准 FA2；257–320 需 BF16 SM90 扩展，并设置 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，详见[构建说明](benchmark.md#building-the-width-320-extension)。更大 rank 或其他投影结构应使用重建路径，在启动前设置 `DECODE_BACKEND=reconstruct ATTN_IMPL=sdpa`。当前快速 decode 路径支持 Llama3，尚不支持 Qwen2。
 
-结果目录含每任务 score 首行加预测记录、config.json、run_manifest.json；后者记录配置、源码 SHA、checkpoint config/task 文件 SHA、软件与 GPU。整体 metrics 日志在 output_dir。Config SHA 不等于权重 SHA，需保留 exact shards；用环境变量认证，避免 CLI 凭据进入日志。
+**最终包含 chat template 的输入**上限为 31500 tokens，超过时保留前 15750 和后 15750，不做 decode/re-encode。Few-shot 和代码任务沿用原有模板规则。直接使用 Python 入口时，默认保留历史的 chat template 之前截断规则，需显式增加 `--truncate_after_chat True` 才采用新协议。
 
-其他入口：NIAH 为 `main.eval_needle`（需 haystack、可选 judge/API，目前非论文三 seed 协议）；`main.eval_passkey` 是 synthetic retrieval；`main.eval_lm` 是 perplexity；generation/MMLU/topic 入口需各自 schema。probe/heatmap 用于诊断，不是正式 aggregate quality。
+Batch 上限为 32。仅将最终 token 长度完全相同的输入合批，不 padding、不缩短额外输入、不丢样本。长度不同的样本通常以 batch 1 运行。`BATCH_SIZE` 和 `MAX_BATCH_TOKENS` 控制显存，默认 token 预算为 `BATCH_SIZE × MAX_LENGTH`，应按 GPU 和 checkpoint 调整。
+
+## 小样本测试与续跑
+
+评测两个子集各自的前两条：
+
+```bash
+MODEL_NAME_OR_PATH=/path/to/slimkv-f4-checkpoint \
+EVAL_DATA=/path/to/longbench \
+TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 RESULT_DIR=smoke \
+bash scripts/evaluation/eval_longbench_slimkv.sh
+```
+
+t8f4 可设置 `BEACON_RATIO=8`，并使用独立结果目录。脚本名之后可追加评测入口参数。`bash scripts/evaluation/eval_longbench_slimkv.sh --help` 列出环境变量选项。
+
+设置 `LOAD_RESULT=True` 可复用已完成子集及原计时记录，除 `load_result` 外，保存的配置必须一致。未完成的子集从头重跑。续跑时保持权重及数据文件不变，改变协议时使用新的 `RESULT_DIR`。旧预测文件没有计时记录时，不会补造耗时。
+
+## 结果与耗时
+
+默认保存到 `data/results/longbench/slimkv-t4/`：
+
+| 文件 | 内容 |
+| --- | --- |
+| `<task>.json` | 首行得分，后续为预测及原始样本索引 |
+| `<task>.timing.json` | 推理耗时、token 数、实际 batch 分布及 GPU 峰值分配显存 |
+| `task_timings.csv` | 每个已完成且有计时记录的子集一行，完成后立即更新 |
+| `scores.json` | 各子集得分及不加权平均分 |
+| `progress.json` | 每批更新的快照，包含当前样本进度和已完成子集 |
+| `config.json`、`run_manifest.json` | 参数、源码 SHA、checkpoint config/数据 SHA、软件及硬件 |
+
+`time_sec` 是生成阶段的墙钟时间，包括 prefill、decode、传输、输出文本解码和进度写入。模型加载与数据预处理单独记录，不属于 attention kernel 耗时。预设使用单进程、单 GPU；进度文件是保存的快照，不能单凭它判断进程仍存活。Config SHA 不等于权重 SHA，应保留每次运行使用的完整 checkpoint。
+
+平均分只覆盖所选子集，英文预设不代表完整双语 LongBench 得分。`BEACON_RATIO` 控制 token 压缩，特征压缩取决于 checkpoint rank，两者乘积不等于 GPU 总显存缩减比例。
+
+独立 batch 会 reset `model.memory`。QA 使用既有换行停止规则，各子集保留生成长度上限与指标。批量计算的浮点差异可能导致生成结果与 batch 1 不同。
+
+## 其他入口
+
+原 `eval_longbench_llama31_8B.sh` 和 Qwen 预设保留原默认配置。按长度选取的延迟测试样本使用 [fixture 工具](benchmark.md)。
+
+| 评测 | 入口 | 输入 |
+| --- | --- | --- |
+| NIAH | `python -m main.eval_needle --help` | 本地 haystack、可选 judge |
+| Synthetic passkey retrieval | `python -m main.eval_passkey --help` | Seed、长度和深度 |
+| LM perplexity | `python -m main.eval_lm --help` | 本地数据及对应 tokenization/stride |
+| 诊断 | `main.eval_longbench_beacon_probe`、`main.eval_longbench_chunk2_heatmap` | Probe 和注意力分析 |
