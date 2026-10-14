@@ -2,11 +2,11 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 
 # ================================================================
-#  USER CONFIGURATION  —  只需修改这里
+# USER CONFIGURATION — override through environment variables.
 # ================================================================
 
-# --- 模型路径 ---
-# 若不手动指定 MODEL_NAME_OR_PATH，则自动在 DEFAULT_FINETUNE_DIR 下选择最新 checkpoint-*
+# --- Model path ---
+# If MODEL_NAME_OR_PATH is unset, choose the latest checkpoint-* under DEFAULT_FINETUNE_DIR.
 DEFAULT_FINETUNE_DIR="${DEFAULT_FINETUNE_DIR:-${SLIMKV_OUTPUT_DIR}/slimkv-llama31-8b-finetune-dense}"
 MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-}"
 
@@ -15,20 +15,20 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
 MASTER_PORT="${MASTER_PORT:-29531}"
 
-# --- 评测模式 ---
-# beacon8: 开启 beacon 压缩（默认）
-# no_beacon: 不使用 beacon（全量 attention）
-# question_only: 只对 question 部分做 beacon
+# --- Evaluation mode ---
+# beacon8: enable Beacon compression (default).
+# no_beacon: disable Beacon and use full attention.
+# question_only: apply Beacon only to the question portion.
 EVAL_MODE="${EVAL_MODE:-beacon8}"
-# raw_nokrope: 仅在 no_beacon 模式下生效，设置后执行 Q 保留 RoPE / K 去 RoPE
+# raw_nokrope: no_beacon mode only; retain Query RoPE and disable Key RoPE.
 RAW_NOKROPE="${RAW_NOKROPE:-False}"
 
-# --- 数据 & 输出 ---
+# --- Data and output ---
 EVAL_DATA="${EVAL_DATA:-${SLIMKV_DATA_ROOT}/longbench}"
 OUTPUT_NAME="${OUTPUT_NAME:-slimkv-llama31-8b-finetune-dense}"
 RESULT_ROOT="${RESULT_ROOT:-data/results/longbench}"
 
-# --- Beacon 参数（仅 beacon8 / question_only 模式生效）---
+# --- Beacon options (beacon8 / question_only modes only) ---
 BEACON_RATIO="${BEACON_RATIO:-8}"
 BEACON_RATIO_MIX="${BEACON_RATIO_MIX:-sequence}"
 BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K:-auto}"
@@ -38,7 +38,7 @@ BEACON_SHARED_KV_DOWN_PROJ="${BEACON_SHARED_KV_DOWN_PROJ:-auto}"
 BEACON_HEADWISE_UP_PROJ="${BEACON_HEADWISE_UP_PROJ:-auto}"
 BEACON_UP_PROJ_GROUP_SIZE="${BEACON_UP_PROJ_GROUP_SIZE:-auto}"
 
-# --- 评测超参 ---
+# --- Evaluation parameters ---
 ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 CHAT_TEMPLATE="${CHAT_TEMPLATE:-llama-3}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
@@ -51,8 +51,8 @@ OCCUPY_AFTER_EVAL="${OCCUPY_AFTER_EVAL:-False}"
 OCCUPY_MEM_GB="${OCCUPY_MEM_GB:-}"
 OCCUPY_NO_COMPUTE="${OCCUPY_NO_COMPUTE:-False}"
 
-# --- LongBench 子任务（默认去掉中文子集） ---
-# 已移除: multifieldqa_zh, dureader, vcsum, lsht, passage_retrieval_zh
+# --- LongBench tasks (Chinese subsets excluded by default) ---
+# Excluded: multifieldqa_zh, dureader, vcsum, lsht, passage_retrieval_zh.
 TASKS=(
   narrativeqa
   qasper
@@ -73,11 +73,13 @@ TASKS=(
 )
 
 # ================================================================
-#  以下内容通常不需要修改
+# The following settings normally need no changes.
 # ================================================================
 
 if type module &>/dev/null; then
-  module load cuda12.8/toolkit/12.8.1
+  if [[ -n "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}" ]]; then
+    module load "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}"
+  fi
 fi
 
 if [[ "${CUDA_HOME:-}" == */bin/nvcc ]] || [[ -f "${CUDA_HOME:-}" ]]; then
@@ -162,7 +164,7 @@ read_ckpt_int_flag() {
   fi
 }
 
-# 自动解析模型路径：优先用显式 MODEL_NAME_OR_PATH，否则从默认 finetune 目录选最新 ckpt
+# Resolve an explicit MODEL_NAME_OR_PATH first, otherwise the latest default finetuning checkpoint.
 if [[ -z "${MODEL_NAME_OR_PATH}" ]]; then
   if compgen -G "${DEFAULT_FINETUNE_DIR}/checkpoint-*" > /dev/null; then
     MODEL_NAME_OR_PATH="$(printf '%s\n' "${DEFAULT_FINETUNE_DIR}"/checkpoint-* | sort -V | tail -n 1)"
@@ -174,7 +176,7 @@ if [[ -z "${MODEL_NAME_OR_PATH}" ]]; then
   fi
 fi
 
-# 如果传入的是父目录（无 config.json），自动找最新 checkpoint
+# If the path is a parent directory without config.json, choose its latest checkpoint.
 if [[ -d "${MODEL_NAME_OR_PATH}" ]] && [[ ! -f "${MODEL_NAME_OR_PATH}/config.json" ]]; then
   if compgen -G "${MODEL_NAME_OR_PATH}/checkpoint-*" > /dev/null; then
     MODEL_NAME_OR_PATH="$(printf '%s\n' "${MODEL_NAME_OR_PATH}"/checkpoint-* | sort -V | tail -n 1)"
@@ -298,7 +300,7 @@ if [[ "${BEACON_UP_PROJ_GROUP_SIZE}" == "auto" ]]; then
   fi
 fi
 
-# 自动查找 LongBench 数据路径
+# Locate the LongBench dataset directory.
 PROBE_TASK="${TASKS[0]}"
 if [[ "${PROBE_TASK}" == "all" ]]; then
   PROBE_TASK="narrativeqa"
@@ -318,7 +320,7 @@ if [[ ! -f "${EVAL_DATA}/${PROBE_TASK}.jsonl" ]]; then
   fi
 fi
 
-# 构建评测模式参数
+# Build arguments for the evaluation mode.
 mode_suffix=""
 mode_args=()
 if [[ "${EVAL_MODE}" != "no_beacon" && "${RESOLVED_BEACON_ENHANCE_K_POS_RESIDUAL}" == "True" && "${RESOLVED_BEACON_SKIP_ROPE_FOR_BEACON_K}" != "True" ]]; then

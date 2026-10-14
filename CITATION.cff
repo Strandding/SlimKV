@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+message: "If you use SlimKV, cite the supplied manuscript. Publication metadata is pending."
+type: software
+title: "SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention"
+repository-code: "https://github.com/Strandding/SlimKV"
+authors:
+  - family-names: Teng
+    given-names: Zihan
+  - family-names: Zhao
+    given-names: Jiayu
+  - family-names: Ren
+    given-names: Wentao
+  - family-names: Fan
+    given-names: Minhao
+  - family-names: Ma
+    given-names: Tianrui
+  - family-names: Chen
+    given-names: Song
+  - family-names: Liu
+    given-names: Weichen
+preferred-citation:
+  type: unpublished
+  title: "SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention"
+  notes: "Unpublished manuscript; venue, year, DOI and public paper URL are not confirmed."
+  authors:
+    - family-names: Teng
+      given-names: Zihan
+    - family-names: Zhao
+      given-names: Jiayu
+    - family-names: Ren
+      given-names: Wentao
+    - family-names: Fan
+      given-names: Minhao
+    - family-names: Ma
+      given-names: Tianrui
+    - family-names: Chen
+      given-names: Song
+    - family-names: Liu
+      given-names: Weichen

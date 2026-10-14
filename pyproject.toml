@@ -32,6 +32,10 @@ training = ["deepspeed", "peft>=0.10,<0.11"]
 needle-judge = ["langchain", "langchain-openai"]
 tensor-parallel = ["tensor-parallel"]
 
+[project.urls]
+Repository = "https://github.com/Strandding/SlimKV"
+Issues = "https://github.com/Strandding/SlimKV/issues"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["slimkv*", "main*", "tools*"]

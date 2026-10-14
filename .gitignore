@@ -24,6 +24,11 @@ dist/
 *.log
 *.nsys-rep
 *.ncu-rep
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.so
+*.o
 
 # The H20 paper and checkpoints stay local.
 /SlimKV_EMNLP26.pdf

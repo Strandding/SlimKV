@@ -285,6 +285,12 @@ def main():
 
     result_dir = os.path.join(args.output_dir, args.result_dir)
 
+    if accelerator.process_index == 0:
+        from tools.record_run import record_run
+        record_run(os.path.join(result_dir, 'run_manifest.json'), asdict(args),
+                   [os.path.join(args.model_name_or_path, 'config.json')]
+                   + [os.path.join(args.eval_data, task + '.jsonl') for task in tasks])
+
     metrics = {}
     length_distributions = {}
 

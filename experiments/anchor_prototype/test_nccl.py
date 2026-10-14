@@ -1,6 +1,6 @@
 """
-多卡 NCCL 通信测试脚本
-用法: torchrun --nproc_per_node=3 test_nccl.py
+Multi-GPU NCCL communication test.
+Usage: torchrun --nproc_per_node=3 test_nccl.py
 """
 import os
 import time
@@ -23,7 +23,7 @@ def main():
           f"显存: {torch.cuda.get_device_properties(device).total_memory / 1024**3:.1f} GB")
     dist.barrier()
 
-    # ---------- 测试 1: 小张量 allreduce ----------
+    # ---------- Test 1: small-tensor All-Reduce ----------
     print(f"[Rank {rank}] 测试 1: 小张量 allreduce (1024 元素)...", flush=True)
     t = torch.ones(1024, device=device) * (rank + 1)
     dist.all_reduce(t, op=dist.ReduceOp.SUM)
@@ -32,8 +32,8 @@ def main():
     print(f"[Rank {rank}] 测试 1 通过 ✓", flush=True)
     dist.barrier()
 
-    # ---------- 测试 2: 大张量 allreduce (模拟梯度同步) ----------
-    sizes = [100_000_000, 462_551_040]  # 100M 和实际训练中的大小
+    # ---------- Test 2: large-tensor All-Reduce (gradient synchronization) ----------
+    sizes = [100_000_000, 462_551_040]  # 100M elements, approximating a training tensor.
     for numel in sizes:
         mem_gb = numel * 4 / 1024**3  # bf16=2, float32=4
         print(f"[Rank {rank}] 测试 2: 大张量 allreduce ({numel:,} 元素, ~{mem_gb:.1f} GB float32)...", flush=True)
@@ -52,7 +52,7 @@ def main():
         torch.cuda.empty_cache()
         dist.barrier()
 
-    # ---------- 测试 3: broadcast (逐卡广播) ----------
+    # ---------- Test 3: broadcast from each GPU ----------
     print(f"[Rank {rank}] 测试 3: broadcast 测试...", flush=True)
     dist.barrier()
     for src in range(world_size):
@@ -64,7 +64,7 @@ def main():
         print(f"[Rank {rank}] broadcast from rank {src} 通过 ✓", flush=True)
         dist.barrier()
 
-    # ---------- 测试 3b: reduce_scatter ----------
+    # ---------- Test 3b: Reduce-Scatter ----------
     print(f"[Rank {rank}] 测试 3b: reduce_scatter...", flush=True)
     input_t = torch.ones(world_size * 1024 * 1024, device=device) * (rank + 1)
     output_t = torch.zeros(1024 * 1024, device=device)
@@ -74,7 +74,7 @@ def main():
     print(f"[Rank {rank}] 测试 3b 通过 ✓", flush=True)
     dist.barrier()
 
-    # ---------- 测试 4: 多轮连续 allreduce (模拟训练循环) ----------
+    # ---------- Test 4: repeated All-Reduce (training loop) ----------
     n_iters = 20
     print(f"[Rank {rank}] 测试 4: 连续 {n_iters} 轮 allreduce (462M 元素)...", flush=True)
     dist.barrier()
@@ -97,7 +97,7 @@ def main():
     print(f"[Rank {rank}] 测试 4 通过 ✓ 平均: {avg:.3f}s, 最大: {mx:.3f}s", flush=True)
     dist.barrier()
 
-    # ---------- 汇总 ----------
+    # ---------- Summary ----------
     if rank == 0:
         print("\n========== 所有测试通过 ==========")
         if mx > 10:

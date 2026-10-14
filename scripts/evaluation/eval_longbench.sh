@@ -2,11 +2,11 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 
 # ================================================================
-#  USER CONFIGURATION  —  只需修改这里
+# USER CONFIGURATION — override through environment variables.
 # ================================================================
 
-# --- 模型路径 ---
-# 微调后的 checkpoint 路径（指向具体的 checkpoint-* 目录）
+# --- Model path ---
+# Finetuned checkpoint path (a specific checkpoint-* directory).
 MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-${SLIMKV_OUTPUT_DIR}/slimkv-qwen2-finetune-lowrank-nokrope-shared-down-kv64/checkpoint-3000}"
 
 # --- GPU ---
@@ -14,18 +14,18 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
 MASTER_PORT="${MASTER_PORT:-29501}"
 
-# --- 评测模式 ---
-# beacon8: 开启 beacon 压缩（默认）
-# no_beacon: 不使用 beacon（全量 attention）
-# question_only: 只对 question 部分做 beacon
+# --- Evaluation mode ---
+# beacon8: enable Beacon compression (default).
+# no_beacon: disable Beacon and use full attention.
+# question_only: apply Beacon only to the question portion.
 EVAL_MODE="${EVAL_MODE:-beacon8}"
 
-# --- 数据 & 输出 ---
+# --- Data and output ---
 EVAL_DATA="${EVAL_DATA:-${SLIMKV_DATA_ROOT}/longbench}"
 OUTPUT_NAME="${OUTPUT_NAME:-slimkv-qwen2-finetune-lowrank-kv64}"
 RESULT_ROOT="${RESULT_ROOT:-data/results/longbench}"
 
-# --- Beacon 参数（仅 beacon8 / question_only 模式生效）---
+# --- Beacon options (beacon8 / question_only modes only) ---
 BEACON_RATIO="${BEACON_RATIO:-16}"
 BEACON_RATIO_MIX="${BEACON_RATIO_MIX:-sequence}"
 BEACON_SKIP_ROPE_FOR_BEACON_K="${BEACON_SKIP_ROPE_FOR_BEACON_K:-auto}"
@@ -35,7 +35,7 @@ BEACON_SHARED_KV_DOWN_PROJ="${BEACON_SHARED_KV_DOWN_PROJ:-auto}"
 BEACON_HEADWISE_UP_PROJ="${BEACON_HEADWISE_UP_PROJ:-auto}"
 BEACON_UP_PROJ_GROUP_SIZE="${BEACON_UP_PROJ_GROUP_SIZE:-auto}"
 
-# --- 评测超参 ---
+# --- Evaluation parameters ---
 ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 CHAT_TEMPLATE="${CHAT_TEMPLATE:-qwen}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
@@ -48,8 +48,8 @@ OCCUPY_AFTER_EVAL="${OCCUPY_AFTER_EVAL:-False}"
 OCCUPY_MEM_GB="${OCCUPY_MEM_GB:-}"
 OCCUPY_NO_COMPUTE="${OCCUPY_NO_COMPUTE:-False}"
 
-# --- LongBench 子任务（默认去掉中文子集） ---
-# 已移除: multifieldqa_zh, dureader, vcsum, lsht, passage_retrieval_zh
+# --- LongBench tasks (Chinese subsets excluded by default) ---
+# Excluded: multifieldqa_zh, dureader, vcsum, lsht, passage_retrieval_zh.
 TASKS=(
   narrativeqa
   qasper
@@ -70,11 +70,13 @@ TASKS=(
 )
 
 # ================================================================
-#  以下内容通常不需要修改
+# The following settings normally need no changes.
 # ================================================================
 
 if type module &>/dev/null; then
-  module load cuda12.8/toolkit/12.8.1
+  if [[ -n "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}" ]]; then
+    module load "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}"
+  fi
 fi
 
 if [[ "${CUDA_HOME:-}" == */bin/nvcc ]] || [[ -f "${CUDA_HOME:-}" ]]; then
@@ -148,7 +150,7 @@ read_ckpt_int_flag() {
   fi
 }
 
-# 如果指向的是父目录（无 config.json），自动找最新 checkpoint
+# If the path is a parent directory without config.json, choose its latest checkpoint.
 if [[ -d "${MODEL_NAME_OR_PATH}" ]] && [[ ! -f "${MODEL_NAME_OR_PATH}/config.json" ]]; then
   if compgen -G "${MODEL_NAME_OR_PATH}/checkpoint-*" > /dev/null; then
     MODEL_NAME_OR_PATH="$(printf '%s\n' ${MODEL_NAME_OR_PATH}/checkpoint-* | sort -V | tail -n 1)"
@@ -263,7 +265,7 @@ if [[ "${BEACON_UP_PROJ_GROUP_SIZE}" == "auto" ]]; then
   fi
 fi
 
-# 自动查找 LongBench 数据路径
+# Locate the LongBench dataset directory.
 if [[ ! -f "${EVAL_DATA}/${TASKS[0]}.jsonl" ]]; then
   for p in \
     ${SLIMKV_DATA_ROOT}/longbench \
@@ -279,7 +281,7 @@ if [[ ! -f "${EVAL_DATA}/${TASKS[0]}.jsonl" ]]; then
   fi
 fi
 
-# 构建评测模式参数
+# Build arguments for the evaluation mode.
 mode_suffix=""
 mode_args=()
 if [[ "${EVAL_MODE}" != "no_beacon" && "${RESOLVED_BEACON_ENHANCE_K_POS_RESIDUAL}" == "True" && "${RESOLVED_BEACON_SKIP_ROPE_FOR_BEACON_K}" != "True" ]]; then

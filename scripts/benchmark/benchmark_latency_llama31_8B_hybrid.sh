@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
+set -o pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 
 if type module &>/dev/null; then
-  module load cuda12.8/toolkit/12.8.1
+  if [[ -n "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}" ]]; then
+    module load "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}"
+  fi
 fi
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-5}"
@@ -20,7 +23,7 @@ BEACON_KV_LATENT_COMPRESS_RATIO="${BEACON_KV_LATENT_COMPRESS_RATIO:-2}"
 BEACON_RATIO="${BEACON_RATIO:-8}"
 
 RUN_NAME="${RUN_NAME:-latency-llama31-8b-${MODE}-p${PROMPT_LEN}-g${GEN_LEN}-r${REPEAT}}"
-OUTPUT_DIR="data/results/latency/${RUN_NAME}"
+OUTPUT_DIR="${OUTPUT_DIR:-data/results/latency/${RUN_NAME}}"
 mkdir -p "${OUTPUT_DIR}"
 LOG_FILE="${OUTPUT_DIR}/benchmark.log"
 JSON_FILE="${OUTPUT_DIR}/benchmark.json"

@@ -1,0 +1,7 @@
+# CPU CI constraints; install the CPU Torch wheel from its official index first.
+torch==2.5.1
+transformers==4.40.2
+accelerate==0.34.2
+datasets==2.21.0
+numpy==1.26.4
+pyarrow==17.0.0

@@ -5,10 +5,10 @@ set -euo pipefail
 #  USER CONFIGURATION
 # ================================================================
 
-# --- 模型路径 ---
-# 微调后的 checkpoint 路径（指向具体的 checkpoint-* 目录）
-# 也可以指向原始 HF 模型路径（配合 EVAL_MODE=original 使用）
-MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-/home/zihan/Qwen3-1.7B}"
+# --- Model path ---
+# Finetuned checkpoint path (a specific checkpoint-* directory).
+# A base Hugging Face model can be used with EVAL_MODE=original.
+MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-${SLIMKV_BASE_MODEL_DIR:-../model}/Qwen3-1.7B}"
 FINETUNE_DIR="${FINETUNE_DIR:-}"
 
 # --- GPU ---
@@ -16,30 +16,30 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
 MASTER_PORT="${MASTER_PORT:-29501}"
 
-# --- 评测模式 ---
-# slimkv:   开启 SlimKV 压缩（默认）
-# original: 不使用 SlimKV，使用原始模型（全量 attention）
+# --- Evaluation mode ---
+# slimkv: enable SlimKV compression (default).
+# original: use the original model with full attention.
 EVAL_MODE="${EVAL_MODE:-original}"
 
-# --- Context 模式 ---
-# full:       正常评测（包含 context）
-# close_book: 对照组（不提供 context，只保留任务模板与问题）
+# --- Context mode ---
+# full: evaluate with the context included.
+# close_book: omit context, keeping only the task template and question.
 CONTEXT_MODE="${CONTEXT_MODE:-full}"
 
-# --- 数据 & 输出 ---
-# 如果为空，脚本会自动在本地常见路径中搜索或从 HuggingFace 自动下载
+# --- Data and output ---
+# If unset, search local dataset locations or download from Hugging Face.
 EVAL_DATA="${EVAL_DATA:-}"
 OUTPUT_NAME="${OUTPUT_NAME:-slimkv-eval}"
 RESULT_ROOT="${RESULT_ROOT:-data/results/longbench}"
 
-# --- 评测超参 ---
+# --- Evaluation parameters ---
 ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 CHAT_TEMPLATE="${CHAT_TEMPLATE:-hf}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 MAX_LENGTH="${MAX_LENGTH:-31500}"
 DTYPE="${DTYPE:-bf16}"
 
-# --- LongBench 子任务 ---
+# --- LongBench tasks ---
 TASKS=(
   narrativeqa
   qasper
@@ -58,11 +58,13 @@ TASKS=(
 )
 
 # ================================================================
-#  以下内容通常不需要修改
+# The following settings normally need no changes.
 # ================================================================
 
 if type module &>/dev/null; then
-  module load cuda12.8/toolkit/12.8.1 2>/dev/null || true
+  if [[ -n "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}" ]]; then
+    module load "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}"
+  fi 2>/dev/null || true
 fi
 
 if [[ "${CUDA_HOME:-}" == */bin/nvcc ]] || [[ -f "${CUDA_HOME:-}" ]]; then
@@ -78,7 +80,7 @@ export HF_DATASETS_DISABLE_PROGRESS_BARS=0
 export MAP_NUM_PROC="${MAP_NUM_PROC:-32}"
 export MAP_BATCH_SIZE="${MAP_BATCH_SIZE:-10}"
 
-# --- 自动查找 checkpoint ---
+# --- Locate the checkpoint ---
 if [[ -z "${MODEL_NAME_OR_PATH}" ]]; then
   if compgen -G "${FINETUNE_DIR}/checkpoint-*" > /dev/null 2>&1; then
     MODEL_NAME_OR_PATH="$(printf '%s\n' ${FINETUNE_DIR}/checkpoint-* | sort -V | tail -n 1)"
@@ -90,14 +92,14 @@ if [[ -z "${MODEL_NAME_OR_PATH}" ]]; then
   fi
 fi
 
-# 如果指向的是父目录（无 config.json），自动找最新 checkpoint
+# If the path is a parent directory without config.json, choose its latest checkpoint.
 if [[ -d "${MODEL_NAME_OR_PATH}" ]] && [[ ! -f "${MODEL_NAME_OR_PATH}/config.json" ]]; then
   if compgen -G "${MODEL_NAME_OR_PATH}/checkpoint-*" > /dev/null 2>&1; then
     MODEL_NAME_OR_PATH="$(printf '%s\n' ${MODEL_NAME_OR_PATH}/checkpoint-* | sort -V | tail -n 1)"
   fi
 fi
 
-# --- 构建模式参数 ---
+# --- Build mode arguments ---
 mode_suffix=""
 mode_args=()
 case "${EVAL_MODE}" in

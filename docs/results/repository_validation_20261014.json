@@ -1,0 +1,40 @@
+{
+  "status": "PASS",
+  "scope": "Repository publication quality; core byte equality checked against preserved pre-polish dirty worktree, which includes the previously tested batch expansion.",
+  "audit_priorities": {
+    "P0": [
+      "Reliable local-checkpoint quick start",
+      "Separate manuscript reports from smoke measurements",
+      "Expose missing weights/license/paper protocols",
+      "Preserve existing checkpoint/core implementation"
+    ],
+    "P1": [
+      "Bilingual public guides and English code comments",
+      "CPU CI and compatible constraints",
+      "Run provenance and deterministic fixture selection",
+      "Portable launcher paths/error propagation"
+    ],
+    "P2": [
+      "Archive detailed history and map prototypes/tools",
+      "Citation and third-party license attribution"
+    ]
+  },
+  "core_files_byte_identical": 34,
+  "preexisting_files_preserved": 149,
+  "cpu_tests": 32,
+  "entrypoint_help_checks": 18,
+  "python_syntax_files": 88,
+  "shell_syntax_files": 34,
+  "markdown_files": 27,
+  "internal_links": 118,
+  "launchers_dry_run": 5,
+  "cff_schema_valid": true,
+  "pip_check_passed": true,
+  "gpu_tests_this_refresh": false,
+  "remaining_author_decisions": [
+    "Public checkpoint release and weight identity",
+    "Public paper link/publication metadata",
+    "Original SlimKV project license",
+    "Exact data/rank/config manifests and paper-specific protocol implementations"
+  ]
+}

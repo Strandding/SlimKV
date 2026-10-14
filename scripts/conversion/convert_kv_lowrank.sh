@@ -2,7 +2,7 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 set -euo pipefail
 
-# 在计算节点上运行此脚本。它只做离线 checkpoint 转换，不启动训练。
+# Run on a compute node; this performs offline checkpoint conversion, not training.
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
 default_dense_dir="${SLIMKV_BASE_MODEL_DIR}/Qwen2-7B-Instruct"
@@ -31,8 +31,8 @@ fi
 OUTPUT_NAME="${OUTPUT_NAME:-slimkv-qwen2-pretrain-lowrank-kv${BEACON_K_LATENT_HEAD_DIM}}"
 OUTPUT_DIR="${OUTPUT_DIR:-${SLIMKV_OUTPUT_DIR}/${OUTPUT_NAME}}"
 
-# 如果源 checkpoint 已经保存了 beacon 配置，这些参数通常不会改变行为；
-# 这里显式传入是为了确保一定走本地 beacon 模型类。
+# These options normally preserve behavior when the checkpoint already stores Beacon settings.
+# Pass them explicitly to select the local Beacon model classes.
 beacon_args=(
   --enable_beacon
   --beacon_param q k v

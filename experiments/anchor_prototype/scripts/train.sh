@@ -2,7 +2,9 @@
 set -euo pipefail
 
 if type module &>/dev/null; then
-  module load cuda12.8/toolkit/12.8.1
+  if [[ -n "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}" ]]; then
+    module load "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}"
+  fi
 fi
 
 if [[ "${CUDA_HOME:-}" == */bin/nvcc ]] || [[ -f "${CUDA_HOME:-}" ]]; then
@@ -21,8 +23,8 @@ DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-${SCRIPT_DIR}/../config/deepspeed/stage2.j
 # ========= Config =========
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
-DATA_ROOT="${DATA_ROOT:-/data/long-llm}"
-MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-/home/zihan/Qwen2.5-1.5B-Instruct}"
+DATA_ROOT="${DATA_ROOT:-${SLIMKV_DATA_ROOT:-../data/datasets}}"
+MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-${SLIMKV_BASE_MODEL_DIR:-../model}/Qwen2.5-1.5B-Instruct}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/slimkv-qwen3-pretrain}"
 MAX_LENGTH="${MAX_LENGTH:-20000}"
 SAVE_STEPS="${SAVE_STEPS:-500}"

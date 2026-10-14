@@ -1,7 +1,9 @@
-# SlimKV 早期 Anchor 原型
+# Historical Anchor prototype
 
-此目录保留 GitHub 整理前 `98e98b4` 的 Python 源码、脚本与配置。它使用 monkey-patch、`anchor_*` 字段和 Qwen2 实现，与主目录中兼容已有逐层 Beacon checkpoint 的实现独立。
+[中文](README.zh-CN.md)
 
-主项目安装仅包含根目录的 `slimkv`、`main`、`tools`，不安装此原型。需要查看原型时从本目录使用其自身入口和环境，不将其 `anchor_*` checkpoint 与主实现的 `beacon_*` checkpoint 混用。
+This directory preserves the Python source, launchers and configuration from commit `98e98b4`, before the main repository cleanup. It uses monkey-patching, `anchor_*` fields and an independent Qwen2 implementation.
 
-该目录用于保留历史实现，不代表完整论文实现或通过最新模型验收。
+Root package discovery excludes this directory. Its checkpoints are not interchangeable with the main implementation's `beacon_*` checkpoints. Run its own entry points from this directory in a separate environment only when studying the prototype. `MODEL_NAME_OR_PATH` overrides the example local model location in its scripts.
+
+This archive preserves useful research code; it is not the current paper reproduction path and has not passed the latest main-model validation. See [implementation status](../../docs/implementation_status.md).

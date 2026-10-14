@@ -1,4 +1,7 @@
 import logging
+import os
+from dataclasses import asdict
+from pathlib import Path
 import time
 import torch
 from transformers import HfArgumentParser, TrainerCallback
@@ -51,6 +54,12 @@ logger = logging.getLogger(__name__)
 def main():
     parser = HfArgumentParser([ModelArgs, TrainingArgs])
     model_args, training_args = parser.parse_args_into_dataclasses()
+
+    if int(os.environ.get('RANK', '0')) == 0:
+        from tools.record_run import record_run
+        record_run(Path(training_args.output_dir) / 'run_manifest.json',
+                   {'model': asdict(model_args), 'training': training_args.to_dict()},
+                   [Path(model_args.model_name_or_path) / 'config.json'])
 
     model, tokenizer = get_model_and_tokenizer(model_args, device="cuda", evaluation_mode=False)
 

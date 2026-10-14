@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
-# DeepSpeed 导入时会检查 CUDA_HOME/nvcc；计算节点上需加载与 PyTorch 匹配的 CUDA toolkit（本机为 cu128）。
+# DeepSpeed checks CUDA_HOME/nvcc; use a CUDA toolkit compatible with PyTorch (cu128 on the original host).
 if type module &>/dev/null; then
-  module load cuda12.8/toolkit/12.8.1
-  # 可选：module load cudnn9.8-cuda12.8/9.8.0.87
+  if [[ -n "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}" ]]; then
+    module load "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}"
+  fi
+  # Optional: module load cudnn9.8-cuda12.8/9.8.0.87
 fi
 
-# 某些环境会把 CUDA_HOME 设成 nvcc 可执行文件路径，DeepSpeed 会错误拼接为 ".../bin/nvcc/bin/nvcc"。
+# Normalize CUDA_HOME if it points to nvcc; DeepSpeed otherwise appends bin/nvcc twice.
 if [[ "${CUDA_HOME:-}" == */bin/nvcc ]] || [[ -f "${CUDA_HOME:-}" ]]; then
   export CUDA_HOME="$(cd "$(dirname "${CUDA_HOME}")/.." && pwd)"
 elif [[ -z "${CUDA_HOME:-}" ]] && command -v nvcc >/dev/null 2>&1; then
   export CUDA_HOME="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd)"
 fi
 
-# 避免 DeepSpeed Triton autotune 缓存落在 NFS。
+# Keep the DeepSpeed Triton autotune cache off NFS.
 export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-/tmp/${USER}/triton_autotune}"
 mkdir -p "${TRITON_CACHE_DIR}"
 

@@ -5,31 +5,31 @@ import argparse
 import os
 
 def setup(rank, world_size, gpu_ids):
-    """初始化分布式环境"""
+    """Initialize the distributed environment."""
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
     
-    # 映射逻辑 rank 到物理 GPU ID
+    # Map the logical rank to a physical GPU ID.
     physical_gpu = gpu_ids[rank]
     torch.cuda.set_device(physical_gpu)
     
-    # 使用 nccl 后端初始化进程组，这是 GPU 通信的标准
+    # Initialize the process group with the NCCL GPU communication backend.
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
 def cleanup():
-    """销毁分布式环境"""
+    """Destroy the distributed environment."""
     dist.destroy_process_group()
 
 def test_multi_gpu(rank, world_size, gpu_ids):
-    # 1. 初始化
+    # 1. Initialize.
     setup(rank, world_size, gpu_ids)
     physical_gpu = gpu_ids[rank]
     device_name = torch.cuda.get_device_name(physical_gpu)
     print(f"[进程 {rank}] 成功绑定物理显卡 {physical_gpu}: {device_name}")
 
-    # 2. 显存分配测试
+    # 2. Test GPU memory allocation.
     try:
-        # 在指定显卡上分配一个 1024x1024 的矩阵
+        # Allocate a 1024x1024 matrix on the selected GPU.
         tensor = torch.ones(1024, 1024).cuda(physical_gpu)
         print(f"[进程 {rank}] 显存分配正常。")
     except Exception as e:
@@ -37,15 +37,15 @@ def test_multi_gpu(rank, world_size, gpu_ids):
         cleanup()
         return
 
-    # 3. NCCL 多卡通信测试 (All-Reduce)
-    # 每个进程创建一个值为 1 的标量张量
+    # 3. Test multi-GPU NCCL communication (All-Reduce).
+    # Each process creates a scalar tensor with value 1.
     comm_tensor = torch.ones(1).cuda(physical_gpu)
     
-    # 阻塞等待所有进程到达此点
+    # Wait until all processes reach this barrier.
     dist.barrier()
     
-    # 执行 All-Reduce (求和操作)
-    # 如果通信正常，所有卡上的值都会变成 world_size (即参与测试的卡数)
+    # Perform All-Reduce with a sum operation.
+    # Successful communication produces world_size on every GPU.
     dist.all_reduce(comm_tensor, op=dist.ReduceOp.SUM)
 
     if comm_tensor.item() == world_size:
@@ -53,7 +53,7 @@ def test_multi_gpu(rank, world_size, gpu_ids):
     else:
         print(f"[进程 {rank}] NCCL 通信异常。预期值 {world_size}，实际值 {comm_tensor.item()}")
 
-    # 4. 清理
+    # 4. Clean up.
     cleanup()
 
 def main():
@@ -62,7 +62,7 @@ def main():
                         help="需要测试的物理 GPU ID 列表，用逗号分隔，例如: '0,1,3'")
     args = parser.parse_args()
 
-    # 解析输入的 GPU ID
+    # Parse the requested GPU IDs.
     try:
         gpu_ids = [int(id.strip()) for id in args.gpus.split(',')]
     except ValueError:
@@ -75,7 +75,7 @@ def main():
         print("提示: 至少需要指定 2 张显卡才能进行多卡通信测试。")
         return
 
-    # 检查 CUDA 是否可用以及指定的卡号是否越界
+    # Check CUDA availability and validate the GPU IDs.
     if not torch.cuda.is_available():
         print("错误: 当前环境无法检测到 CUDA，请检查显卡驱动或 PyTorch 安装。")
         return
@@ -90,7 +90,7 @@ def main():
     print(f"开始测试，参与测试的显卡 ID: {gpu_ids} (共 {world_size} 张)")
     print(f"=========================================")
     
-    # 使用 multiprocessing 启动多进程测试
+    # Launch the multiprocess test with multiprocessing.
     mp.spawn(test_multi_gpu,
              args=(world_size, gpu_ids),
              nprocs=world_size,

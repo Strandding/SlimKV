@@ -3,7 +3,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 # Beacon finetuning script for Qwen2.5-14B-Instruct (dense or low-rank).
 
 if type module &>/dev/null; then
-  module load cuda12.8/toolkit/12.8.1
+  if [[ -n "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}" ]]; then
+    module load "${SLIMKV_CUDA_MODULE-cuda12.8/toolkit/12.8.1}"
+  fi
 fi
 
 if [[ "${CUDA_HOME:-}" == */bin/nvcc ]] || [[ -f "${CUDA_HOME:-}" ]]; then
@@ -18,7 +20,7 @@ mkdir -p "${TRITON_CACHE_DIR}"
 # Reduce PyTorch CUDA allocator fragmentation
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 
-# ========= 主要可调参数 =========
+# ========= Configurable parameters =========
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-1}"
