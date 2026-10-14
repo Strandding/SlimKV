@@ -130,7 +130,7 @@ class StaticDecode:
                             positions.unsqueeze(0)))
         self.epoch = self.model.memory._static_decode_epoch
 
-    def forward(self, ids, positions, refresh_sink=False):
+    def forward(self, ids, positions, refresh_sink=False, return_normalized_hidden=False):
         model = self.model
         size = ids.shape[1] - 1
         hidden = model.model.embed_tokens(ids[:, :1])
@@ -205,9 +205,10 @@ class StaticDecode:
                 zero_positions = positions[:, :1] * 0
                 state['rotated_k'][:, :, :1].copy_(_rotate(unrotated_k, attn.rotary_emb, zero_positions))
             hidden = layer._decode_tail(output, residual)
-        return model.lm_head(model.model.norm(hidden)).float()
+        hidden = model.model.norm(hidden)
+        return hidden if return_normalized_hidden else model.lm_head(hidden).float()
 
-    def run(self, ids, positions, past):
+    def run(self, ids, positions, past, return_normalized_hidden=False):
         pk = past[0][0]
         sink, history = _length(pk.sink), _length(pk.history)
         raw = sink + _length(pk.raw)
@@ -222,7 +223,7 @@ class StaticDecode:
             self.initialize(past)
         positions = positions[:, -ids.shape[1]:]
         refresh_sink = pk.history is None
-        graph_key = size, refresh_sink, self.raw_bucket
+        graph_key = size, refresh_sink, self.raw_bucket, return_normalized_hidden
         if graph_key not in self.graphs:
             buffers = (ids.clone(), positions.clone())
             sink_snapshot = [(state[name][:, :, :1], state[name][:, :, :1].clone())
@@ -239,13 +240,15 @@ class StaticDecode:
             with torch.cuda.stream(stream):
                 for _ in range(3):
                     restore_sink()
-                    self.forward(*buffers, refresh_sink=refresh_sink)
+                    self.forward(*buffers, refresh_sink=refresh_sink,
+                                 return_normalized_hidden=return_normalized_hidden)
             current.wait_stream(stream)
             graph = torch.cuda.CUDAGraph()
             with torch.cuda.stream(stream):
                 restore_sink()
             with torch.cuda.graph(graph, stream=stream):
-                output = self.forward(*buffers, refresh_sink=refresh_sink)
+                output = self.forward(*buffers, refresh_sink=refresh_sink,
+                                      return_normalized_hidden=return_normalized_hidden)
             current.wait_stream(stream)
             restore_sink()
             self.graphs[graph_key] = graph, buffers, output

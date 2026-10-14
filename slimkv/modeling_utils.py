@@ -270,6 +270,8 @@ class ModelOutput(BaseModelOutputWithPast):
     token_loss: Optional[torch.FloatTensor] = None
     loss_denominator: Optional[torch.FloatTensor] = None
     logits: torch.FloatTensor = None
+    last_hidden_state: Optional[torch.Tensor] = None
+    native_last_hidden_state: Optional[torch.Tensor] = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
@@ -282,14 +284,14 @@ def get_rope(head_dim, base, max_position_embeddings, rope_scaling=None):
     """
     Get rope module. {native, linear scaling, dynamic ntk scaling, yarn scaling, llama3 scaling}
     """
-    if rope_scaling is None:
+    scaling_type = None if rope_scaling is None else rope_scaling.get("type", rope_scaling.get("rope_type"))
+    if scaling_type in (None, "default"):
         rope = RotaryEmbedding(
             dim=head_dim,
             base=base,
             max_position_embeddings=max_position_embeddings,
         )
     else:
-        scaling_type = rope_scaling["type"]
         scaling_factor = rope_scaling["factor"]
         if scaling_type == "linear":
             rope = LinearScalingRotaryEmbedding(

@@ -195,6 +195,8 @@ Use `--prompt_file /path/to/context.txt` for a long context. The example reads r
 
 The default backend stores latent Beacon K/V and reconstructs them for attention. Llama3 also supports reconstruction-free eager and FA2 decode. Training and prefill use the original attention dimension. See [quick start](docs/quickstart.md) for the Python API and backend options.
 
+An experimental [vLLM integration](docs/vllm.md) provides engine-owned paged KV storage and continuous request scheduling for single-GPU Llama inference.
+
 ## Reproduction
 
 Run the following entry points from the repository root. Model, data and output paths can be set through the environment variables in [.env.example](.env.example).

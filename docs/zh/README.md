@@ -195,6 +195,8 @@ python -m main.infer \
 
 默认后端存储低维 Beacon K/V，在注意力计算前重建。Llama3 另支持免重建 eager 和 FA2 decode；训练和 prefill 在原始注意力维度计算。[快速开始](quickstart.md)提供 Python API 和后端选项。
 
+单卡 Llama 还提供实验性的 [vLLM 接入](vllm.md)，支持引擎管理的分页 KV 存储与连续请求调度。
+
 ## 复现
 
 从仓库根目录启动，模型、数据和输出路径由 [.env.example](../../.env.example) 中的环境变量配置。

@@ -42,6 +42,19 @@ class ReconstructionCacheTest(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(123)
 
+    def test_normalized_hidden_covers_prefill_chunks_and_keeps_decode_cache(self):
+        model = make_model(beacon_decode_backend='latent')
+        reference = copy.deepcopy(model)
+        with torch.inference_mode():
+            for ids in [torch.arange(17)[None]] + [torch.tensor([[i]]) for i in range(18, 26)]:
+                expected = reference(input_ids=ids).logits[:, -1]
+                output = model(input_ids=ids, return_normalized_hidden=True, return_dict=True)
+                self.assertEqual(output.last_hidden_state.shape, (*ids.shape, 32))
+                self.assertIsNone(output.logits)
+                actual = model.lm_head(output.last_hidden_state[:, -1]).float()
+                torch.testing.assert_close(actual, expected, rtol=1e-5, atol=2e-6)
+                self.assertEqual(model.memory.cache_bytes(), reference.memory.cache_bytes())
+
     def paired_models(self, **kwargs):
         latent = make_model(**kwargs)
         full = copy.deepcopy(latent)

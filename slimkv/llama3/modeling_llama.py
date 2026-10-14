@@ -31,6 +31,7 @@ from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache
+from transformers.generation import GenerationMixin
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast, SequenceClassifierOutputWithPast
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import (
@@ -1951,6 +1952,7 @@ class LlamaPreTrainedModel(PreTrainedModel):
     _no_split_modules = ["LlamaDecoderLayer"]
     _skip_keys_device_placement = "past_key_values"
     _supports_flash_attn_2 = True
+    _supports_flash_attn = True
     _supports_sdpa = False
     _supports_cache_class = True
 
@@ -2295,7 +2297,7 @@ class LlamaModel(LlamaPreTrainedModel):
         )
 
 
-class LlamaForCausalLM(LlamaPreTrainedModel):
+class LlamaForCausalLM(LlamaPreTrainedModel, GenerationMixin):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
@@ -2524,6 +2526,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         labels: Optional[torch.LongTensor] = None,
         loss_weights: Optional[torch.FloatTensor] = None,
         num_logits_to_keep: int = 0,
+        return_normalized_hidden: bool = False,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -2555,6 +2558,11 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         )
 
         hidden_states = outputs[0]
+        if return_normalized_hidden:
+            if labels is not None or self.training or not return_dict:
+                raise ValueError('Normalized hidden output requires inference with return_dict=True and no labels.')
+            return ModelOutput(last_hidden_state=hidden_states, native_last_hidden_state=hidden_states,
+                               past_key_values=outputs.past_key_values)
         if num_logits_to_keep > 0 and labels is None and not self.training:
             hidden_states = hidden_states[:, -num_logits_to_keep:]
         logits = self.lm_head(hidden_states)
@@ -2619,6 +2627,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         num_logits_to_keep: int = 0,
+        return_normalized_hidden: bool = False,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -2626,6 +2635,9 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         **kwargs,
     ):
         # t1 = time.time()
+        if return_normalized_hidden and (labels is not None or self.training or return_dict is False):
+            raise ValueError('Normalized hidden output requires inference with return_dict=True and no labels.')
+        hidden_parts = []
         self.config._beacon_runtime_chunk_idx = -1
         keep_last_logits = num_logits_to_keep > 0 and labels is None and not self.training
         # Interleaved Beacons can occupy the last position. Retain enough raw
@@ -2674,8 +2686,12 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
                                 or static.layers[0]['raw_k'].device != input_ids.device):
                             static = self._static_decode = StaticDecode(self, capacity)
             if static is not None:
-                logits = static.run(input_ids, position_ids, past_key_values)
-                outputs = ModelOutput(logits=logits, past_key_values=())
+                value = static.run(input_ids, position_ids, past_key_values,
+                                   return_normalized_hidden=return_normalized_hidden)
+                outputs = ModelOutput(past_key_values=(), **{
+                    'last_hidden_state' if return_normalized_hidden else 'logits': value})
+                if return_normalized_hidden:
+                    outputs.native_last_hidden_state = value
             else:
                 outputs = self._native_forward(
                     input_ids=input_ids,
@@ -2690,6 +2706,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
                     labels=labels,
                     loss_weights=loss_weights,
                     num_logits_to_keep=chunk_logits,
+                    return_normalized_hidden=return_normalized_hidden,
                 )
 
             # t5 = time.time()
@@ -2708,6 +2725,13 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
                 # update loss
                 self.memory.update_loss(outputs.batch_loss, outputs.loss_denominator)
 
+            if return_normalized_hidden:
+                hidden = outputs.last_hidden_state
+                if past_key_values[0][2] > 0:
+                    roles = self.memory._beacon_indices[-hidden.shape[1]:]
+                    hidden = hidden[:, roles == 0]
+                hidden_parts.append(hidden)
+
             # t7 = time.time()
 
             # print(f"step time: {t4-t3}, forward time: {t5-t4}, update time: {t6-t5}, loss time: {t7-t6}")
@@ -2716,9 +2740,12 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         # t8 = time.time()
 
         # output loss, past_key_values, and perplexity
-        outputs = self.memory.output(outputs)
-        if keep_last_logits:
-            outputs['logits'] = outputs['logits'][:, -num_logits_to_keep:]
+        if return_normalized_hidden:
+            outputs.last_hidden_state = hidden_parts[0] if len(hidden_parts) == 1 else torch.cat(hidden_parts, dim=1)
+        else:
+            outputs = self.memory.output(outputs)
+            if keep_last_logits:
+                outputs['logits'] = outputs['logits'][:, -num_logits_to_keep:]
         self.config._beacon_runtime_chunk_idx = -1
 
         # t9 = time.time()

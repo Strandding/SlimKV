@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slimkv-vllm"
+version = "0.1.0"
+description = "SlimKV Beacon attention and paged KV integration for vLLM"
+requires-python = ">=3.12"
+dependencies = [
+  "vllm>=0.24.1.dev0,<0.25",
+  "transformers>=5.8,<5.9",
+  "flash-attn>=2.8,<3",
+  "accelerate>=0.29",
+  "datasets>=2.18",
+  "pytz",
+  "sentencepiece",
+  "protobuf",
+]
+
+[project.entry-points."vllm.general_plugins"]
+slimkv = "slimkv.vllm_plugin:register"
+
+[tool.setuptools]
+package-dir = {"" = "../.."}
+
+[tool.setuptools.packages.find]
+where = ["../.."]
+include = ["slimkv*", "main*", "tools*"]
+exclude = ["experiments*", "tests*"]
+
+[tool.setuptools.data-files]
+"share/slimkv/licenses" = ["../../LICENSE", "../../THIRD_PARTY_NOTICES.md", "../../docs/licenses/*.txt"]
