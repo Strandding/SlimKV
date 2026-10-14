@@ -252,6 +252,8 @@ def main():
         eos_token_id = [eos_token_id]
     elif not isinstance(eos_token_id, list):
         eos_token_id = list(eos_token_id)
+    # QA-only stops must not mutate the shared generation configuration.
+    eos_token_id = list(eos_token_id)
     # stop generation for QA tasks when \n appears
     if args.newline_as_eos:
         newline_eos = tokenizer.encode("\n", add_special_tokens=False)[-1]

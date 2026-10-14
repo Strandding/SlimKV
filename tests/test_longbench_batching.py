@@ -51,7 +51,7 @@ class LengthBatchingTest(unittest.TestCase):
 
         class Model:
             config = SimpleNamespace(beacon_window=8)
-            generation_config = SimpleNamespace(eos_token_id=2, pad_token_id=0)
+            generation_config = SimpleNamespace(eos_token_id=[2], pad_token_id=0)
 
             def generate(self, input_ids, **kwargs):
                 return torch.cat([input_ids, input_ids[:, :1]], dim=1)
@@ -83,6 +83,7 @@ class LengthBatchingTest(unittest.TestCase):
                 for load in ['False', 'True']:
                     with patch.object(sys, 'argv', argv + ['--load_result', load]):
                         eval_longbench.main()
+                    self.assertEqual(Model.generation_config.eos_token_id, [2])
                     lines = (root / 'outputs/grouped/trec.json').read_text().splitlines()
                     self.assertEqual(json.loads(lines[0]), 100.)
                     self.assertEqual([json.loads(line)['index'] for line in lines[1:]], [1, 0, 2])
