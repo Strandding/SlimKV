@@ -53,9 +53,3 @@ Under `<output_dir>/<result_dir>/`, task `.json` files contain the score on the 
 | Probe / heatmap | `main.eval_longbench_beacon_probe`, `main.eval_longbench_chunk2_heatmap` | Diagnostic ablations, not official aggregate quality evaluation |
 
 A CPU-only smoke test is `python -m unittest discover -s tests -v`; it downloads no data. It proves local mechanics, not trained-model quality.
-
-## Recorded smoke results
-
-Eight official LongBench-v1 samples were tested: Qasper 0/2, HotpotQA 16/22, MultiFieldQA-en 2/5, and LCC 0/22, selected by original dataset length 2500–6000 without context truncation. Actual prompts contained 4,009–11,437 tokens. In the recorded FA2 path, scores were 21.88 / 100.00 / 40.28 / 75.00, respectively (two samples per task).
-
-Fused decode and B1 Graph/bookkeeping preserved the eight FA2 outputs. Different prefill/backends did not always preserve all tokens; the FA2-prefill reconstruction control scored Qasper 23.49. These are **smoke tests**, not complete LongBench averages. [Recorded evidence](results/validation_20261014.json) and [historical log](archive/validation_20261014.md) identify the limits.

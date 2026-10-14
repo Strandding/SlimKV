@@ -24,5 +24,3 @@ python -m main.eval_longbench \
 结果目录含每任务 score 首行加预测记录、config.json、run_manifest.json；后者记录配置、源码 SHA、checkpoint config/task 文件 SHA、软件与 GPU。整体 metrics 日志在 output_dir。Config SHA 不等于权重 SHA，需保留 exact shards；用环境变量认证，避免 CLI 凭据进入日志。
 
 其他入口：NIAH 为 `main.eval_needle`（需 haystack、可选 judge/API，目前非论文三 seed 协议）；`main.eval_passkey` 是 synthetic retrieval；`main.eval_lm` 是 perplexity；generation/MMLU/topic 入口需各自 schema。probe/heatmap 用于诊断，不是正式 aggregate quality。
-
-历史 8 条为 Qasper0/2、Hotpot16/22、MultiField2/5、LCC0/22，原始 length 2500–6000，无截断，真实 prompt 4009–11437 token。FA2 路径各任务两条分数为 21.88 / 100.00 / 40.28 / 75.00。融合及 B1 Graph 保持这 8 条输出；不同 prefill/backend 并非总相同，FA2-prefill 重建对照 Qasper 为23.49。**这是 smoke，不是完整 LongBench**。[证据](../results/validation_20261014.json)；CPU 测试不证明模型质量。

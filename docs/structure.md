@@ -19,8 +19,7 @@ Model and command-module paths preserve existing imports and checkpoint handling
 | `scripts/vllm` | Separate-environment Full KV baseline setup/evaluation utilities |
 | `config/data`, `config/deepspeed` | Data mixtures and distributed-training settings |
 | `config/environments` | Dependency constraints for CPU validation |
-| `docs/zh`, `docs/licenses`, `docs/examples` | Chinese README/guides, third-party license texts and data-format examples |
-| `experiments/anchor_prototype` | Preserved historical implementation; not installed |
+| `docs/zh`, `docs/licenses` | Chinese README/guides and third-party license texts |
 | `tests` | CPU regression and CLI/provenance checks; no download required |
 | `kernels/fa2_decode` | BF16 SM90 forward-only width-320 extension and upstream license |
 
@@ -34,8 +33,10 @@ Model and command-module paths preserve existing imports and checkpoint handling
 
 **GPU development:** `build_fa2_decode.py`, `validate_fa2_decode.py`, `validate_decode_ops.py`, `validate_b1_decode.py`, `profile_fa2.py`; some need the width-320 extension or a real checkpoint. GPU validation is outside public CPU CI.
 
-**Hardware helpers:** GPU/communication/watch/occupancy tools are opt-in diagnostics, not inference entry points. Post-job occupancy is disabled unless explicitly requested through launcher environment flags.
+**Hardware helpers:** NCCL and post-job occupancy helpers support existing launchers. Post-job occupancy is disabled unless explicitly requested through launcher environment flags.
 
-## Local artifacts
+## Public and local files
 
-`model/`, `data/datasets/`, `data/outputs/`, `data/results/`, `data/fig/`, build products and profiler traces are ignored. `docs/examples/infbench.json` is the tracked example. Do not commit weights, private data, credentials, or profiler databases. Historical documentation is preserved in `docs/archive/`; it describes the environment at the time, not a current support guarantee.
+The public repository includes model and kernel code, command modules, launch presets, configuration templates, CPU tests/CI, user guides, method figures and license notices. Benchmark build and validation tools are included so users can check their own environment.
+
+Machine-specific development logs, validation receipts, source synchronization notes, the old Anchor prototype, unused GPU monitoring scripts and the legacy InfBench sample stay local through `.gitignore`. Checkpoints, datasets, generated predictions, profiler traces and build products also stay local. These files are excluded from public repository checks.

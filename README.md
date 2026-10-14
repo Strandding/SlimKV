@@ -53,8 +53,6 @@ Our main evaluation targets 16× and 32× KV cache compression. At both ratios, 
 
 ### LongBench average scores
 
-Full KV reference: **49.50** on Llama-3.1-8B and **51.52** on Qwen2.5-14B.
-
 `f2`, `f4` and `f8` denote 2×, 4× and 8× feature compression. Their token compression ratios are 8×, 4× and 2× at 16× total compression, and 16×, 8× and 4× at 32×.
 
 #### 16× compression
@@ -63,6 +61,7 @@ Full KV reference: **49.50** on Llama-3.1-8B and **51.52** on Qwen2.5-14B.
 
 | Method | Llama-3.1-8B | Qwen2.5-14B |
 | :---: | :---: | :---: |
+| **Full KV (1×)** | **49.50** | **51.52** |
 | KVZip | 28.96 | 13.18 |
 | PALU | 18.92 | 27.70 |
 | SnapKV | 45.60 | 45.81 |
@@ -79,6 +78,7 @@ Full KV reference: **49.50** on Llama-3.1-8B and **51.52** on Qwen2.5-14B.
 
 | Method | Llama-3.1-8B | Qwen2.5-14B |
 | :---: | :---: | :---: |
+| **Full KV (1×)** | **49.50** | **51.52** |
 | KVZip | 9.40 | 5.12 |
 | PALU | 4.79 | 9.25 |
 | SnapKV | 43.24 | 42.28 |
@@ -89,7 +89,7 @@ Full KV reference: **49.50** on Llama-3.1-8B and **51.52** on Qwen2.5-14B.
 
 </div>
 
-Averages from Table 2. Bold marks the best compressed result for each backbone and ratio.
+Averages from Table 2. Full KV is the uncompressed reference. Bold compressed scores mark the best result for each backbone and ratio.
 
 ### Decoding latency speedups
 

@@ -2,11 +2,9 @@
 
 [English](../reproducibility.md)
 
-仓库提供可运行阶段及局部证据，**尚不能只靠公开资产完整复现论文**。
+下面列出 SlimKV 初始化、训练与评测入口。完整复现还需要最终 checkpoint、处理后的数据 manifests 和各项结果的实验配置。
 
-论文LongBench表来自作者稿件；A100效率协议为B1/BF16/eager、32K–128K、128生成token、warmup加三次median、synthetic Full KV。H20局部FA2数据是另一协议：8样本quality、2fixture fixed-input对照，以及B1–32复制prompt的dense scaling。
-
-稿件abstract提到最高3.38× E2E，但Table6在128K列含t4f4的3.38×和t8f4的3.49×。README明确引用t4f4，未替作者修改论文；发表前应核对。
+论文效率协议使用 A100 80GB、Llama-3.1-8B、B1/BF16/eager、32K–128K 上下文和128个生成 token，预热后取三轮耗时中位数，Full KV 使用合成缓存。仓库 FA2 工具提供另一种推理性能对照，报告结果时需记录相应后端与协议。
 
 | 阶段 | 现有入口 | 缺口 |
 |---|---|---|
@@ -31,4 +29,4 @@ python -m tools.record_run \
 
 保持data选择顺序、模板、ratio、window/stride、K/V rank、RoPE、dtype/backend、EOS和GPU一致。失败日志保留，但不计为成功benchmark；不要删慢trial美化结果。
 
-论文已公开为 [arXiv:2610.02953](https://arxiv.org/abs/2610.02953)，2026年10月2日提交，页面注明 EMNLP 2026 Main Conference（Oral）接收。公开 arXiv 引用已补充，后续可加入正式 proceedings 信息。作者仍需提供原创许可证、可分发权重/tokenizer/hash和基座来源、处理数据与seed manifests、最终rank及自动算法、完整评测/efficiency/judge/ablation资产。Figure3已从稿件提取，但不是功能完成声明。历史记录有[中文](../archive/validation_20261014_zh.md)与[英文](../archive/validation_20261014.md)，当前契约见[状态](implementation_status.md)。
+完整实验设置见[论文](https://arxiv.org/abs/2610.02953)。完整复现发布还需要：原创许可证、可分发权重/tokenizer/hash与基座来源、处理后的训练数据和seed manifests、最终rank列表及分配算法、完整评测与efficiency/judge/ablation资产。当前缓存条件与实现缺口见[后端支持](implementation_status.md)。

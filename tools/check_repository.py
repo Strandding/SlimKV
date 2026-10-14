@@ -14,9 +14,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     errors = []
+    visible = {
+        ROOT / name for name in subprocess.check_output(
+            ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+            cwd=ROOT,
+        ).decode().split('\0') if name
+    }
     sources = []
     for folder in ['slimkv', 'main', 'tools', 'tests', 'experiments/anchor_prototype']:
         sources.extend((ROOT / folder).rglob('*.py'))
+    sources = [path for path in sources if path in visible]
     for path in sources:
         try:
             tree = ast.parse(path.read_text(), filename=str(path))
@@ -52,6 +59,7 @@ def main():
     scripts = list((ROOT / 'scripts').rglob('*.sh')) + list((ROOT / 'scripts').rglob('*.slurm'))
     scripts += list((ROOT / 'config').glob('*.sh'))
     scripts += list((ROOT / 'experiments/anchor_prototype/scripts').glob('*.sh'))
+    scripts = [path for path in scripts if path in visible]
     for path in scripts:
         result = subprocess.run(['bash', '-n', str(path)], capture_output=True, text=True)
         if result.returncode:
@@ -73,6 +81,7 @@ def main():
             errors.append(f'Generated artifact is tracked: {name}')
     docs = list(ROOT.glob('*.md')) + list((ROOT / 'docs').rglob('*.md'))
     docs += list((ROOT / 'experiments').rglob('README*.md'))
+    docs = [path for path in docs if path in visible]
     link_count = 0
     for path in docs:
         prose = re.sub(r'```.*?```', '', path.read_text(), flags=re.S)
@@ -85,7 +94,7 @@ def main():
             filename, _, anchor = unquote(target).partition('#')
             dest = (path.parent / filename).resolve() if filename else path
             link_count += 1
-            if not dest.exists() or not dest.is_relative_to(ROOT):
+            if not dest.exists() or not dest.is_relative_to(ROOT) or dest not in visible:
                 errors.append(f'{path.relative_to(ROOT)}: broken local link {target}')
             elif anchor and dest.suffix == '.md':
                 headings = re.findall(r'^#+\s+(.+)$', dest.read_text(), flags=re.M)

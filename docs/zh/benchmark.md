@@ -35,33 +35,11 @@ python -m tools.benchmark_fa2_decode \
 
 KV物理字节、live/peak CUDA allocated、allocator reserved 是不同概念。所有对照保留预热 Graph，模式peak差不能证明Graph额外显存为0。
 
-## 已核实的 H20 局部结果
-
-BF16 f4 Llama3.1-8B、Torch2.11+cu129、TF4.40.2、FA2 2.8.3、Triton3.6、ratio8、window=stride1024。
-
-| 输入 | compact full | legacy latent FA2 | bookkeeping | partial Graph |
-|---|---:|---:|---:|---:|
-| 4009 token | 26.343 ms/token | 24.772 | 24.263 | 18.381 |
-| 6194 token | 26.397 ms/token | 24.671 | 24.227 | 18.671 |
-
-Prefill eager→FA2为867.59→736.25ms /1398.39→1168.39ms。Prefill后latent持久KV为132.906/30.563MiB，compact full为179.875/103.125MiB。B1 Graph增加540804096live bytes（515.75MiB），KV不变。不是完整benchmark或128K验证。[摘要和原始产物hash](../results/validation_20261014.json)。原始大文件尚未公开发布。
-
 ## 多 batch
 
 `tools.benchmark_batch_decode` 需要 checkpoint、samples_jsonl、forced_tokens_json、output_dir。固定输入 JSON 为样本索引到 token ID 列表（默认每条至少63个）；从reference/warmup保存的`logits_<index>.pt`中提取`forced_token_ids`，不能拿任意token冒充same-input对照。
 
-| B | 4009: step ms /总tok/s | 6194: step ms /总tok/s |
-|---|---:|---:|
-| 1 |18.183/55.00|17.939/55.74|
-| 2 |18.646/107.26|18.506/108.08|
-| 4 |18.763/213.19|18.477/216.49|
-| 8 |20.139/397.23|19.092/419.03|
-| 16 |25.827/619.50|20.387/784.81|
-| 32 |40.917/782.08|24.714/1294.82|
-
-复制同prompt，每行计算独立cache；六种B预热图都保留。共48次正式运行，same-batch Graph/eager全row logits一致，不保证跨B BF16逐位相等，也不是32独立ragged服务请求吞吐。
-
-6194输入的独立16decode Nsys：B1/B8/B32平均SMs Active 19.21/30.69/54.92%，kernel区间并集忙碌比例31.86/41.94/66.40%，两种指标不同，均不是持续100%。独立进程peak allocated22.38/34.49/75.99GiB；计时进程保留多B图不能当单B部署内存。没有测B64。
+复制同一 prompt 来测量等长 dense batch 的吞吐量，每行维护独立 KV。通过 `--rounds` 指定每组测量轮数。工具预热并保留各 batch 的 Graph 工作区，比较时分别记录每步耗时、总 tokens/s 和显存；这组负载不代表不同长度独立请求的服务吞吐量。
 
 ## Profiling
 

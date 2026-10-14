@@ -44,3 +44,14 @@ Thumbs.db
 .idea/
 .vscode/
 node_modules/
+
+# Maintainer records and unused local research utilities
+/docs/archive/
+/docs/results/*validation*.json
+/docs/synchronization.md
+/docs/zh/synchronization.md
+/docs/examples/infbench.json
+/experiments/anchor_prototype/
+/tools/test_gpus.py
+/tools/watch_gpus.py
+/scripts/tools/watch_cache.sh
