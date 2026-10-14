@@ -12,6 +12,7 @@ BEACON_V_LATENT_HEAD_DIM="${BEACON_V_LATENT_HEAD_DIM:-64}"
 BEACON_K_LATENT_HEAD_DIM_LIST="${BEACON_K_LATENT_HEAD_DIM_LIST:-}"
 BEACON_V_LATENT_HEAD_DIM_LIST="${BEACON_V_LATENT_HEAD_DIM_LIST:-}"
 DTYPE="${DTYPE:-fp32}"
+SAVE_DTYPE="${SAVE_DTYPE:-bf16}"
 SAFE_SERIALIZATION="${SAFE_SERIALIZATION:-true}"
 SVD_DEVICE="${SVD_DEVICE:-cpu}"
 SAVE_SVD_SPECTRA="${SAVE_SVD_SPECTRA:-true}"
@@ -40,6 +41,7 @@ beacon_args=(
 
 echo "[convert_kv_lowrank] MODEL_NAME_OR_PATH=${MODEL_NAME_OR_PATH}"
 echo "[convert_kv_lowrank] OUTPUT_DIR=${OUTPUT_DIR}"
+echo "[convert_kv_lowrank] DTYPE=${DTYPE} SAVE_DTYPE=${SAVE_DTYPE}"
 echo "[convert_kv_lowrank] BEACON_K_LATENT_HEAD_DIM=${BEACON_K_LATENT_HEAD_DIM}"
 echo "[convert_kv_lowrank] BEACON_V_LATENT_HEAD_DIM=${BEACON_V_LATENT_HEAD_DIM}"
 echo "[convert_kv_lowrank] SVD_DEVICE=${SVD_DEVICE}"
@@ -87,6 +89,7 @@ fi
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --output_dir "${OUTPUT_DIR}" \
   --dtype "${DTYPE}" \
+  --save_dtype "${SAVE_DTYPE}" \
   "${latent_dim_args[@]}" \
   --svd_device "${SVD_DEVICE}" \
   --save_svd_spectra "${SAVE_SVD_SPECTRA}" \

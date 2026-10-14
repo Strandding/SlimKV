@@ -117,7 +117,7 @@ class ConversionArgs:
         metadata={"help": "Save the converted checkpoint in safetensors format when possible."}
     )
     save_dtype: str = field(
-        default="fp16",
+        default="bf16",
         metadata={"help": "Checkpoint save dtype. One of {fp16, bf16, fp32, inherit}."}
     )
     svd_device: str = field(
