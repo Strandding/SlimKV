@@ -51,17 +51,35 @@ During decoding, attention scores and value aggregation operate on cached latent
 
 The speedups above use t4f4 on Llama-3.1-8B, measured with BF16 eager execution on an A100 80GB. Full results and the evaluation protocol are in the [paper](https://arxiv.org/abs/2610.02953).
 
-<p align="center">
-  <img src="docs/assets/longbench.svg" width="640" alt="LongBench results at 4x and 8x compression from Table 4">
-</p>
+<div align="center">
 
-<p align="center"><em>LongBench averages at 4× and 8× compression (Table 4). AB denotes Activation Beacon.</em></p>
+| Backbone | Compression | KVZip | PALU | Activation Beacon | SlimKV-f2 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
+| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
+| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
+| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
 
-<p align="center">
-  <img src="docs/assets/efficiency.svg" width="640" alt="Attention and end-to-end decoding speedups from Table 6">
-</p>
+</div>
 
-<p align="center"><em>Attention and per-token decoding speedups across 32K–128K contexts (Table 6).</em></p>
+<p align="center"><em>LongBench averages at 4× and 8× compression (Table 4). SlimKV-f2 uses 2× feature compression.</em></p>
+
+<div align="center">
+
+| Compression | Metric | Method | 32K | 64K | 96K | 128K |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| 16× (t4f4) | Attention | Recon | 1.76× | 2.81× | 3.63× | 5.34× |
+| 16× (t4f4) | Attention | SlimKV | 1.94× | 3.81× | 5.08× | 7.34× |
+| 16× (t4f4) | Decode | Recon | 1.13× | 1.64× | 2.13× | 2.86× |
+| 16× (t4f4) | Decode | SlimKV | 1.22× | 2.04× | 2.63× | 3.38× |
+| 32× (t8f4) | Attention | Recon | 1.52× | 2.35× | 3.84× | 4.92× |
+| 32× (t8f4) | Attention | SlimKV | 1.62× | 2.54× | 4.36× | 6.09× |
+| 32× (t8f4) | Decode | Recon | 1.15× | 1.67× | 2.60× | 3.06× |
+| 32× (t8f4) | Decode | SlimKV | 1.23× | 1.75× | 2.82× | 3.49× |
+
+</div>
+
+<p align="center"><em>Attention and per-token decoding speedups over Full KV (Table 6). Recon is the reconstruction-based variant.</em></p>
 
 Benchmark scripts and local H20 FA2 measurements are documented in [benchmarking](docs/benchmark.md).
 

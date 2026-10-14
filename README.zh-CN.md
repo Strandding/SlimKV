@@ -51,17 +51,35 @@ Decode 时，attention scores 和 Value 聚合在缓存的 latent Beacon 状态�
 
 上述速度来自 Llama-3.1-8B 的 t4f4 配置，使用 A100 80GB、BF16 和 eager。完整结果与评测协议见[论文](https://arxiv.org/abs/2610.02953)。
 
-<p align="center">
-  <img src="docs/assets/longbench.svg" width="640" alt="Table 4 的低压缩比 LongBench 结果">
-</p>
+<div align="center">
 
-<p align="center"><em>4×和8×压缩下的 LongBench 平均分（Table 4）。AB 表示 Activation Beacon。</em></p>
+| 模型 | 压缩比 | KVZip | PALU | Activation Beacon | SlimKV-f2 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
+| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
+| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
+| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
 
-<p align="center">
-  <img src="docs/assets/efficiency.svg" width="640" alt="Table 6 的 attention 和端到端 decode 加速">
-</p>
+</div>
 
-<p align="center"><em>32K–128K上下文下的 attention 与每 token decode 加速（Table 6）。</em></p>
+<p align="center"><em>4×和8×压缩下的 LongBench 平均分（Table 4）。SlimKV-f2 使用2×特征压缩。</em></p>
+
+<div align="center">
+
+| 压缩比 | 指标 | 方法 | 32K | 64K | 96K | 128K |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| 16× (t4f4) | Attention | Recon | 1.76× | 2.81× | 3.63× | 5.34× |
+| 16× (t4f4) | Attention | SlimKV | 1.94× | 3.81× | 5.08× | 7.34× |
+| 16× (t4f4) | Decode | Recon | 1.13× | 1.64× | 2.13× | 2.86× |
+| 16× (t4f4) | Decode | SlimKV | 1.22× | 2.04× | 2.63× | 3.38× |
+| 32× (t8f4) | Attention | Recon | 1.52× | 2.35× | 3.84× | 4.92× |
+| 32× (t8f4) | Attention | SlimKV | 1.62× | 2.54× | 4.36× | 6.09× |
+| 32× (t8f4) | Decode | Recon | 1.15× | 1.67× | 2.60× | 3.06× |
+| 32× (t8f4) | Decode | SlimKV | 1.23× | 1.75× | 2.82× | 3.49× |
+
+</div>
+
+<p align="center"><em>相对 Full KV 的 attention 与每 token decode 加速（Table 6）。Recon 表示重建版本。</em></p>
 
 Benchmark 脚本和 H20 FA2 局部测量见[性能评测](docs/zh/benchmark.md)。
 
