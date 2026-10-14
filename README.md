@@ -1,20 +1,51 @@
-# SlimKV
+<h1 align="center">SlimKV</h1>
 
-<p align="center"><em>Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention</em></p>
-
+<p align="center"><strong>Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention</strong></p>
 <p align="center"><em>EMNLP 2026 Main Conference (Oral)</em></p>
 
-[Paper](https://arxiv.org/abs/2610.02953) · [Code](https://github.com/Strandding/SlimKV) · [中文](docs/zh/README.md)
+<p align="center">
+  <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/EMNLP%202026-Oral-8a2be2.svg" alt="EMNLP 2026 Oral"></a>
+  <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/arXiv-2610.02953-b31b1b.svg" alt="arXiv:2610.02953"></a>
+  <a href="https://github.com/Strandding/SlimKV/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Strandding/SlimKV/ci.yml?branch=master&amp;label=CI" alt="GitHub Actions CI"></a>
+</p>
+
+<p align="center">
+  <a href="#news">News</a> ·
+  <a href="#overview">Overview</a> ·
+  <a href="#method">Method</a> ·
+  <a href="#results">Results</a> ·
+  <a href="#installation">Installation</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#reproduction">Reproduction</a> ·
+  <a href="#citation">Citation</a>
+</p>
+
+<p align="center">
+  <a href="https://arxiv.org/abs/2610.02953">Paper</a> ·
+  <a href="https://github.com/Strandding/SlimKV">Code</a> ·
+  <a href="docs/zh/README.md">中文</a>
+</p>
+
+## News
+
+- **2026-10-14:** [Inference](docs/quickstart.md), [training](docs/training.md), [evaluation](docs/evaluation.md) and [benchmarking](docs/benchmark.md) guides are available.
+- **2026-10-02:** The paper is available on [arXiv](https://arxiv.org/abs/2610.02953).
 
 ## Overview
 
 SlimKV compresses both the number of cached tokens and their feature dimensions for long-context LLM inference. It learns compact Beacon memories with layer-adaptive low-rank K/V representations, improving the accuracy–memory trade-off under a fixed cache budget.
 
-Conventional feature compression often reconstructs full-dimensional Keys before applying RoPE. We find that Beacon Keys are much less sensitive to removing key-side RoPE than raw-token Keys. SlimKV trains low-rank Beacon projections under this constraint while retaining RoPE for raw-token Keys and all Queries. This positional asymmetry enables reconstruction-free latent-space attention during decoding.
-
-On LongBench, SlimKV outperforms the evaluated baselines at 16× and 32× compression and retains over 96% of the full-cache score at 4× and 8×. At 128K context length, the 4× token / 4× feature configuration achieves 7.34× attention speedup and 3.38× end-to-end decoding speedup over Full KV.
+On LongBench, SlimKV outperforms the evaluated baselines at 16× and 32× compression and retains over 96% of the full-cache score at 4× and 8×. At 128K context length, the 4× token / 4× feature configuration achieves 7.34× attention kernel speedup and 3.38× end-to-end decoding speedup over Full KV.
 
 ## Method
+
+Conventional feature compression often reconstructs full-dimensional Keys before applying RoPE. We find that Beacon Keys are much less sensitive to removing key-side RoPE than raw-token Keys. SlimKV therefore trains low-rank Beacon projections without Beacon K-RoPE, while retaining RoPE for raw-token Keys and all Queries. This **positional asymmetry** enables reconstruction-free latent-space attention during decoding.
+
+<p align="center">
+  <img src="docs/assets/positional_asymmetry.svg" width="650" alt="LongBench comparison under Key RoPE ablations">
+</p>
+
+<p align="center"><em>Removing K-RoPE from raw-token Keys causes substantial degradation. Beacon Keys are less sensitive, and SlimKV learns low-rank memories without Beacon K-RoPE (Figure 2).</em></p>
 
 <p align="center">
   <img src="docs/assets/method.svg" width="1000" alt="SlimKV method overview">
@@ -24,15 +55,7 @@ SlimKV progressively compresses completed context windows into Beacon memories. 
 
 During decoding, attention scores and value aggregation operate on cached latent Beacon states. Queries are projected into the latent Key space, and attention outputs are projected back through the Value basis. This avoids reconstructing the historical Beacon K/V. Raw-token tails and sinks retain full-dimensional K/V.
 
-<p align="center">
-  <img src="docs/assets/positional_asymmetry.svg" width="400" alt="LongBench comparison under Key RoPE ablations">
-</p>
-
-<p align="center"><em>Removing K-RoPE from raw-token Keys causes substantial degradation. Beacon Keys are less sensitive, and SlimKV learns low-rank memories without Beacon K-RoPE (Figure 2).</em></p>
-
 ## Results
-
-Our main evaluation targets 16× and 32× KV cache compression. At both ratios, SlimKV achieves the highest LongBench averages among the evaluated methods on Llama-3.1-8B and Qwen2.5-14B.
 
 <table align="center">
   <thead>
@@ -91,7 +114,8 @@ Our main evaluation targets 16× and 32× KV cache compression. At both ratios, 
 
 Averages from Table 2. Full KV is the uncompressed reference. Bold compressed scores mark the best result for each backbone and ratio.
 
-### Decoding latency speedups
+<details>
+<summary>Decoding latency speedups across 32K–128K contexts</summary>
 
 Llama-3.1-8B on an A100 80GB, using BF16 eager execution. The two metrics measure attention kernel latency and end-to-end decoding latency per token. Every entry is **Full KV latency / method latency**, so higher is faster. Recon reconstructs cached K/V; SlimKV uses reconstruction-free latent attention (Table 6).
 
@@ -121,6 +145,8 @@ Llama-3.1-8B on an A100 80GB, using BF16 eager execution. The two metrics measur
 
 </div>
 
+</details>
+
 <details>
 <summary>Additional results at 4× / 8× compression</summary>
 
@@ -139,7 +165,7 @@ At lower compression ratios, SlimKV-f2 retains over 96% of the Full KV LongBench
 
 </details>
 
-See the [paper](https://arxiv.org/abs/2610.02953) for the full protocol and [benchmarking](docs/benchmark.md) for scripts and local H20 FA2 measurements.
+See the [paper](https://arxiv.org/abs/2610.02953) for the full protocol and [benchmarking](docs/benchmark.md) for runnable latency and memory comparisons.
 
 ## Installation
 
@@ -155,7 +181,7 @@ The model code uses Transformers 4.40.x, tested with 4.40.2. Eager inference doe
 
 ## Usage
 
-Provide a trained SlimKV checkpoint containing the weights, configuration and tokenizer. Checkpoints are not yet publicly hosted. See [training](docs/training.md) to initialize and train one.
+Model weights are not distributed with this repository. Use an existing SlimKV checkpoint or [train one](docs/training.md), including its weights, configuration and tokenizer.
 
 ```bash
 python -m main.infer \
@@ -172,49 +198,20 @@ The default backend stores latent Beacon K/V and reconstructs them for attention
 
 Run the following entry points from the repository root. Model, data and output paths can be set through the environment variables in [.env.example](.env.example).
 
-<table align="center">
-  <thead>
-    <tr>
-      <th align="center">Stage</th>
-      <th align="center">Entry point</th>
-      <th align="center">Guide</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center">Low-rank initialization</td>
-      <td align="center"><code>python -m main.convert_kv_lowrank --help</code></td>
-      <td align="center"><a href="docs/training.md">Training</a></td>
-    </tr>
-    <tr>
-      <td align="center">Pretraining</td>
-      <td align="center"><code>bash scripts/training/train_llama_8B.sh</code></td>
-      <td align="center"><a href="docs/training.md">Training</a></td>
-    </tr>
-    <tr>
-      <td align="center">Finetuning</td>
-      <td align="center"><code>bash scripts/training/finetune_llama_8B.sh</code></td>
-      <td align="center"><a href="docs/training.md">Training</a></td>
-    </tr>
-    <tr>
-      <td align="center">LongBench</td>
-      <td align="center"><code>python -m main.eval_longbench --help</code></td>
-      <td align="center"><a href="docs/evaluation.md">Evaluation</a></td>
-    </tr>
-    <tr>
-      <td align="center">Needle-in-a-Haystack</td>
-      <td align="center"><code>python -m main.eval_needle --help</code></td>
-      <td align="center"><a href="docs/evaluation.md">Evaluation</a></td>
-    </tr>
-    <tr>
-      <td align="center">Latency and memory</td>
-      <td align="center"><code>python -m tools.benchmark_fa2_decode --help</code></td>
-      <td align="center"><a href="docs/benchmark.md">Benchmarking</a></td>
-    </tr>
-  </tbody>
-</table>
+<div align="center">
 
-Final checkpoints and processed training-data manifests still need to be released. The [reproduction guide](docs/reproducibility.md) lists the required resources and experiment protocols. A [source map](docs/structure.md) explains the modules, and [implementation status](docs/implementation_status.md) tracks the remaining paper components.
+| Stage | Entry point | Guide |
+| :---: | :---: | :---: |
+| Low-rank initialization | `python -m main.convert_kv_lowrank --help` | [Training](docs/training.md) |
+| Pretraining | `bash scripts/training/train_llama_8B.sh` | [Training](docs/training.md) |
+| Finetuning | `bash scripts/training/finetune_llama_8B.sh` | [Training](docs/training.md) |
+| LongBench | `python -m main.eval_longbench --help` | [Evaluation](docs/evaluation.md) |
+| Needle-in-a-Haystack | `python -m main.eval_needle --help` | [Evaluation](docs/evaluation.md) |
+| Latency and memory | `python -m tools.benchmark_fa2_decode --help` | [Benchmarking](docs/benchmark.md) |
+
+</div>
+
+See the [reproduction guide](docs/reproducibility.md) for experiment protocols and required resources, the [source map](docs/structure.md) for code navigation, and [backend support](docs/implementation_status.md) for cache and attention paths.
 
 ## Citation
 

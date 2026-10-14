@@ -1,20 +1,51 @@
-# SlimKV
+<h1 align="center">SlimKV</h1>
 
-<p align="center"><em>联合 Token–Feature KV Cache 压缩与无需重建的 Beacon 注意力</em></p>
-
+<p align="center"><strong>联合 Token–Feature KV Cache 压缩与无需重建的 Beacon 注意力</strong></p>
 <p align="center"><em>EMNLP 2026 Main Conference（Oral）</em></p>
 
-[论文](https://arxiv.org/abs/2610.02953) · [代码](https://github.com/Strandding/SlimKV) · [English](../../README.md)
+<p align="center">
+  <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/EMNLP%202026-Oral-8a2be2.svg" alt="EMNLP 2026 Oral"></a>
+  <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/arXiv-2610.02953-b31b1b.svg" alt="arXiv:2610.02953"></a>
+  <a href="https://github.com/Strandding/SlimKV/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Strandding/SlimKV/ci.yml?branch=master&amp;label=CI" alt="GitHub Actions CI"></a>
+</p>
+
+<p align="center">
+  <a href="#动态">动态</a> ·
+  <a href="#概览">概览</a> ·
+  <a href="#方法">方法</a> ·
+  <a href="#结果">结果</a> ·
+  <a href="#安装">安装</a> ·
+  <a href="#使用">使用</a> ·
+  <a href="#复现">复现</a> ·
+  <a href="#引用">引用</a>
+</p>
+
+<p align="center">
+  <a href="https://arxiv.org/abs/2610.02953">论文</a> ·
+  <a href="https://github.com/Strandding/SlimKV">代码</a> ·
+  <a href="../../README.md">English</a>
+</p>
+
+## 动态
+
+- **2026-10-14:** 已提供[推理](quickstart.md)、[训练](training.md)、[评测](evaluation.md)和[性能测试](benchmark.md)指南。
+- **2026-10-02:** 论文公开于 [arXiv](https://arxiv.org/abs/2610.02953)。
 
 ## 概览
 
 SlimKV 同时压缩 KV Cache 的 token 数量和特征维度，用于长上下文大模型推理。它通过训练紧凑的 Beacon 记忆和逐层自适应低秩 K/V 表示，在固定缓存预算下改善精度与显存之间的权衡。
 
-传统特征压缩通常需要先重建完整维度的 Key，再应用 RoPE。我们发现，去掉 key-side RoPE 对 Beacon Keys 的影响显著小于对 raw-token Keys 的影响。SlimKV 利用这种位置不对称性，在关闭 Beacon K-RoPE 的约束下训练低秩投影，同时保留 raw K 和所有 Q 的 RoPE，从而在 decode 中直接计算 latent-space attention，避免历史 Beacon K/V 的完整维度重建。
-
-在 LongBench 上，SlimKV 在16×和32×压缩下优于所评测的基线，并在4×和8×压缩下保留超过96%的 Full KV 得分。128K上下文下，4× token / 4× 特征配置实现7.34× attention加速和3.38×端到端decode加速。
+在 LongBench 上，SlimKV 在16×和32×压缩下优于所评测的基线，并在4×和8×压缩下保留超过96%的 Full KV 得分。128K上下文下，4× token / 4× 特征配置实现7.34×注意力 kernel 加速和3.38×端到端decode加速。
 
 ## 方法
+
+传统特征压缩通常需要先重建完整维度的 Key，再应用 RoPE。我们发现，去掉 key-side RoPE 对 Beacon Keys 的影响显著小于对 raw-token Keys 的影响。SlimKV 利用这种**位置不对称性**，在关闭 Beacon K-RoPE 的约束下训练低秩投影，同时保留 raw K 和所有 Q 的 RoPE，从而在 decode 中直接计算 latent-space attention，避免历史 Beacon K/V 的完整维度重建。
+
+<p align="center">
+  <img src="../assets/positional_asymmetry.svg" width="650" alt="K-RoPE 消融下的 LongBench 比较">
+</p>
+
+<p align="center"><em>去掉 raw-token K-RoPE 会造成显著退化，Beacon Keys 对此更不敏感。SlimKV 在无 Beacon K-RoPE 的约束下学习低秩记忆（Figure 2）。</em></p>
 
 <p align="center">
   <img src="../assets/method.svg" width="1000" alt="SlimKV 方法概览">
@@ -24,15 +55,7 @@ SlimKV 将已完成的上下文窗口逐步压缩为 Beacon 记忆。Backbone �
 
 Decode 时，attention scores 和 Value 聚合在缓存的 latent Beacon 状态上完成。Query 投影到 latent Key 空间，attention 输出通过 Value basis 映射回原始空间，因此无需重建历史 Beacon K/V。Raw tail 和 sink 仍保留完整维度缓存。
 
-<p align="center">
-  <img src="../assets/positional_asymmetry.svg" width="400" alt="K-RoPE 消融下的 LongBench 比较">
-</p>
-
-<p align="center"><em>去掉 raw-token K-RoPE 会造成显著退化，Beacon Keys 对此更不敏感。SlimKV 在无 Beacon K-RoPE 的约束下学习低秩记忆（Figure 2）。</em></p>
-
 ## 结果
-
-SlimKV 的主要结果集中在16×和32×压缩。在这两个压缩比下，SlimKV 在 Llama-3.1-8B 和 Qwen2.5-14B 上均取得了所评测方法中最高的 LongBench 平均分。
 
 <table align="center">
   <thead>
@@ -91,7 +114,8 @@ SlimKV 的主要结果集中在16×和32×压缩。在这两个压缩比下，Sl
 
 平均分来自论文 Table 2，Full KV 为未压缩基线；压缩结果中的粗体标出各模型和压缩比下的最佳分数。
 
-### 解码耗时加速比
+<details>
+<summary>解码耗时加速比：32K–128K 上下文</summary>
 
 Llama-3.1-8B，A100 80GB，BF16，eager 执行。两项指标分别衡量注意力 kernel 耗时与每 token 端到端解码耗时。表中数值均为 **Full KV 耗时 / 对应方法耗时**，越大越快。Recon 为重建版本，SlimKV 为免重建 latent attention（Table 6）。
 
@@ -121,6 +145,8 @@ Llama-3.1-8B，A100 80GB，BF16，eager 执行。两项指标分别衡量注意�
 
 </div>
 
+</details>
+
 <details>
 <summary>4× / 8× 压缩的补充结果</summary>
 
@@ -139,7 +165,7 @@ Llama-3.1-8B，A100 80GB，BF16，eager 执行。两项指标分别衡量注意�
 
 </details>
 
-完整实验协议见[论文](https://arxiv.org/abs/2610.02953)，脚本和 H20 FA2 局部测量见[性能评测](benchmark.md)。
+完整实验协议见[论文](https://arxiv.org/abs/2610.02953)，可运行的耗时与显存对照见[性能评测](benchmark.md)。
 
 ## 安装
 
@@ -155,7 +181,7 @@ python -m pip install -e .
 
 ## 使用
 
-需要训练后的 SlimKV checkpoint，包含权重、配置和 tokenizer。目前尚未公开托管 checkpoint，可按[训练说明](training.md)初始化和训练。
+本仓库不提供模型权重。使用已有 SlimKV checkpoint，或按[训练说明](training.md)自行训练。Checkpoint 需包含权重、配置和 tokenizer。
 
 ```bash
 python -m main.infer \
@@ -172,49 +198,20 @@ python -m main.infer \
 
 从仓库根目录启动，模型、数据和输出路径由 [.env.example](../../.env.example) 中的环境变量配置。
 
-<table align="center">
-  <thead>
-    <tr>
-      <th align="center">阶段</th>
-      <th align="center">入口</th>
-      <th align="center">说明</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center">低秩初始化</td>
-      <td align="center"><code>python -m main.convert_kv_lowrank --help</code></td>
-      <td align="center"><a href="training.md">训练</a></td>
-    </tr>
-    <tr>
-      <td align="center">预训练</td>
-      <td align="center"><code>bash scripts/training/train_llama_8B.sh</code></td>
-      <td align="center"><a href="training.md">训练</a></td>
-    </tr>
-    <tr>
-      <td align="center">微调</td>
-      <td align="center"><code>bash scripts/training/finetune_llama_8B.sh</code></td>
-      <td align="center"><a href="training.md">训练</a></td>
-    </tr>
-    <tr>
-      <td align="center">LongBench</td>
-      <td align="center"><code>python -m main.eval_longbench --help</code></td>
-      <td align="center"><a href="evaluation.md">评测</a></td>
-    </tr>
-    <tr>
-      <td align="center">NIAH</td>
-      <td align="center"><code>python -m main.eval_needle --help</code></td>
-      <td align="center"><a href="evaluation.md">评测</a></td>
-    </tr>
-    <tr>
-      <td align="center">耗时与显存</td>
-      <td align="center"><code>python -m tools.benchmark_fa2_decode --help</code></td>
-      <td align="center"><a href="benchmark.md">性能评测</a></td>
-    </tr>
-  </tbody>
-</table>
+<div align="center">
 
-最终 checkpoint 和处理后的训练数据 manifests 仍需发布。[复现指南](reproducibility.md)列出所需资源与实验协议，[模块说明](structure.md)介绍源码组织，[实现状态](implementation_status.md)记录待完成的论文组件。
+| 阶段 | 入口 | 说明 |
+| :---: | :---: | :---: |
+| 低秩初始化 | `python -m main.convert_kv_lowrank --help` | [训练](training.md) |
+| 预训练 | `bash scripts/training/train_llama_8B.sh` | [训练](training.md) |
+| 微调 | `bash scripts/training/finetune_llama_8B.sh` | [训练](training.md) |
+| LongBench | `python -m main.eval_longbench --help` | [评测](evaluation.md) |
+| NIAH | `python -m main.eval_needle --help` | [评测](evaluation.md) |
+| 耗时与显存 | `python -m tools.benchmark_fa2_decode --help` | [性能评测](benchmark.md) |
+
+</div>
+
+实验协议与所需资源见[复现指南](reproducibility.md)，源码导航见[模块说明](structure.md)，缓存与注意力路径见[后端支持](implementation_status.md)。
 
 ## 引用
 
