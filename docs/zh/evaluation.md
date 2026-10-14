@@ -27,6 +27,21 @@ bash scripts/evaluation/eval_longbench_slimkv.sh
 
 默认采用 BF16 greedy 推理、token ratio 4、latent KV 存储、原始维度 FA2 prefill、latent-space FA2 Beacon decode、CUDA Graph 和 `num_logits_to_keep=1`。Beacon K 不加 RoPE，各层 rank 和投影结构从 checkpoint 读取。
 
+### 选择 attention 和 decode 路径
+
+`ATTN_IMPL` 选择原始维度 attention 的实现，`DECODE_BACKEND` 选择 decode 时如何使用压缩后的 Beacon。下列组合都保留 latent KV 存储。
+
+| 环境变量 | Prefill | Beacon decode | 默认 Graph 设置 |
+| --- | --- | --- | --- |
+| `ATTN_IMPL=eager` | Eager | 重建后使用 eager attention | 关闭 |
+| `ATTN_IMPL=sdpa` | PyTorch SDPA | 重建后使用 SDPA | 关闭 |
+| `ATTN_IMPL=flash_attention_2 DECODE_BACKEND=reconstruct` | FA2 | 重建后使用 FA2 | 关闭 |
+| `ATTN_IMPL=flash_attention_2` | FA2 | 免重建 latent FA2 | 开启 |
+
+例如，在启动命令前设置 `ATTN_IMPL=eager`，即可全程使用 eager；该重建路径无需安装 FlashAttention 或构建320维扩展。显式设置 `DECODE_BACKEND=fa2` 也可组合 eager/SDPA prefill 与 latent FA2 decode，此时仍需 FA2。`DECODE_GRAPH=False` 可单独关闭 Graph。
+
+默认结果目录包含两项后端名称，各路径分别保存。直接使用 `python -m main.eval_longbench` 时，应显式选择 `--attn_impl` 和 `--beacon_decode_backend`；脚本自动配对只作用于其环境变量。
+
 需安装 FA2。全局 latent rank 不超过 256 时使用标准 FA2；257–320 需 BF16 SM90 扩展，并设置 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，详见[英文构建说明](../benchmark.md#building-the-width-320-extension)。更大 rank 或其他投影结构应使用重建路径，在启动前设置 `DECODE_BACKEND=reconstruct ATTN_IMPL=sdpa`。当前快速 decode 路径支持 Llama3，尚不支持 Qwen2。
 
 **最终包含 chat template 的输入**上限为 31500 tokens，超过时保留前 15750 和后 15750，不做 decode/re-encode。Few-shot 和代码任务沿用原有模板规则。直接使用 Python 入口时，默认保留历史的 chat template 之前截断规则，需显式增加 `--truncate_after_chat True` 才采用新协议。
@@ -50,7 +65,7 @@ t8f4 可设置 `BEACON_RATIO=8`，并使用独立结果目录。脚本名之后�
 
 ## 结果与耗时
 
-默认保存到 `data/results/longbench/slimkv-t4/`：
+默认保存到 `data/results/longbench/slimkv-t4-flash_attention_2-fa2/`：
 
 | 文件 | 内容 |
 | --- | --- |

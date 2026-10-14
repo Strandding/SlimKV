@@ -13,6 +13,9 @@ Environment: PYTHON, CUDA_VISIBLE_DEVICES, OUTPUT_DIR, RESULT_DIR, TASKS,
 BEACON_RATIO, BATCH_SIZE, MAX_BATCH_TOKENS, MAX_LENGTH, MAX_SAMPLES_PER_TASK,
 DECODE_BACKEND, ATTN_IMPL, DECODE_GRAPH, LOAD_RESULT, MAP_NUM_PROC.
 TASKS is a space-separated task list or 'english'/'all'.
+ATTN_IMPL=eager or sdpa defaults to reconstruction decode with Graphs disabled.
+ATTN_IMPL=flash_attention_2 defaults to latent FA2 decode with Graphs enabled.
+Set DECODE_BACKEND explicitly to select a different prefill/decode combination.
 HELP
   exit 0
 fi
@@ -25,14 +28,18 @@ export PYTHONUNBUFFERED=1
 MAX_LENGTH="${MAX_LENGTH:-31500}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
 BEACON_RATIO="${BEACON_RATIO:-4}"
-DECODE_BACKEND="${DECODE_BACKEND:-fa2}"
-if [[ "${DECODE_BACKEND}" == "fa2" ]]; then
-  decode_fast=True
-  graph_default=True
-else
-  decode_fast=False
-  graph_default=False
-fi
+ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
+case "${ATTN_IMPL}" in
+  flash_attention_2) backend_default=fa2 ;;
+  eager|sdpa) backend_default=reconstruct ;;
+  *) echo "ERROR: ATTN_IMPL must be eager, sdpa or flash_attention_2." >&2; exit 2 ;;
+esac
+DECODE_BACKEND="${DECODE_BACKEND:-${backend_default}}"
+case "${DECODE_BACKEND}" in
+  fa2) decode_fast=True; graph_default=True ;;
+  reconstruct) decode_fast=False; graph_default=False ;;
+  *) echo "ERROR: DECODE_BACKEND must be reconstruct or fa2." >&2; exit 2 ;;
+esac
 # The training corpus is Chinese-only, so the English preset excludes Chinese tasks.
 # Passage counting and retrieval are excluded separately; code tasks remain.
 read -r -a tasks <<< "${TASKS:-english}"
@@ -44,7 +51,7 @@ fi
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --eval_data "${EVAL_DATA}" \
   --output_dir "${OUTPUT_DIR:-data/results/longbench}" \
-  --result_dir "${RESULT_DIR:-slimkv-t${BEACON_RATIO}}" \
+  --result_dir "${RESULT_DIR:-slimkv-t${BEACON_RATIO}-${ATTN_IMPL}-${DECODE_BACKEND}}" \
   --tasks "${tasks[@]}" \
   --enable_beacon True --dtype bf16 --chat_template llama-3 \
   --beacon_ratio "${BEACON_RATIO}" --beacon_ratio_mix sequence \
@@ -53,7 +60,7 @@ fi
   --beacon_cache_mode latent --beacon_decode_backend "${DECODE_BACKEND}" \
   --beacon_decode_fast "${decode_fast}" \
   --beacon_decode_graph "${DECODE_GRAPH:-${graph_default}}" \
-  --attn_impl "${ATTN_IMPL:-flash_attention_2}" \
+  --attn_impl "${ATTN_IMPL}" \
   --max_length "${MAX_LENGTH}" --truncate_from_middle True --truncate_after_chat True \
   --batch_size "${BATCH_SIZE}" --group_by_input_length True \
   --max_batch_tokens "${MAX_BATCH_TOKENS:-$((BATCH_SIZE * MAX_LENGTH))}" \
