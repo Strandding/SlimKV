@@ -42,9 +42,6 @@ BEACON_KV_LATENT_COMPRESS_RATIO="${BEACON_KV_LATENT_COMPRESS_RATIO:-2}"
 BEACON_ORIGINAL_HEAD_DIM="${BEACON_ORIGINAL_HEAD_DIM:-}"
 TOTAL_FINETUNE_SAMPLES="${TOTAL_FINETUNE_SAMPLES:-}"
 GROUP_BY_STRIDE="${GROUP_BY_STRIDE:-strict}"
-OCCUPY_AFTER_FINETUNE="${OCCUPY_AFTER_FINETUNE:-False}"
-OCCUPY_MEM_GB="${OCCUPY_MEM_GB:-}"
-OCCUPY_NO_COMPUTE="${OCCUPY_NO_COMPUTE:-False}"
 # ================================
 
 infer_head_dim() {
@@ -171,32 +168,6 @@ LOG_DIR="${OUTPUT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/finetune_$(date +%Y%m%d_%H%M%S).log"
 
-occupy_args=()
-if [[ -n "${OCCUPY_MEM_GB}" ]]; then
-  occupy_args+=(--mem "${OCCUPY_MEM_GB}")
-fi
-if [[ "${OCCUPY_NO_COMPUTE}" == "True" ]]; then
-  occupy_args+=(--no-compute)
-fi
-
-OCCUPY_ARMED=0
-occupy_on_exit() {
-  local exit_code=$?
-  if [[ "${OCCUPY_ARMED}" != "1" ]]; then
-    return "${exit_code}"
-  fi
-  if [[ "${OCCUPY_AFTER_FINETUNE}" == "True" ]]; then
-    if [[ "${exit_code}" -eq 0 ]]; then
-      echo "Finetuning complete. Occupying GPUs to hold resources..."
-    else
-      echo "Finetuning exited with code ${exit_code}. Occupying GPUs to hold resources..."
-    fi
-    python -m tools.gpu_occupy "${occupy_args[@]}" || true
-  fi
-  return "${exit_code}"
-}
-trap occupy_on_exit EXIT
-
 echo "========== Run Summary =========="
 echo "script: finetune_llama32_3B.sh"
 echo "mode: finetune (beacon configurable)"
@@ -216,7 +187,6 @@ else
 echo "finetune_budget: total_samples=all (1 epoch)"
 fi
 echo "group_by_stride: ${GROUP_BY_STRIDE}"
-echo "occupy_after_finetune: ${OCCUPY_AFTER_FINETUNE}"
 echo "beacon: window=1024 stride=1024 ratio='2 4 8' param='q k v' pos=interleave"
 echo "beacon_extra: kv_compression=${BEACON_KV_COMPRESSION} k_skip_rope=${BEACON_SKIP_ROPE_FOR_BEACON_K} shared_down=${BEACON_SHARED_KV_DOWN_PROJ}"
 if [[ "${BEACON_KV_COMPRESSION}" == "lowrank_svd" ]]; then
@@ -228,7 +198,6 @@ echo "attn_impl: flash_attention_2 | dtype: bf16 | lr: 1e-5"
 echo "log_file: ${LOG_FILE}"
 echo "================================="
 
-OCCUPY_ARMED=1
 torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m main.train \
 --output_dir "${OUTPUT_DIR}" \
 --model_name_or_path "${MODEL_NAME_OR_PATH}" \

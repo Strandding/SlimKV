@@ -2,7 +2,7 @@
 
 [English](../quickstart.md)
 
-需要本地训练后的 SlimKV checkpoint：`config.json`、完整 safetensors/PyTorch shards 和 index、tokenizer。`beacon_*` 字段与权重键保留；已有目录名不用改。验证用的逐层 f4 Llama-3.1-8B checkpoint 尚无公开下载地址，需作者提供或自行训练，不能用裸基座冒充训练后权重。
+需要本地训练后的 SlimKV checkpoint：`config.json`、完整 safetensors/PyTorch shards 和 index、tokenizer。`beacon_*` 字段与权重键保留；已有目录名不用改。本仓库不提供模型权重，请使用已有 SlimKV checkpoint 或按[训练说明](training.md)自行训练。
 
 ```bash
 python -m main.infer \

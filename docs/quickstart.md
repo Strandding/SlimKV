@@ -3,7 +3,7 @@
 [中文](zh/quickstart.md)
 ## Required checkpoint
 
-Use a local trained SlimKV checkpoint with `config.json`, the complete `.safetensors`/PyTorch weight shards, tokenizer files, and any shard index. Checkpoints retain `beacon_*` fields and tensor names. The private validation checkpoint is a layer-adaptive f4 Llama-3.1-8B `checkpoint-2000`; no public download or entitlement to redistribute its weights is established here. Obtain it from the authors or follow [training](training.md).
+Use a local trained SlimKV checkpoint with `config.json`, the complete `.safetensors`/PyTorch weight shards, tokenizer files, and any shard index. Checkpoints retain `beacon_*` fields and tensor names. Model weights are not distributed with this repository. Use an existing SlimKV checkpoint or follow [training](training.md).
 
 The minimal command from the repository root is:
 

@@ -1,12 +1,11 @@
 #!/bin/bash
-#SBATCH -p HPCAIq
-#SBATCH -w node14
 #SBATCH -J niah_llama31_8b_dense_qs
 #SBATCH -c 16
 #SBATCH -o slimkv-%j.out
 #SBATCH -e slimkv-%j.err
 #SBATCH --time=UNLIMITED
 
+# Select partition and GPU resources with sbatch options.
 source "${SLIMKV_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}/scripts/common.sh"
 
 set -euo pipefail

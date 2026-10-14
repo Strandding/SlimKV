@@ -1,12 +1,11 @@
 #!/bin/bash
-#SBATCH -p NH100q
-#SBATCH -w node07
 #SBATCH -J train_qwen25_14b_dense_krope
 #SBATCH -c 16
 #SBATCH -o slimkv-%j.out
 #SBATCH -e slimkv-%j.err
 #SBATCH --time=UNLIMITED
 
+# Select partition and GPU resources with sbatch options.
 source "${SLIMKV_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}/scripts/common.sh"
 
 set -e
@@ -33,7 +32,6 @@ BEACON_SHARED_KV_DOWN_PROJ=False \
 BEACON_WINDOW=2048 \
 BEACON_STRIDE=2048 \
 OUTPUT_NAME=slimkv-qwen25-14b-pretrain-dense-krope \
-OCCUPY_AFTER_TRAIN=False \
 bash "${PROJECT_ROOT}/scripts/training/train_qwen25_14B.sh"
 
 echo "Job finished at $(date)"

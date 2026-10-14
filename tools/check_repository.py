@@ -21,7 +21,7 @@ def main():
         ).decode().split('\0') if name
     }
     sources = []
-    for folder in ['slimkv', 'main', 'tools', 'tests', 'experiments/anchor_prototype']:
+    for folder in ['slimkv', 'main', 'tools', 'tests']:
         sources.extend((ROOT / folder).rglob('*.py'))
     sources = [path for path in sources if path in visible]
     for path in sources:
@@ -38,8 +38,6 @@ def main():
                 doc = ast.get_docstring(node, clean=False)
                 if doc and re.search(r'[\u4e00-\u9fff]', doc):
                     errors.append(f'{path.relative_to(ROOT)}: translate docstring to English')
-        if 'experiments' in path.parts:
-            continue
         package = list(path.relative_to(ROOT).parts[:-1])
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
@@ -58,7 +56,6 @@ def main():
 
     scripts = list((ROOT / 'scripts').rglob('*.sh')) + list((ROOT / 'scripts').rglob('*.slurm'))
     scripts += list((ROOT / 'config').glob('*.sh'))
-    scripts += list((ROOT / 'experiments/anchor_prototype/scripts').glob('*.sh'))
     scripts = [path for path in scripts if path in visible]
     for path in scripts:
         result = subprocess.run(['bash', '-n', str(path)], capture_output=True, text=True)
@@ -80,7 +77,6 @@ def main():
         if name.endswith(('.pyc', '.pt', '.pth', '.safetensors', '.so', '.o', '.sqlite', '.nsys-rep', '.ncu-rep')) or name.startswith(('data/results/', 'data/fig/', 'data/datasets/', 'model/')):
             errors.append(f'Generated artifact is tracked: {name}')
     docs = list(ROOT.glob('*.md')) + list((ROOT / 'docs').rglob('*.md'))
-    docs += list((ROOT / 'experiments').rglob('README*.md'))
     docs = [path for path in docs if path in visible]
     link_count = 0
     for path in docs:

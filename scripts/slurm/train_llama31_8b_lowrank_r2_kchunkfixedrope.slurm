@@ -1,12 +1,11 @@
 #!/bin/bash
-#SBATCH -p NH100q
-#SBATCH -w node07
 #SBATCH -J train_llama31_8b_r2_kchunkfixed
 #SBATCH -c 16
 #SBATCH -o slimkv-%j.out
 #SBATCH -e slimkv-%j.err
 #SBATCH --time=UNLIMITED
 
+# Select partition and GPU resources with sbatch options.
 source "${SLIMKV_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}/scripts/common.sh"
 
 set -euo pipefail
@@ -34,7 +33,6 @@ BEACON_HEADWISE_UP_PROJ=False \
 BEACON_UP_PROJ_GROUP_SIZE=1 \
 TOTAL_TRAIN_SAMPLES=24000 \
 OUTPUT_NAME=slimkv-llama31-8b-pretrain-lowrank-r2-kchunkfixedrope \
-OCCUPY_AFTER_TRAIN=False \
 bash "${PROJECT_ROOT}/scripts/training/train_llama_8B.sh"
 
 echo "Job finished at $(date)"

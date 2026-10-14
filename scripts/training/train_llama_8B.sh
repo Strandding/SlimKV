@@ -52,9 +52,6 @@ BEACON_V_LATENT_HEAD_DIM_LIST="${BEACON_V_LATENT_HEAD_DIM_LIST:-}"
 BEACON_ORIGINAL_HEAD_DIM="${BEACON_ORIGINAL_HEAD_DIM:-}"
 TOTAL_TRAIN_SAMPLES="${TOTAL_TRAIN_SAMPLES:-24000}"
 GROUP_BY_STRIDE="${GROUP_BY_STRIDE:-strict}"
-OCCUPY_AFTER_TRAIN="${OCCUPY_AFTER_TRAIN:-False}"
-OCCUPY_MEM_GB="${OCCUPY_MEM_GB:-}"
-OCCUPY_NO_COMPUTE="${OCCUPY_NO_COMPUTE:-False}"
 # ================================
 
 infer_head_dim() {
@@ -232,32 +229,6 @@ LOG_DIR="${OUTPUT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/train_$(date +%Y%m%d_%H%M%S).log"
 
-occupy_args=()
-if [[ -n "${OCCUPY_MEM_GB}" ]]; then
-  occupy_args+=(--mem "${OCCUPY_MEM_GB}")
-fi
-if [[ "${OCCUPY_NO_COMPUTE}" == "True" ]]; then
-  occupy_args+=(--no-compute)
-fi
-
-OCCUPY_ARMED=0
-occupy_on_exit() {
-  local exit_code=$?
-  if [[ "${OCCUPY_ARMED}" != "1" ]]; then
-    return "${exit_code}"
-  fi
-  if [[ "${OCCUPY_AFTER_TRAIN}" == "True" ]]; then
-    if [[ "${exit_code}" -eq 0 ]]; then
-      echo "Training complete. Occupying GPUs to hold resources..."
-    else
-      echo "Training exited with code ${exit_code}. Occupying GPUs to hold resources..."
-    fi
-    python -m tools.gpu_occupy "${occupy_args[@]}" || true
-  fi
-  return "${exit_code}"
-}
-trap occupy_on_exit EXIT
-
 echo "========== Run Summary =========="
 echo "script: train_llama_8B.sh"
 echo "mode: train (beacon configurable)"
@@ -277,7 +248,6 @@ else
   echo "train_budget: total_samples=all (1 epoch)"
 fi
 echo "group_by_stride: ${GROUP_BY_STRIDE}"
-echo "occupy_after_train: ${OCCUPY_AFTER_TRAIN}"
 echo "beacon: window=${BEACON_WINDOW} stride=${BEACON_STRIDE} ratio='${BEACON_RATIO}' param='q k v' pos=interleave"
 echo "beacon_extra: kv_compression=${BEACON_KV_COMPRESSION} k_skip_rope=${BEACON_SKIP_ROPE_FOR_BEACON_K} k_chunk_fixed_rope=${BEACON_CHUNK_FIXED_ROPE_FOR_BEACON_K} k_pos_residual=${BEACON_ENHANCE_K_POS_RESIDUAL} shared_down=${BEACON_SHARED_KV_DOWN_PROJ} headwise_up=${BEACON_HEADWISE_UP_PROJ} up_group=${BEACON_UP_PROJ_GROUP_SIZE}"
 if [[ "${BEACON_KV_COMPRESSION}" == "lowrank_svd" ]]; then
@@ -294,7 +264,6 @@ echo "attn_impl: flash_attention_2 | dtype: bf16"
 echo "log_file: ${LOG_FILE}"
 echo "================================="
 
-OCCUPY_ARMED=1
 torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m main.train \
 --output_dir "${OUTPUT_DIR}" \
 --model_name_or_path "${MODEL_NAME_OR_PATH}" \

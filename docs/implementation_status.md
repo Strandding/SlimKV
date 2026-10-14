@@ -8,7 +8,7 @@ The table below describes the available cache and attention paths. Existing `bea
 | Path | Persistent Beacon K/V | Attention computation | Validation / scope |
 |---|---|---|---|
 | Llama3, compatible `auto`/`latent`, default `reconstruct` backend | Actual low-rank features | Original-dimension prefill and reconstructed decode | CPU global/headwise/grouped/bias/SDPA regressions; local BF16 generation |
-| Llama3, `latent` + `fa2` decode | Global low-rank features | Original-dimension prefill; raw/sink FA2 + latent Beacon FA2 with one merged softmax in decode | H20 f4 BF16 smoke/scaling; equal-length unpadded aligned batches |
+| Llama3, `latent` + `fa2` decode | Global low-rank features | Original-dimension prefill; raw/sink FA2 + latent Beacon FA2 with one merged softmax in decode | BF16; equal-length unpadded aligned batches |
 | Llama3 training, `full`, incompatible `auto`; Qwen2 | Full-dimensional K/V | Standard attention | Low-rank training code and conversion available; no Qwen latent-cache backend |
 | `slimkv/latency` | Prototype-specific latent K/V | Independent eager hybrid attention | Separate loader; not the default production/model API |
 
@@ -29,7 +29,7 @@ Ranks are global and coupled across KV heads: cached shapes are `[B,1,N,R]`. Ran
 - Ordinary Qwen decode can apply RoPE to historical Beacon K when no new Beacon is inserted, despite the disabled Beacon K RoPE setting. Llama's corresponding path has a regression-tested fix.
 - The independent latency prototype's FA2 fallback can lose a causal mask; use its eager backend.
 - The historical latency benchmark does not reset Memory between warmup/repeats. Its `beacon_lowrank_reconstruct` uses full-dimensional caching and is not the paper's latent-cache reconstruction baseline. Use the tools-based benchmark for current comparisons.
-- Prototype Value up-projection bias lacks a Beacon probability-mass factor. The validated Llama f4 checkpoint has no such bias.
+- Prototype Value up-projection bias lacks a Beacon probability-mass factor. Use bias-free Beacon Value up-projections for that prototype.
 - FA2 eligibility, temporary padding, dynamic KV concatenation, Graph startup/workspaces and host launch gaps constrain performance and supported configurations.
 
 ## Missing paper coverage

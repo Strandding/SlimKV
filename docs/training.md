@@ -17,7 +17,7 @@ export NPROC_PER_NODE=4
 export SLIMKV_CUDA_MODULE=''
 ```
 
-Presets assume multiple CUDA GPUs, BF16, FlashAttention, gradient checkpointing and DeepSpeed ZeRO-2. The required GPU memory depends on model, lengths and distributed settings; a minimum successful training configuration has not been measured in this refresh. Do not interpret the single-H20 inference test as evidence that paper training fits one GPU.
+Presets assume multiple CUDA GPUs, BF16, FlashAttention, gradient checkpointing and DeepSpeed ZeRO-2. GPU memory requirements depend on the model, context length and distributed settings.
 
 Expected local data for Llama presets:
 
@@ -26,7 +26,7 @@ Expected local data for Llama presets:
 | Pretraining | `redpajama/train.json` |
 | Finetuning | `gpt/one_detail_book.train.16K.json`, `gpt/one_detail_paper.train.16K.json`, `longalpaca/train.json`, `booksum/train.16K.json`, `needle/train.16K.json`, and `redpajama/train.json` |
 
-The `[5000]` suffix used by finetuning is a loader subset selector, not part of the filename. Read `slimkv/data.py` and `config/data/` for data schema and preprocessing. The `long-llm:` prefix resolves against `--data_root`. Public source datasets do not by themselves reproduce the private processed mixture: author-provided preprocessing versions, sample manifests and GPT/needle data are still required.
+The `[5000]` suffix used by finetuning is a loader subset selector, not part of the filename. Read `slimkv/data.py` and `config/data/` for data schema and preprocessing. The `long-llm:` prefix resolves against `--data_root`. Reproducing the paper's processed data mixture requires the preprocessing versions, sample manifests and GPT/needle data.
 
 ## Low-rank initialization
 
@@ -37,7 +37,7 @@ SVD_DEVICE=cpu \
 bash scripts/conversion/convert_llama31_8B_layerwise_lowrank.sh
 ```
 
-This preset performs global SVD with separate explicit K/V rank lists. **Its default lists are historical presets, not the paper's automatic allocator or the private f4 checkpoint's ranks.** For an intended layer-adaptive experiment, supply both lists:
+This preset performs global SVD with separate explicit K/V rank lists. Its rank lists are explicit presets; automatic rank allocation is not implemented. For an intended layer-adaptive experiment, supply both lists:
 
 ```bash
 export BEACON_K_LATENT_HEAD_DIM_LIST='...'
@@ -71,7 +71,7 @@ bash scripts/training/finetune_llama_8B.sh
 
 For adaptive ranks, pass both `BEACON_*_LATENT_HEAD_DIM_LIST` variables in **both stages**, matching initialization. Check launcher summaries before training: several presets have historical r2, chunk-fixed RoPE and mixture defaults. Llama finetuning's fixed token-ratio list is 4/8/16/32; it is not controlled by all of the pretraining preset's variables. Existing numerical defaults are retained.
 
-Llama presets target `main.train`; Qwen2.5 presets are `train_qwen25_14B.sh` / `finetune_qwen25_14B.sh`. Generic `train.sh` / `finetune.sh` are historical Qwen presets, not architecture-neutral wrappers. Slurm templates require a cluster-specific partition/environment review before submission.
+Llama presets target `main.train`; Qwen2.5 presets are `train_qwen25_14B.sh` / `finetune_qwen25_14B.sh`. Generic `train.sh` / `finetune.sh` are historical Qwen presets, not architecture-neutral wrappers. For Slurm, choose your partition and GPU resources at submission, for example `sbatch --partition=<partition> --gres=gpu:4 scripts/slurm/train_llama31_8b_lowrank_r2_kchunkfixedrope.slurm`. Override `SLIMKV_CUDA_MODULE` for your cluster, or set it to an empty string to use the active CUDA environment.
 
 ## Output, configuration and resume
 

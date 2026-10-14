@@ -33,9 +33,6 @@ DTYPE="${DTYPE:-bf16}"
 MAX_SAMPLES_PER_TASK="${MAX_SAMPLES_PER_TASK:-}"
 EVAL_SAMPLE_SEED="${EVAL_SAMPLE_SEED:-42}"
 EVAL_SAMPLE_SHUFFLE="${EVAL_SAMPLE_SHUFFLE:-True}"
-OCCUPY_AFTER_EVAL="${OCCUPY_AFTER_EVAL:-False}"
-OCCUPY_MEM_GB="${OCCUPY_MEM_GB:-}"
-OCCUPY_NO_COMPUTE="${OCCUPY_NO_COMPUTE:-False}"
 
 # --- LongBench tasks (Chinese subsets excluded by default) ---
 # Excluded: multifieldqa_zh, dureader, vcsum, lsht, passage_retrieval_zh.
@@ -170,7 +167,7 @@ if [[ -d "${MODEL_NAME_OR_PATH}" ]] && [[ ! -f "${MODEL_NAME_OR_PATH}/config.jso
 fi
 
 if [[ -d "${MODEL_NAME_OR_PATH}" ]] && [[ ! -f "${MODEL_NAME_OR_PATH}/config.json" ]]; then
-  echo "ERROR: ${MODEL_NAME_OR_PATH} 下没有 config.json，请指向具体 checkpoint 目录" >&2
+  echo "ERROR: ${MODEL_NAME_OR_PATH} has no config.json; use a checkpoint directory." >&2
   exit 1
 fi
 
@@ -299,7 +296,7 @@ if [[ ! -f "${EVAL_DATA}/${PROBE_TASK}.jsonl" ]]; then
     fi
   done
   if [[ ! -f "${EVAL_DATA}/${PROBE_TASK}.jsonl" ]]; then
-    echo "ERROR: 找不到 LongBench 数据，请设置 EVAL_DATA" >&2
+    echo "ERROR: LongBench data not found; set EVAL_DATA." >&2
     exit 1
   fi
 fi
@@ -351,7 +348,7 @@ case "${EVAL_MODE}" in
     )
     ;;
   *)
-    echo "ERROR: 不支持的 EVAL_MODE=${EVAL_MODE}，可选: beacon8 | no_beacon | question_only" >&2
+    echo "ERROR: Unsupported EVAL_MODE=${EVAL_MODE}; use beacon8, no_beacon or question_only." >&2
     exit 1
     ;;
 esac
@@ -376,32 +373,6 @@ if [[ -n "${MAX_SAMPLES_PER_TASK}" ]]; then
   eval_sample_args+=(--sample_shuffle "${EVAL_SAMPLE_SHUFFLE}")
 fi
 
-occupy_args=()
-if [[ -n "${OCCUPY_MEM_GB}" ]]; then
-  occupy_args+=(--mem "${OCCUPY_MEM_GB}")
-fi
-if [[ "${OCCUPY_NO_COMPUTE}" == "True" ]]; then
-  occupy_args+=(--no-compute)
-fi
-
-OCCUPY_ARMED=0
-occupy_on_exit() {
-  local exit_code=$?
-  if [[ "${OCCUPY_ARMED}" != "1" ]]; then
-    return "${exit_code}"
-  fi
-  if [[ "${OCCUPY_AFTER_EVAL}" == "True" ]]; then
-    if [[ "${exit_code}" -eq 0 ]]; then
-      echo "Evaluation complete. Occupying GPUs to hold resources..."
-    else
-      echo "Evaluation exited with code ${exit_code}. Occupying GPUs to hold resources..."
-    fi
-    python -m tools.gpu_occupy "${occupy_args[@]}" || true
-  fi
-  return "${exit_code}"
-}
-trap occupy_on_exit EXIT
-
 echo "=========================================="
 echo " LongBench Evaluation (${SLIMKV_EVAL_LABEL})"
 echo "=========================================="
@@ -425,7 +396,6 @@ fi
 echo "  TASKS      : ${TASKS[*]}"
 echo "=========================================="
 
-OCCUPY_ARMED=1
 torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" $DDP -m main.eval_longbench \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --eval_data "${EVAL_DATA}" \

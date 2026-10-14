@@ -1,12 +1,11 @@
 #!/bin/bash
-#SBATCH -p HPCAIq
-#SBATCH -w node14
 #SBATCH -J eval_qwen25_14b_lowrank_r2_nokrope
 #SBATCH -c 16
 #SBATCH -o slimkv-%j.out
 #SBATCH -e slimkv-%j.err
 #SBATCH --time=UNLIMITED
 
+# Select partition and GPU resources with sbatch options.
 source "${SLIMKV_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}/scripts/common.sh"
 
 set -euo pipefail
@@ -33,7 +32,6 @@ DTYPE=bf16 \
 BATCH_SIZE=1 \
 MAX_LENGTH=31500 \
 OUTPUT_NAME=slimkv-qwen25-14b-finetune-lowrank-r2-nokrope \
-OCCUPY_AFTER_EVAL=False \
 bash "${PROJECT_ROOT}/scripts/evaluation/eval_longbench.sh"
 
 echo "Job finished at $(date)"

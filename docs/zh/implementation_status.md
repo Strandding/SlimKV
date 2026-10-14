@@ -24,7 +24,7 @@ Fast默认True，仅eligible FA2；Graph默认False，只捕获norm及attention�
 ## 已知问题和未完成项
 
 - Qwen无新Beacon时历史K的RoPE问题仍未修；Llama对应路径已修并有回归。
-- 独立latency原型的FA2 fallback可能丢causal mask、Value bias缺概率质量系数；验证Llama f4无该bias。
+- 独立 latency 原型的 FA2 fallback 可能丢 causal mask，Value bias 缺概率质量系数；该原型应使用不带 bias 的 Value up-projection。
 - 历史benchmark warmup/repeat未reset，reconstruct标签实际为完整cache，不等于论文latent-cache Recon。
 - 自动equal-energy+rank-floor+budget分配缺失；Qwen latent cache和Qwen3 MoE不支持。
 - 全量LongBench、多seed NIAH judge、随机字符/attention统计、shared-context多请求和论文A100完整效率协议未贯通。

@@ -1,7 +1,7 @@
 # Source and tool map
 
 [中文](zh/structure.md)
-Model and command-module paths preserve existing imports and checkpoint handling. Launch presets share their evaluation logic, while documentation, examples and dependency constraints are grouped by purpose.
+Model implementations live in `slimkv`, command modules in `main`, and launch presets in `scripts`. Configuration and environment constraints are grouped under `config`.
 
 | Location | Responsibility |
 |---|---|
@@ -33,10 +33,8 @@ Model and command-module paths preserve existing imports and checkpoint handling
 
 **GPU development:** `build_fa2_decode.py`, `validate_fa2_decode.py`, `validate_decode_ops.py`, `validate_b1_decode.py`, `profile_fa2.py`; some need the width-320 extension or a real checkpoint. GPU validation is outside public CPU CI.
 
-**Hardware helpers:** NCCL and post-job occupancy helpers support existing launchers. Post-job occupancy is disabled unless explicitly requested through launcher environment flags.
+**Communication check:** `nccl_comm_test.py` checks distributed GPU communication.
 
-## Public and local files
+## Generated files
 
-The public repository includes model and kernel code, command modules, launch presets, configuration templates, CPU tests/CI, user guides, method figures and license notices. Benchmark build and validation tools are included so users can check their own environment.
-
-Machine-specific development logs, validation receipts, source synchronization notes, the old Anchor prototype, unused GPU monitoring scripts and the legacy InfBench sample stay local through `.gitignore`. Checkpoints, datasets, generated predictions, profiler traces and build products also stay local. These files are excluded from public repository checks.
+Checkpoints, datasets, predictions, profiler traces and build products are excluded by `.gitignore`. Store machine-specific notes and settings in `.local/`, or add personal exclusions to `.git/info/exclude`.

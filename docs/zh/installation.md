@@ -33,7 +33,7 @@ python -m unittest discover -s tests -v
 
 ## 可选 FA2
 
-H20 实测环境：Torch 2.11.0+cu129、Transformers 4.40.2、FlashAttention 2.8.3、Triton 3.6.0、CUDA toolkit 12.9。复用了兼容的已有 FA2 二进制，不保证任意环境直接安装成功。
+一组已验证的 FA2 运行配置为 Torch 2.11.0+cu129、Transformers 4.40.2、FlashAttention 2.8.3、Triton 3.6.0、CUDA toolkit 12.9。请选择匹配 GPU 和驱动的 Torch/CUDA 构建。
 
 ```bash
 python -m pip install ninja packaging
@@ -41,6 +41,6 @@ python -m pip install flash-attn==2.8.3 --no-build-isolation
 python -c 'import torch, flash_attn; print(torch.__version__, torch.version.cuda, flash_attn.__version__)'
 ```
 
-二进制需匹配 Torch、Python ABI、C++ ABI 和 CUDA。Eager 不需 FA2。f4 权重有 rank 超过 256 的层，latent FA2 还需要 [width-320 扩展](../benchmark.md#building-the-width-320-extension)，仅支持 BF16、SM90 forward，不是 A100 或训练 kernel。
+二进制需匹配 Torch、Python ABI、C++ ABI 和 CUDA。Eager 不需 FA2。Checkpoint 的 rank 超过 256 时，latent FA2 还需要 [width-320 扩展](../benchmark.md#building-the-width-320-extension)，仅支持 BF16、SM90 forward，不是 A100 或训练 kernel。
 
 vLLM 基线使用单独环境，尚无 SlimKV paged cache 集成。NIAH judge 的可选依赖为 `.[needle-judge]`，其当前协议不同于论文。
