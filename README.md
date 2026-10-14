@@ -1,10 +1,10 @@
 # SlimKV
 
-<p align="center"><em>*Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention*</em></p>
+<p align="center"><em>Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention</em></p>
 
-<p align="center"><em>*EMNLP 2026 Main Conference (Oral)*</em></p>
+<p align="center"><em>EMNLP 2026 Main Conference (Oral)</em></p>
 
-[Paper](https://arxiv.org/abs/2610.02953) · [Code](https://github.com/Strandding/SlimKV) · [中文](README.zh-CN.md)
+[Paper](https://arxiv.org/abs/2610.02953) · [Code](https://github.com/Strandding/SlimKV) · [中文](docs/zh/README.md)
 
 ## Overview
 
@@ -12,7 +12,7 @@ SlimKV compresses both the number of cached tokens and their feature dimensions 
 
 Conventional feature compression often reconstructs full-dimensional Keys before applying RoPE. We find that Beacon Keys are much less sensitive to removing key-side RoPE than raw-token Keys. SlimKV trains low-rank Beacon projections under this constraint while retaining RoPE for raw-token Keys and all Queries. This positional asymmetry enables reconstruction-free latent-space attention during decoding.
 
-On LongBench, SlimKV outperforms the evaluated baselines at 16× and 32× compression and retains over 96% of the full-cache score at 4× and 8×. At 128K context length, the t4f4 configuration achieves 7.34× attention speedup and 3.38× end-to-end decoding speedup over Full KV.
+On LongBench, SlimKV outperforms the evaluated baselines at 16× and 32× compression and retains over 96% of the full-cache score at 4× and 8×. At 128K context length, the 4× token / 4× feature configuration achieves 7.34× attention speedup and 3.38× end-to-end decoding speedup over Full KV.
 
 ## Method
 
@@ -45,58 +45,81 @@ Our main evaluation targets 16× and 32× KV cache compression. At both ratios, 
   <tbody>
     <tr>
       <td align="center">Leading LongBench results under high compression</td>
-      <td align="center">Attention speedup at 128K</td>
+      <td align="center">Attention kernel speedup at 128K</td>
       <td align="center">End-to-end decoding speedup at 128K</td>
     </tr>
   </tbody>
 </table>
 
-### LongBench at 16× / 32× compression
+### LongBench average scores
+
+Full KV reference: **49.50** on Llama-3.1-8B and **51.52** on Qwen2.5-14B.
+
+`f2`, `f4` and `f8` denote 2×, 4× and 8× feature compression. Their token compression ratios are 8×, 4× and 2× at 16× total compression, and 16×, 8× and 4× at 32×.
+
+#### 16× compression
 
 <div align="center">
 
-| Compression | Method | Llama-3.1-8B | Qwen2.5-14B |
-| :---: | :---: | :---: | :---: |
-| 1× | Full KV | 49.50 | 51.52 |
-| 16× | KVZip | 28.96 | 13.18 |
-| 16× | PALU | 18.92 | 27.70 |
-| 16× | SnapKV | 45.60 | 45.81 |
-| 16× | Activation Beacon | 45.30 | 44.15 |
-| 16× | SlimKV-f2 (t8f2) | 46.19 | **46.48** |
-| 16× | SlimKV-f4 (t4f4) | **46.36** | 46.23 |
-| 16× | SlimKV-f8 (t2f8) | 45.05 | 44.33 |
-| 32× | KVZip | 9.40 | 5.12 |
-| 32× | PALU | 4.79 | 9.25 |
-| 32× | SnapKV | 43.24 | 42.28 |
-| 32× | Activation Beacon | 43.67 | 42.76 |
-| 32× | SlimKV-f2 (t16f2) | 42.91 | 44.66 |
-| 32× | SlimKV-f4 (t8f4) | **44.75** | **45.09** |
-| 32× | SlimKV-f8 (t4f8) | 43.93 | 44.69 |
+| Method | Llama-3.1-8B | Qwen2.5-14B |
+| :---: | :---: | :---: |
+| KVZip | 28.96 | 13.18 |
+| PALU | 18.92 | 27.70 |
+| SnapKV | 45.60 | 45.81 |
+| Activation Beacon | 45.30 | 44.15 |
+| SlimKV-f2 | 46.19 | **46.48** |
+| SlimKV-f4 | **46.36** | 46.23 |
+| SlimKV-f8 | 45.05 | 44.33 |
 
 </div>
 
-Averages from Table 2. Bold marks the best compressed result for each backbone and ratio. t$n$f$m$ denotes $n$× token compression and $m$× feature compression.
-
-### Decoding efficiency
-
-Measured on Llama-3.1-8B with BF16 eager execution on an A100 80GB. The headline 7.34× and 3.38× speedups use t4f4 at 128K. Both compression settings are shown below.
+#### 32× compression
 
 <div align="center">
 
-| Compression | Metric | Method | 32K | 64K | 96K | 128K |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 16× (t4f4) | Attention | Recon | 1.76× | 2.81× | 3.63× | 5.34× |
-| 16× (t4f4) | Attention | SlimKV | 1.94× | 3.81× | 5.08× | 7.34× |
-| 16× (t4f4) | Decode | Recon | 1.13× | 1.64× | 2.13× | 2.86× |
-| 16× (t4f4) | Decode | SlimKV | 1.22× | 2.04× | 2.63× | 3.38× |
-| 32× (t8f4) | Attention | Recon | 1.52× | 2.35× | 3.84× | 4.92× |
-| 32× (t8f4) | Attention | SlimKV | 1.62× | 2.54× | 4.36× | 6.09× |
-| 32× (t8f4) | Decode | Recon | 1.15× | 1.67× | 2.60× | 3.06× |
-| 32× (t8f4) | Decode | SlimKV | 1.23× | 1.75× | 2.82× | 3.49× |
+| Method | Llama-3.1-8B | Qwen2.5-14B |
+| :---: | :---: | :---: |
+| KVZip | 9.40 | 5.12 |
+| PALU | 4.79 | 9.25 |
+| SnapKV | 43.24 | 42.28 |
+| Activation Beacon | 43.67 | 42.76 |
+| SlimKV-f2 | 42.91 | 44.66 |
+| SlimKV-f4 | **44.75** | **45.09** |
+| SlimKV-f8 | 43.93 | 44.69 |
 
 </div>
 
-<p align="center"><em>Attention and per-token decoding speedups over Full KV (Table 6). Recon is the reconstruction-based variant.</em></p>
+Averages from Table 2. Bold marks the best compressed result for each backbone and ratio.
+
+### Decoding latency speedups
+
+Llama-3.1-8B on an A100 80GB, using BF16 eager execution. The two metrics measure attention kernel latency and end-to-end decoding latency per token. Every entry is **Full KV latency / method latency**, so higher is faster. Recon reconstructs cached K/V; SlimKV uses reconstruction-free latent attention (Table 6).
+
+#### 16× compression: 4× tokens, 4× features
+
+<div align="center">
+
+| Context | Kernel · Recon | Kernel · SlimKV | End-to-end · Recon | End-to-end · SlimKV |
+| :---: | :---: | :---: | :---: | :---: |
+| 32K | 1.76× | **1.94×** | 1.13× | **1.22×** |
+| 64K | 2.81× | **3.81×** | 1.64× | **2.04×** |
+| 96K | 3.63× | **5.08×** | 2.13× | **2.63×** |
+| 128K | 5.34× | **7.34×** | 2.86× | **3.38×** |
+
+</div>
+
+#### 32× compression: 8× tokens, 4× features
+
+<div align="center">
+
+| Context | Kernel · Recon | Kernel · SlimKV | End-to-end · Recon | End-to-end · SlimKV |
+| :---: | :---: | :---: | :---: | :---: |
+| 32K | 1.52× | **1.62×** | 1.15× | **1.23×** |
+| 64K | 2.35× | **2.54×** | 1.67× | **1.75×** |
+| 96K | 3.84× | **4.36×** | 2.60× | **2.82×** |
+| 128K | 4.92× | **6.09×** | 3.06× | **3.49×** |
+
+</div>
 
 <details>
 <summary>Additional results at 4× / 8× compression</summary>

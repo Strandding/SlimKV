@@ -20,7 +20,7 @@ A CPU environment used for CI and local regression is reproducible with:
 
 ```bash
 python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
-python -m pip install -c requirements/cpu.txt -e .
+python -m pip install -c config/environments/cpu.txt -e .
 python tools/check_repository.py
 python -m unittest discover -s tests -v
 ```

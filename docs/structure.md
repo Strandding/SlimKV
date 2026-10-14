@@ -1,7 +1,7 @@
 # Source and tool map
 
 [中文](zh/structure.md)
-Paths are retained to preserve imports, checkpoint handling and historical experiment launchers.
+Model and command-module paths preserve existing imports and checkpoint handling. Launch presets share their evaluation logic, while documentation, examples and dependency constraints are grouped by purpose.
 
 | Location | Responsibility |
 |---|---|
@@ -14,10 +14,12 @@ Paths are retained to preserve imports, checkpoint handling and historical exper
 | `slimkv/qwen2`, `slimkv/llama`, `slimkv/mistral` | Other existing model paths; see support restrictions |
 | `slimkv/latency` | Independent latency research prototype; separate loader and cache semantics |
 | `main` | Installation-visible command modules; `infer`, `train`, conversion and evaluation |
-| `scripts/conversion`, `training`, `evaluation`, `benchmark` | Environment-configurable launch presets; source `scripts/common.sh` |
+| `scripts/conversion`, `training`, `evaluation`, `benchmark` | Environment-configurable launch presets; source `scripts/common.sh`. Qwen and Llama LongBench presets share `scripts/evaluation/longbench_common.sh` |
 | `scripts/slurm` | Cluster-specific scheduler templates; check partition/GPU/module settings |
 | `scripts/vllm` | Separate-environment Full KV baseline setup/evaluation utilities |
 | `config/data`, `config/deepspeed` | Data mixtures and distributed-training settings |
+| `config/environments` | Dependency constraints for CPU validation |
+| `docs/zh`, `docs/licenses`, `docs/examples` | Chinese README/guides, third-party license texts and data-format examples |
 | `experiments/anchor_prototype` | Preserved historical implementation; not installed |
 | `tests` | CPU regression and CLI/provenance checks; no download required |
 | `kernels/fa2_decode` | BF16 SM90 forward-only width-320 extension and upstream license |
@@ -36,4 +38,4 @@ Paths are retained to preserve imports, checkpoint handling and historical exper
 
 ## Local artifacts
 
-`model/`, `data/datasets/`, `data/outputs/`, `data/results/`, `data/fig/`, build products and profiler traces are ignored. `data/toy/infbench.json` is the tracked example. Do not commit weights, private data, credentials, or profiler databases. Historical documentation is preserved in `docs/archive/`; it describes the environment at the time, not a current support guarantee.
+`model/`, `data/datasets/`, `data/outputs/`, `data/results/`, `data/fig/`, build products and profiler traces are ignored. `docs/examples/infbench.json` is the tracked example. Do not commit weights, private data, credentials, or profiler databases. Historical documentation is preserved in `docs/archive/`; it describes the environment at the time, not a current support guarantee.
