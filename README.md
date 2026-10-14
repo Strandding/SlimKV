@@ -7,6 +7,7 @@
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/EMNLP%202026-Oral-8a2be2.svg" alt="EMNLP 2026 Oral"></a>
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/arXiv-2610.02953-b31b1b.svg" alt="arXiv:2610.02953"></a>
   <a href="https://github.com/Strandding/SlimKV/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Strandding/SlimKV/ci.yml?branch=master&amp;label=CI" alt="GitHub Actions CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="Apache License 2.0"></a>
 </p>
 
 <p align="center">
@@ -215,11 +216,15 @@ See the [reproduction guide](docs/reproducibility.md) for experiment protocols a
 
 ## Citation
 
+The formal ACL Anthology record is not yet available. Use this provisional conference citation with the arXiv link.
+
 ```bibtex
-@misc{teng2026slimkv,
+@inproceedings{teng2026slimkv,
   title = {SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention},
   author = {Teng, Zihan and Zhao, Jiayu and Ren, Wentao and Fan, Minhao and Ma, Tianrui and Chen, Song and Liu, Weichen},
+  booktitle = {2026 Conference on Empirical Methods in Natural Language Processing (EMNLP)},
   year = {2026},
+  note = {Accepted to the Main Conference (Oral). Provisional conference citation.},
   eprint = {2610.02953},
   archivePrefix = {arXiv},
   primaryClass = {cs.LG},
@@ -229,4 +234,4 @@ See the [reproduction guide](docs/reproducibility.md) for experiment protocols a
 
 ## Acknowledgements and license
 
-SlimKV builds on [Activation Beacon](https://github.com/FlagOpen/FlagEmbedding/tree/master/research/Long_LLM/activation_beacon), Hugging Face Transformers and [FlashAttention](https://github.com/Dao-AILab/flash-attention). See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and licenses. The license for original SlimKV contributions is pending.
+SlimKV builds on [Activation Beacon](https://github.com/FlagOpen/FlagEmbedding/tree/master/research/Long_LLM/activation_beacon), Hugging Face Transformers and [FlashAttention](https://github.com/Dao-AILab/flash-attention). See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and licenses. Original SlimKV code is licensed under [Apache License 2.0](LICENSE). Third-party components retain their own copyrights and licenses. Model weights and datasets remain subject to their respective terms.

@@ -38,10 +38,9 @@ Keep data selection/order, chat template, token ratio, window/stride, independen
 
 See the [paper](https://arxiv.org/abs/2610.02953) for experimental settings. The following assets are needed for a complete reproduction release:
 
-1. Explicit license for original SlimKV contributions; upstream notices are already retained.
-2. Redistributable SlimKV checkpoints/tokenizers and immutable hashes, plus base-model provenance and terms.
-3. Exact training-data revisions, processed/generated mixtures, sample/seed manifests and final configuration for each result.
-4. Final rank lists and the missing automatic allocation implementation or reproducible derivation.
-5. Complete evaluation outputs and the paper-specific efficiency/judge/ablation harnesses.
+1. Redistributable SlimKV checkpoints/tokenizers and immutable hashes, plus base-model provenance and terms.
+2. Exact training-data revisions, processed/generated mixtures, sample/seed manifests and final configuration for each result.
+3. Final rank lists and the missing automatic allocation implementation or reproducible derivation.
+4. Complete evaluation outputs and the paper-specific efficiency/judge/ablation harnesses.
 
 See [backend support](implementation_status.md) for cache eligibility and remaining implementation gaps.

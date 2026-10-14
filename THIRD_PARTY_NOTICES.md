@@ -1,6 +1,6 @@
-# Third-party notices and project license status
+# Third-party notices
 
-The authors have not yet specified a license for original SlimKV contributions. This repository refresh does not grant a new project-wide license or change existing component terms. A root `LICENSE` remains an author decision.
+Original SlimKV code is licensed under [Apache License 2.0](LICENSE). The third-party components below retain their original copyright notices and licenses; the SlimKV license does not relicense them.
 
 | Component | Attribution and license record |
 |---|---|
@@ -10,6 +10,6 @@ The authors have not yet specified a license for original SlimKV contributions. 
 | Width-320 FA2 derivative | [FlashAttention v2.8.3](https://github.com/Dao-AILab/flash-attention/tree/v2.8.3); BSD 3-Clause text already in [LICENSE_FA2](kernels/fa2_decode/LICENSE_FA2), upstream [AUTHORS](kernels/fa2_decode/AUTHORS_FA2) retained |
 | External FA2/CUTLASS source used in builds | Cloned into ignored `.cache/` by the build guide; retain their original licenses if redistributed |
 
-Bundled license texts are copied from the cited upstream projects, not selected as the license for new SlimKV code. Model weights, base-model access conditions, and datasets have their own terms and are not bundled in this source repository.
+Bundled third-party license texts and copyright notices are preserved from the cited upstream projects. Model weights, base-model access conditions, and datasets have their own terms and are not bundled in this source repository.
 
-Activation Beacon reference: Peitian Zhang et al., *Soaring from 4K to 400K: Extending LLM's Context with Activation Beacon*, [arXiv:2401.03462](https://arxiv.org/abs/2401.03462). SlimKV manuscript citation metadata is separate in [CITATION.cff](CITATION.cff).
+Activation Beacon reference: Peitian Zhang et al., *Soaring from 4K to 400K: Extending LLM's Context with Activation Beacon*, [arXiv:2401.03462](https://arxiv.org/abs/2401.03462). SlimKV citation metadata is recorded in [CITATION.cff](CITATION.cff).

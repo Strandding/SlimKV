@@ -29,4 +29,4 @@ python -m tools.record_run \
 
 保持data选择顺序、模板、ratio、window/stride、K/V rank、RoPE、dtype/backend、EOS和GPU一致。失败日志保留，但不计为成功benchmark；不要删慢trial美化结果。
 
-完整实验设置见[论文](https://arxiv.org/abs/2610.02953)。完整复现发布还需要：原创许可证、可分发权重/tokenizer/hash与基座来源、处理后的训练数据和seed manifests、最终rank列表及分配算法、完整评测与efficiency/judge/ablation资产。当前缓存条件与实现缺口见[后端支持](implementation_status.md)。
+完整实验设置见[论文](https://arxiv.org/abs/2610.02953)。完整复现发布还需要：可分发权重/tokenizer/hash与基座来源、处理后的训练数据和seed manifests、最终rank列表及分配算法、完整评测与efficiency/judge/ablation资产。当前缓存条件与实现缺口见[后端支持](implementation_status.md)。

@@ -7,6 +7,7 @@
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/EMNLP%202026-Oral-8a2be2.svg" alt="EMNLP 2026 Oral"></a>
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/arXiv-2610.02953-b31b1b.svg" alt="arXiv:2610.02953"></a>
   <a href="https://github.com/Strandding/SlimKV/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Strandding/SlimKV/ci.yml?branch=master&amp;label=CI" alt="GitHub Actions CI"></a>
+  <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="Apache License 2.0"></a>
 </p>
 
 <p align="center">
@@ -215,11 +216,15 @@ python -m main.infer \
 
 ## 引用
 
+ACL Anthology 的正式论文记录尚未公开，以下使用临时会议引用并链接 arXiv 版本。
+
 ```bibtex
-@misc{teng2026slimkv,
+@inproceedings{teng2026slimkv,
   title = {SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention},
   author = {Teng, Zihan and Zhao, Jiayu and Ren, Wentao and Fan, Minhao and Ma, Tianrui and Chen, Song and Liu, Weichen},
+  booktitle = {2026 Conference on Empirical Methods in Natural Language Processing (EMNLP)},
   year = {2026},
+  note = {Accepted to the Main Conference (Oral). Provisional conference citation.},
   eprint = {2610.02953},
   archivePrefix = {arXiv},
   primaryClass = {cs.LG},
@@ -229,4 +234,4 @@ python -m main.infer \
 
 ## 致谢与许可
 
-SlimKV 基于 [Activation Beacon](https://github.com/FlagOpen/FlagEmbedding/tree/master/research/Long_LLM/activation_beacon)、Hugging Face Transformers 和 [FlashAttention](https://github.com/Dao-AILab/flash-attention)。归属和许可见[第三方声明](../../THIRD_PARTY_NOTICES.md)。SlimKV 原创贡献的许可证尚待确定。
+SlimKV 基于 [Activation Beacon](https://github.com/FlagOpen/FlagEmbedding/tree/master/research/Long_LLM/activation_beacon)、Hugging Face Transformers 和 [FlashAttention](https://github.com/Dao-AILab/flash-attention)。归属和许可见[第三方声明](../../THIRD_PARTY_NOTICES.md)。SlimKV 原创代码采用 [Apache License 2.0](../../LICENSE)。第三方组件保留各自的版权与许可，模型权重和数据集遵循各自的授权条款。
