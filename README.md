@@ -1,8 +1,8 @@
 # SlimKV
 
-**Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention**
+<p align="center"><em>*Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention*</em></p>
 
-**EMNLP 2026 Main Conference (Oral)**
+<p align="center"><em>*EMNLP 2026 Main Conference (Oral)*</em></p>
 
 [Paper](https://arxiv.org/abs/2610.02953) · [Code](https://github.com/Strandding/SlimKV) · [中文](README.zh-CN.md)
 
@@ -16,31 +16,52 @@ On LongBench, SlimKV retains over 96% of the full-cache score at 4× and 8× com
 
 ## Method
 
-![SlimKV method overview](docs/assets/method.svg)
+<p align="center">
+  <img src="docs/assets/method.svg" width="1000" alt="SlimKV method overview">
+</p>
 
 SlimKV progressively compresses completed context windows into Beacon memories. Its K/V projections are trained directly at the target rank, with the backbone frozen. Layer-adaptive ranks account for differences in low-rank structure across layers rather than assigning every layer the same capacity.
 
 During decoding, attention scores and value aggregation operate on cached latent Beacon states. Queries are projected into the latent Key space, and attention outputs are projected back through the Value basis. This avoids reconstructing the historical Beacon K/V. Raw-token tails and sinks retain full-dimensional K/V.
 
-<img src="docs/assets/positional_asymmetry.svg" width="560" alt="LongBench comparison under Key RoPE ablations">
+<p align="center">
+  <img src="docs/assets/positional_asymmetry.svg" width="400" alt="LongBench comparison under Key RoPE ablations">
+</p>
 
-*Removing K-RoPE from raw-token Keys causes substantial degradation. Beacon Keys are less sensitive, and SlimKV learns low-rank memories without Beacon K-RoPE (Figure 2).*
+<p align="center"><em>Removing K-RoPE from raw-token Keys causes substantial degradation. Beacon Keys are less sensitive, and SlimKV learns low-rank memories without Beacon K-RoPE (Figure 2).</em></p>
 
 ## Results
 
-| **96%+** | **7.34×** | **3.38×** |
-|:---:|:---:|:---:|
-| Full KV LongBench score retained at 4× / 8× compression | Attention speedup at 128K | End-to-end decoding speedup at 128K |
+<table align="center">
+  <thead>
+    <tr>
+      <th align="center"><strong>96%+</strong></th>
+      <th align="center"><strong>7.34×</strong></th>
+      <th align="center"><strong>3.38×</strong></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">Full KV LongBench score retained at 4× / 8× compression</td>
+      <td align="center">Attention speedup at 128K</td>
+      <td align="center">End-to-end decoding speedup at 128K</td>
+    </tr>
+  </tbody>
+</table>
 
 The speedups above use t4f4 on Llama-3.1-8B, measured with BF16 eager execution on an A100 80GB. Full results and the evaluation protocol are in the [paper](https://arxiv.org/abs/2610.02953).
 
-<img src="docs/assets/longbench.svg" width="640" alt="LongBench results at 4x and 8x compression from Table 4">
+<p align="center">
+  <img src="docs/assets/longbench.svg" width="640" alt="LongBench results at 4x and 8x compression from Table 4">
+</p>
 
-*LongBench averages at 4× and 8× compression (Table 4). AB denotes Activation Beacon.*
+<p align="center"><em>LongBench averages at 4× and 8× compression (Table 4). AB denotes Activation Beacon.</em></p>
 
-<img src="docs/assets/efficiency.svg" width="640" alt="Attention and end-to-end decoding speedups from Table 6">
+<p align="center">
+  <img src="docs/assets/efficiency.svg" width="640" alt="Attention and end-to-end decoding speedups from Table 6">
+</p>
 
-*Attention and per-token decoding speedups across 32K–128K contexts (Table 6).*
+<p align="center"><em>Attention and per-token decoding speedups across 32K–128K contexts (Table 6).</em></p>
 
 Benchmark scripts and local H20 FA2 measurements are documented in [benchmarking](docs/benchmark.md).
 
@@ -75,14 +96,47 @@ The default backend stores latent Beacon K/V and reconstructs them for attention
 
 Run the following entry points from the repository root. Model, data and output paths can be set through the environment variables in [.env.example](.env.example).
 
-| Stage | Entry point | Guide |
-|---|---|---|
-| Low-rank initialization | `python -m main.convert_kv_lowrank --help` | [Training](docs/training.md) |
-| Pretraining | `bash scripts/training/train_llama_8B.sh` | [Training](docs/training.md) |
-| Finetuning | `bash scripts/training/finetune_llama_8B.sh` | [Training](docs/training.md) |
-| LongBench | `python -m main.eval_longbench --help` | [Evaluation](docs/evaluation.md) |
-| Needle-in-a-Haystack | `python -m main.eval_needle --help` | [Evaluation](docs/evaluation.md) |
-| Latency and memory | `python -m tools.benchmark_fa2_decode --help` | [Benchmarking](docs/benchmark.md) |
+<table align="center">
+  <thead>
+    <tr>
+      <th align="center">Stage</th>
+      <th align="center">Entry point</th>
+      <th align="center">Guide</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">Low-rank initialization</td>
+      <td align="center"><code>python -m main.convert_kv_lowrank --help</code></td>
+      <td align="center"><a href="docs/training.md">Training</a></td>
+    </tr>
+    <tr>
+      <td align="center">Pretraining</td>
+      <td align="center"><code>bash scripts/training/train_llama_8B.sh</code></td>
+      <td align="center"><a href="docs/training.md">Training</a></td>
+    </tr>
+    <tr>
+      <td align="center">Finetuning</td>
+      <td align="center"><code>bash scripts/training/finetune_llama_8B.sh</code></td>
+      <td align="center"><a href="docs/training.md">Training</a></td>
+    </tr>
+    <tr>
+      <td align="center">LongBench</td>
+      <td align="center"><code>python -m main.eval_longbench --help</code></td>
+      <td align="center"><a href="docs/evaluation.md">Evaluation</a></td>
+    </tr>
+    <tr>
+      <td align="center">Needle-in-a-Haystack</td>
+      <td align="center"><code>python -m main.eval_needle --help</code></td>
+      <td align="center"><a href="docs/evaluation.md">Evaluation</a></td>
+    </tr>
+    <tr>
+      <td align="center">Latency and memory</td>
+      <td align="center"><code>python -m tools.benchmark_fa2_decode --help</code></td>
+      <td align="center"><a href="docs/benchmark.md">Benchmarking</a></td>
+    </tr>
+  </tbody>
+</table>
 
 Final checkpoints and processed training-data manifests still need to be released. The [reproduction guide](docs/reproducibility.md) lists the required resources and experiment protocols. A [source map](docs/structure.md) explains the modules, and [implementation status](docs/implementation_status.md) tracks the remaining paper components.
 

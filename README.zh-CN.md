@@ -1,8 +1,8 @@
 # SlimKV
 
-**联合 Token–Feature KV Cache 压缩与无需重建的 Beacon 注意力**
+<p align="center"><em>*联合 Token–Feature KV Cache 压缩与无需重建的 Beacon 注意力*</em></p>
 
-**EMNLP 2026 Main Conference（Oral）**
+<p align="center"><em>*EMNLP 2026 Main Conference（Oral）*</em></p>
 
 [论文](https://arxiv.org/abs/2610.02953) · [代码](https://github.com/Strandding/SlimKV) · [English](README.md)
 
@@ -16,31 +16,52 @@ SlimKV 同时压缩 KV Cache 的 token 数量和特征维度，用于长上下�
 
 ## 方法
 
-![SlimKV 方法概览](docs/assets/method.svg)
+<p align="center">
+  <img src="docs/assets/method.svg" width="1000" alt="SlimKV 方法概览">
+</p>
 
 SlimKV 将已完成的上下文窗口逐步压缩为 Beacon 记忆。Backbone 保持冻结，Beacon K/V 投影直接在目标低秩约束下训练。逐层 rank 根据各层低秩结构的差异分配容量，而不是给所有层相同维度。
 
 Decode 时，attention scores 和 Value 聚合在缓存的 latent Beacon 状态上完成。Query 投影到 latent Key 空间，attention 输出通过 Value basis 映射回原始空间，因此无需重建历史 Beacon K/V。Raw tail 和 sink 仍保留完整维度缓存。
 
-<img src="docs/assets/positional_asymmetry.svg" width="560" alt="K-RoPE 消融下的 LongBench 比较">
+<p align="center">
+  <img src="docs/assets/positional_asymmetry.svg" width="400" alt="K-RoPE 消融下的 LongBench 比较">
+</p>
 
-*去掉 raw-token K-RoPE 会造成显著退化，Beacon Keys 对此更不敏感。SlimKV 在无 Beacon K-RoPE 的约束下学习低秩记忆（Figure 2）。*
+<p align="center"><em>去掉 raw-token K-RoPE 会造成显著退化，Beacon Keys 对此更不敏感。SlimKV 在无 Beacon K-RoPE 的约束下学习低秩记忆（Figure 2）。</em></p>
 
 ## 结果
 
-| **96%+** | **7.34×** | **3.38×** |
-|:---:|:---:|:---:|
-| 4× / 8× 压缩下保留的 Full KV LongBench 得分 | 128K attention 加速 | 128K 端到端 decode 加速 |
+<table align="center">
+  <thead>
+    <tr>
+      <th align="center"><strong>96%+</strong></th>
+      <th align="center"><strong>7.34×</strong></th>
+      <th align="center"><strong>3.38×</strong></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">4× / 8× 压缩下保留的 Full KV LongBench 得分</td>
+      <td align="center">128K attention 加速</td>
+      <td align="center">128K 端到端 decode 加速</td>
+    </tr>
+  </tbody>
+</table>
 
 上述速度来自 Llama-3.1-8B 的 t4f4 配置，使用 A100 80GB、BF16 和 eager。完整结果与评测协议见[论文](https://arxiv.org/abs/2610.02953)。
 
-<img src="docs/assets/longbench.svg" width="640" alt="Table 4 的低压缩比 LongBench 结果">
+<p align="center">
+  <img src="docs/assets/longbench.svg" width="640" alt="Table 4 的低压缩比 LongBench 结果">
+</p>
 
-*4×和8×压缩下的 LongBench 平均分（Table 4）。AB 表示 Activation Beacon。*
+<p align="center"><em>4×和8×压缩下的 LongBench 平均分（Table 4）。AB 表示 Activation Beacon。</em></p>
 
-<img src="docs/assets/efficiency.svg" width="640" alt="Table 6 的 attention 和端到端 decode 加速">
+<p align="center">
+  <img src="docs/assets/efficiency.svg" width="640" alt="Table 6 的 attention 和端到端 decode 加速">
+</p>
 
-*32K–128K上下文下的 attention 与每 token decode 加速（Table 6）。*
+<p align="center"><em>32K–128K上下文下的 attention 与每 token decode 加速（Table 6）。</em></p>
 
 Benchmark 脚本和 H20 FA2 局部测量见[性能评测](docs/zh/benchmark.md)。
 
@@ -75,14 +96,47 @@ python -m main.infer \
 
 从仓库根目录启动，模型、数据和输出路径由 [.env.example](.env.example) 中的环境变量配置。
 
-| 阶段 | 入口 | 说明 |
-|---|---|---|
-| 低秩初始化 | `python -m main.convert_kv_lowrank --help` | [训练](docs/zh/training.md) |
-| 预训练 | `bash scripts/training/train_llama_8B.sh` | [训练](docs/zh/training.md) |
-| 微调 | `bash scripts/training/finetune_llama_8B.sh` | [训练](docs/zh/training.md) |
-| LongBench | `python -m main.eval_longbench --help` | [评测](docs/zh/evaluation.md) |
-| NIAH | `python -m main.eval_needle --help` | [评测](docs/zh/evaluation.md) |
-| 耗时与显存 | `python -m tools.benchmark_fa2_decode --help` | [性能评测](docs/zh/benchmark.md) |
+<table align="center">
+  <thead>
+    <tr>
+      <th align="center">阶段</th>
+      <th align="center">入口</th>
+      <th align="center">说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">低秩初始化</td>
+      <td align="center"><code>python -m main.convert_kv_lowrank --help</code></td>
+      <td align="center"><a href="docs/zh/training.md">训练</a></td>
+    </tr>
+    <tr>
+      <td align="center">预训练</td>
+      <td align="center"><code>bash scripts/training/train_llama_8B.sh</code></td>
+      <td align="center"><a href="docs/zh/training.md">训练</a></td>
+    </tr>
+    <tr>
+      <td align="center">微调</td>
+      <td align="center"><code>bash scripts/training/finetune_llama_8B.sh</code></td>
+      <td align="center"><a href="docs/zh/training.md">训练</a></td>
+    </tr>
+    <tr>
+      <td align="center">LongBench</td>
+      <td align="center"><code>python -m main.eval_longbench --help</code></td>
+      <td align="center"><a href="docs/zh/evaluation.md">评测</a></td>
+    </tr>
+    <tr>
+      <td align="center">NIAH</td>
+      <td align="center"><code>python -m main.eval_needle --help</code></td>
+      <td align="center"><a href="docs/zh/evaluation.md">评测</a></td>
+    </tr>
+    <tr>
+      <td align="center">耗时与显存</td>
+      <td align="center"><code>python -m tools.benchmark_fa2_decode --help</code></td>
+      <td align="center"><a href="docs/zh/benchmark.md">性能评测</a></td>
+    </tr>
+  </tbody>
+</table>
 
 最终 checkpoint 和处理后的训练数据 manifests 仍需发布。[复现指南](docs/zh/reproducibility.md)列出所需资源与实验协议，[模块说明](docs/zh/structure.md)介绍源码组织，[实现状态](docs/zh/implementation_status.md)记录待完成的论文组件。
 

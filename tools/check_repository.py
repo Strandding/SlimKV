@@ -76,7 +76,9 @@ def main():
     link_count = 0
     for path in docs:
         prose = re.sub(r'```.*?```', '', path.read_text(), flags=re.S)
-        for target in re.findall(r'!?\[[^\]]*\]\(([^)]+)\)', prose):
+        targets = re.findall(r'!?\[[^\]]*\]\(([^)]+)\)', prose)
+        targets += re.findall(r'<(?:a|img)\b[^>]*\b(?:href|src)=[\"\']([^\"\']+)[\"\']', prose)
+        for target in targets:
             target = target.strip().strip('<>')
             if re.match(r'(https?://|mailto:)', target):
                 continue

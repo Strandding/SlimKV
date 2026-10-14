@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" version="1.1" width="220" height="117" viewBox="0 0 220 117">
+<rect id="white-background" x="0" y="0" width="220" height="117" fill="#ffffff"/>
+
 <defs>
 <clipPath id="clip_1">
 <path transform="matrix(1,0,0,-1,-306,727.89)" d="M306 610.89H526V727.89H306Z" clip-rule="evenodd"/>
