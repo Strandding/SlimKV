@@ -24,6 +24,58 @@ def reference_forward(q, k, v, scale, causal=False):
 
 
 class LatentDecodeTest(unittest.TestCase):
+    def test_fast_metadata_matches_legacy_across_rollover_and_chunk_resume(self):
+        torch.set_num_threads(1)
+        torch.manual_seed(42)
+        slow = make_model(beacon_decode_backend='fa2', beacon_decode_fast=False)
+        fast = copy.deepcopy(slow)
+        fast.config.beacon_decode_fast = True
+        calls = [torch.arange(17)[None]]
+        calls += [torch.tensor([[i]]) for i in range(18, 39)]
+        calls += [torch.tensor([[40, 41, 42]])]
+        calls += [torch.tensor([[i]]) for i in range(43, 62)]
+        with torch.inference_mode(), patch('slimkv.llama3.fa2_decode.flash_forward', side_effect=reference_forward):
+            for ids in calls:
+                a, b = slow(input_ids=ids), fast(input_ids=ids)
+                torch.testing.assert_close(a.logits, b.logits, atol=0, rtol=0)
+                torch.testing.assert_close(slow.memory.all_input_ids, fast.memory.all_input_ids)
+                self.assertEqual(slow.memory.get_memory_size(), fast.memory.get_memory_size())
+                self.assertEqual(slow.memory._interleave_remainder, fast.memory._interleave_remainder)
+                for name in ['_window_roles', '_window_raw_indices', '_beacon_indices']:
+                    x, y = getattr(slow.memory, name), getattr(fast.memory, name)
+                    if x is None:
+                        self.assertIsNone(y)
+                    else:
+                        torch.testing.assert_close(x, y)
+            fast.memory.reset()
+            slow.memory.reset()
+            torch.testing.assert_close(slow(input_ids=calls[0]).logits,
+                                       fast(input_ids=calls[0]).logits, atol=0, rtol=0)
+
+    def test_fast_decode_still_rejects_padding(self):
+        model = make_model(beacon_decode_backend='fa2')
+        with torch.inference_mode():
+            model(input_ids=torch.arange(17)[None])
+            with self.assertRaisesRegex(ValueError, 'unpadded'):
+                model(input_ids=torch.tensor([[18]]), attention_mask=torch.zeros(1, 1))
+
+    def test_attention_diagnostics_use_generic_causal_metadata(self):
+        torch.manual_seed(42)
+        slow = make_model(beacon_decode_backend='fa2', beacon_decode_fast=False)
+        fast = copy.deepcopy(slow)
+        fast.config.beacon_decode_fast = True
+        with torch.inference_mode():
+            for model in [slow, fast]:
+                model(input_ids=torch.arange(19)[None])
+            # The next raw token inserts a Beacon. Diagnostics reconstruct both
+            # branches and must retain the ordinary causal mask for Q2.
+            a = slow(input_ids=torch.tensor([[20]]), output_attentions=True)
+            b = fast(input_ids=torch.tensor([[20]]), output_attentions=True)
+            torch.testing.assert_close(a.logits, b.logits, atol=0, rtol=0)
+            for x, y in zip(a.attentions, b.attentions):
+                torch.testing.assert_close(x, y, atol=0, rtol=0)
+            self.assertFalse(fast.memory._fast_decode_active)
+
     def test_actual_models_across_new_beacons_and_window_rollover(self):
         torch.set_num_threads(1)
         for bias, shared in [(False, False), (True, False), (False, True)]:

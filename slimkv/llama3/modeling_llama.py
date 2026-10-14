@@ -1833,6 +1833,15 @@ class LlamaDecoderLayer(nn.Module):
         self.mlp = LlamaMLP(config)
         self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self._decode_graphs = None
+
+    def _apply(self, fn, recurse=True):
+        self._decode_graphs = None
+        return super()._apply(fn, recurse=recurse)
+
+    def _decode_tail(self, attention_output, residual):
+        hidden = residual + attention_output
+        return hidden + self.mlp(self.post_attention_layernorm(hidden))
 
     def forward(
         self,
@@ -1863,8 +1872,18 @@ class LlamaDecoderLayer(nn.Module):
             )
 
         residual = hidden_states
-
-        hidden_states = self.input_layernorm(hidden_states)
+        graph_step = (not self.training and hidden_states.is_cuda
+                      and hidden_states.shape[:2] in ((1, 1), (1, 2))
+                      and not output_attentions
+                      and getattr(self.self_attn.config, '_slimkv_decode_graph_step', False)
+                      and getattr(self.self_attn.config, 'beacon_decode_graph', False))
+        if graph_step:
+            if self._decode_graphs is None:
+                from .decode_graph import DecodeGraphs
+                self._decode_graphs = DecodeGraphs()
+            hidden_states = self._decode_graphs('input_norm', self.input_layernorm, hidden_states)
+        else:
+            hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
@@ -1876,13 +1895,14 @@ class LlamaDecoderLayer(nn.Module):
             use_cache=use_cache,
             **kwargs,
         )
-        hidden_states = residual + hidden_states
-
-        # Fully Connected
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
+        if graph_step:
+            hidden_states = self._decode_graphs('tail', self._decode_tail, hidden_states, residual)
+        else:
+            hidden_states = residual + hidden_states
+            residual = hidden_states
+            hidden_states = self.post_attention_layernorm(hidden_states)
+            hidden_states = self.mlp(hidden_states)
+            hidden_states = residual + hidden_states
 
         outputs = (hidden_states,)
 
@@ -2175,7 +2195,13 @@ class LlamaModel(LlamaPreTrainedModel):
             attention_mask = additive_mask + causal[None, None, :, :]
 
         # BEACON: separately embed ordinal tokens and beacon tokens because ordinal tokens do not receive gradients
-        if beacon_size > 0:
+        if (beacon_size == 1 and input_ids.shape == (1, 2)
+                and getattr(self.config, '_slimkv_decode_step', False)
+                and getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2'
+                and getattr(self.config, 'beacon_decode_fast', True)):
+            inputs_embeds = torch.cat([self.embed_tokens(input_ids[:, :1]),
+                                       self.beacon_embed_tokens(input_ids[:, 1:] - self.config.vocab_size)], dim=1)
+        elif beacon_size > 0:
             # NOTE: when beacon_pos == "interleave", the beacon_indices points to all beacon tokens in the current window (cached activations + input_ids), so we shall slice out the part corresponding to the input_ids
             cur_beacon_indices = beacon_indices[-input_ids.shape[1]:]
 
@@ -2552,13 +2578,27 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
                        and self.memory.all_input_ids is not None)
         if decode_step and getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2':
             old_mask = self.memory.all_attention_mask
-            if (old_mask == 0).any() or (attention_mask is not None and (attention_mask == 0).any()):
+            if self.memory._decode_unpadded is None:
+                self.memory._decode_unpadded = not bool((old_mask == 0).any())
+            if not self.memory._decode_unpadded or (attention_mask is not None and (attention_mask == 0).any()):
                 raise ValueError('FA2 latent decode currently requires unpadded batch size one.')
         self.config._slimkv_decode_step = decode_step
+        requested_attentions = kwargs.get('output_attentions')
+        if requested_attentions is None:
+            requested_attentions = self.config.output_attentions
+        requested_hidden = kwargs.get('output_hidden_states')
+        if requested_hidden is None:
+            requested_hidden = self.config.output_hidden_states
+        self.config._slimkv_decode_fast_step = decode_step and not requested_attentions
+        self.config._slimkv_decode_graph_step = (
+            decode_step and getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2'
+            and not requested_hidden and not requested_attentions)
         try:
             return self._beacon_forward_impl(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
         finally:
             self.config._slimkv_decode_step = False
+            self.config._slimkv_decode_fast_step = False
+            self.config._slimkv_decode_graph_step = False
 
     def _beacon_forward_impl(self,
         input_ids: torch.LongTensor = None,

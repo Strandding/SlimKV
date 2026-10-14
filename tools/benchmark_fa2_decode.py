@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--attn_impl', choices=['eager', 'sdpa', 'flash_attention_2'], default='eager')
     parser.add_argument('--forced_tokens_json', help='Optional mapping from sample index to fixed decode input tokens.')
     parser.add_argument('--reference_decode_source', help='Optional prior fa2_decode.py for a same-model optimization control.')
+    parser.add_argument('--compare_b1', action='store_true', help='Compare legacy, GPU bookkeeping, and partial CUDA Graph decode in the same model.')
     parser.add_argument('--beacon_ratio', type=int, default=8)
     parser.add_argument('--decode_tokens', type=int, default=64)
     parser.add_argument('--warmup', type=int, default=1)
@@ -45,6 +46,8 @@ def main():
     parser.add_argument('--skip_quality', action='store_true')
     parser.add_argument('--disable_optional_flash_import', action='store_true')
     args = parser.parse_args()
+    if args.compare_b1 and args.reference_decode_source:
+        parser.error('compare_b1 and reference_decode_source are separate controls.')
     if args.decode_tokens < 2 or args.warmup < 1 or args.rounds < 1 or args.validation_steps < 1:
         parser.error('Require at least 2 generated tokens, 1 warmup and 1 round.')
     if args.source_dir:
@@ -89,6 +92,10 @@ def main():
     modes = ['full_compact', 'reconstruct'] + (['fa2_reference'] if reference_decode else []) + ['fa2']
     order = modes + list(reversed(modes))
     quality_modes = ['reconstruct'] + (['fa2_reference'] if reference_decode else []) + ['fa2']
+    if args.compare_b1:
+        modes = ['full_compact', 'reconstruct', 'fa2_legacy', 'fa2_fast', 'fa2']
+        order = modes + list(reversed(modes))
+        quality_modes = ['reconstruct', 'fa2_legacy', 'fa2_fast', 'fa2']
     state = {'compact_sink': False}
     install_compact_sink_control(model.memory, state)
     encoded = []
@@ -127,6 +134,8 @@ def main():
         model.memory.reset()
         model.config.beacon_cache_mode = 'full' if mode == 'full_compact' else 'latent'
         model.config.beacon_decode_backend = 'fa2' if mode.startswith('fa2') else 'reconstruct'
+        model.config.beacon_decode_fast = mode != 'fa2_legacy'
+        model.config.beacon_decode_graph = args.compare_b1 and mode == 'fa2'
         modeling_llama.fa2_decode = reference_decode if mode == 'fa2_reference' else actual_decode
         state['compact_sink'] = mode == 'full_compact'
         gc.collect()
@@ -269,7 +278,13 @@ def main():
                 'tensor_sha256': hashlib.sha256(tensor_file.read_bytes()).hexdigest(),
                 'optimized_bitwise_equal_to_reference': torch.equal(vectors['fa2'].contiguous().view(torch.uint8), vectors['fa2_reference'].contiguous().view(torch.uint8)) if reference_decode else None,
                 'optimized_max_abs_error_to_reference': (vectors['fa2'] - vectors['fa2_reference']).abs().max().item() if reference_decode else None,
+                'b1_bitwise_equal_to_legacy': {
+                    mode: torch.equal(vectors[mode].contiguous().view(torch.uint8), vectors['fa2_legacy'].contiguous().view(torch.uint8))
+                    for mode in ['fa2_fast', 'fa2']
+                } if args.compare_b1 else None,
             })
+            if args.compare_b1:
+                assert all(result['logit_validation'][-1]['b1_bitwise_equal_to_legacy'].values())
             assert any(key.startswith('320:') for key in calls)
             save()
             del vectors, delta, scores

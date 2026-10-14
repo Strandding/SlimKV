@@ -67,6 +67,92 @@ class LlamaMemory(Memory):
         self._latent_cache_active = None
         self._cache_decode_backend = None
         self._window_raw_indices = None
+        self._fast_decode_active = False
+        self._decode_unpadded = None
+        self._decode_role_buffer = None
+        self._decode_bool_buffer = None
+        self._decode_raw_indices = None
+        self._decode_positions = None
+
+    def prepare(self, input_ids, attention_mask, labels, skip_first=None, skip_last=None):
+        self._fast_decode_active = (
+            not self.training and labels is None and input_ids is not None
+            and input_ids.shape == (1, 1) and self.latent_cache_active and self.finish
+            and self._cache_decode_backend == 'fa2'
+            and getattr(self.config, 'beacon_decode_fast', True)
+            and getattr(self.config, '_slimkv_decode_fast_step', False)
+            and skip_first is None and skip_last is None
+            and self.beacon_skip_first is None and self.beacon_skip_last is None
+        )
+        # Prefill retains the legacy CPU bookkeeping. Once decoding starts, keep
+        # input history on the GPU; a later multi-token call can return to CPU.
+        self._input_storage_device = input_ids.device if self._fast_decode_active else self._cpu
+        if not self._fast_decode_active:
+            self._decode_unpadded = None
+            self._decode_role_buffer = None
+            self._decode_bool_buffer = None
+            self._decode_raw_indices = None
+        return super().prepare(input_ids, attention_mask, labels, skip_first, skip_last)
+
+    def _step(self, ignore_memory=False):
+        if not self._fast_decode_active or ignore_memory:
+            return super()._step(ignore_memory)
+        import torch
+        start = self._start_idx
+        end = self.all_sequence_length
+        full = end >= start + self.config.beacon_window
+        if self._is_full_window:
+            ratio = self.set_compression_ratio(start_idx=start, end_idx=end)
+            self._interleave_compression_ratio = ratio
+            previous_roles = 0
+            previous_raw = 0
+        else:
+            ratio = self._interleave_compression_ratio
+            previous_roles = self._beacon_indices.numel()
+            previous_raw = 0 if self._window_raw_indices is None else self._window_raw_indices.numel()
+        size = (self._interleave_remainder + 1) // ratio
+        self._interleave_remainder = (self._interleave_remainder + 1) % ratio
+        token = self.all_input_ids[:, -1:]
+        if size:
+            # Decode inserts at most one Beacon, immediately after the raw token.
+            token = torch.cat([token, token.new_full((1, 1), self.config.vocab_size)], dim=1)
+        if self._decode_role_buffer is None:
+            capacity = 2 * self.config.beacon_window + 2
+            self._decode_role_buffer = torch.zeros(capacity, dtype=torch.long, device=token.device)
+            self._decode_bool_buffer = torch.zeros(capacity, dtype=torch.bool, device=token.device)
+            self._decode_raw_indices = torch.empty(self.config.beacon_window + 1, dtype=torch.long, device=token.device)
+            if previous_roles:
+                self._decode_role_buffer[:previous_roles].copy_(self._beacon_indices)
+                self._decode_bool_buffer[:previous_roles].copy_(self._window_roles)
+            if previous_raw:
+                self._decode_raw_indices[:previous_raw].copy_(self._window_raw_indices)
+        count = previous_roles + 1 + size
+        self._decode_role_buffer[previous_roles:count].fill_(0)
+        self._decode_bool_buffer[previous_roles:count].fill_(False)
+        if size:
+            self._decode_role_buffer[count - 1:count].fill_(1)
+            self._decode_bool_buffer[count - 1:count].fill_(True)
+        self._decode_raw_indices[previous_raw:previous_raw + 1].fill_(previous_roles)
+        indices = self._decode_role_buffer[:count]
+        past = [self._get_layer_past_key_value(i, size, indices, False)
+                for i in range(self.config.num_hidden_layers)]
+        length = past[0][0].shape[2] + 1 + size
+        if self._decode_positions is None or self._decode_positions.numel() < length:
+            capacity = max(4096, 1 << (length - 1).bit_length())
+            self._decode_positions = torch.arange(capacity, dtype=torch.long, device=token.device)
+        positions = self._decode_positions[:length].unsqueeze(0)
+        self._beacon_indices = indices
+        self._fast_window_roles = self._decode_bool_buffer[:count]
+        self._fast_window_raw_indices = self._decode_raw_indices[:previous_raw + 1]
+        self._is_full_window = full
+        self._raw_size_to_cache = 0 if full else -1
+        self._all_beacon_sizes.append(size)
+        self._start_idx = start + self.config.beacon_stride if full else start
+        self._end_idx = end
+        self._step_idx += 1
+        # FA2 decode has already checked padding. Its raw/latent branches handle
+        # causality without constructing an attention mask or re-scanning roles.
+        return token, None, positions, past, None
 
     @property
     def latent_cache_active(self):
@@ -172,9 +258,11 @@ class LlamaMemory(Memory):
             else:
                 self.raw_activations[idx] = (raw_k, raw_v)
                 self.window_beacon_activations[idx] = (window_k, window_v)
-        self._window_roles = None if self._is_full_window else indices != 0
+        self._window_roles = None if self._is_full_window else (
+            self._fast_window_roles if self._fast_decode_active else indices != 0)
         if self._cache_decode_backend == 'fa2':
-            self._window_raw_indices = None if self._is_full_window else (indices == 0).nonzero().flatten()
+            self._window_raw_indices = None if self._is_full_window else (
+                self._fast_window_raw_indices if self._fast_decode_active else (indices == 0).nonzero().flatten())
 
     def cache_bytes(self):
         """Logical persistent K/V bytes; attention workspaces are excluded."""

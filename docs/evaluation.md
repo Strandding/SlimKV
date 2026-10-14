@@ -79,16 +79,21 @@ python -m tools.benchmark_fa2_decode \
 
 性能对照还可传入 `--forced_tokens_json /path/to/tokens.json`，文件为样本索引到 decode 输入 token 列表的 JSON 对象；它让 eager/FA2 prefill 和优化前后处理完全相同的 decode 输入。`--reference_decode_source /path/to/previous/fa2_decode.py` 加载兼容的旧 decoder，只切换计算函数，复用同一个模型和参数；性能顺序扩展为四种模式再反序，各模式每轮两次。`--skip_quality` 可用于只复测性能。默认另外保存 16 步 teacher-forced logits；旧 decoder 对照同时报告优化后是否逐位相等。
 
+B1 无 padding 的 latent FA2 decode 默认启用 `beacon_decode_fast=true`：保持 token 输入历史在 GPU、按插入计划维护角色和 raw 索引、复用位置 buffer。传入 `--beacon_decode_fast false` 可回到旧 bookkeeping。`--beacon_decode_graph true` 另外开启 input norm 和 attention 后 residual/post-norm/MLP/residual 的 CUDA Graph；默认关闭。训练、CPU、prefill、需要 attention 权重或完整 hidden states 的诊断走适用的普通路径；多 token 输入也使用普通 Memory 并能继续单 token decode。Graph 每层缓存 Q1/Q2 两种形状，首次 capture 在预热完成；模型更换 dtype/device 时清除 Graph。
+
+例如在 `main.eval_longbench` 的已有模型参数后加上 `--attn_impl flash_attention_2 --beacon_cache_mode latent --beacon_decode_backend fa2 --beacon_decode_graph true`。同模型 B1 性能对照在上面的 benchmark 命令后加 `--compare_b1`：模式依次为 full_compact、reconstruct、fa2_legacy、fa2_fast、fa2，再反序；此时 `fa2` 表示 fast＋Graph，输出记录全部配置。两轮、每模式四次测量，并检查三种 FA2 路径保存的 logits 是否逐位相同。Graph 持有额外工作区，本次首次预热后的 live allocation 增量约516MiB；计时阶段所有模式都保留已预热的 Graph，以保持相同模型 baseline，不能用这些模式的峰值差推断 Graph 独立显存开销。
+
 profiling 与无 profiling 的计时分开运行：
 
 ```bash
-nsys profile --trace=cuda,nvtx,osrt --sample=none --cpuctxsw=none \
+nsys profile --trace=cuda,nvtx --sample=none --cpuctxsw=none \
+  --cuda-graph-trace=node --trace-fork-before-exec=true \
   --capture-range=cudaProfilerApi --capture-range-end=stop \
   -o data/results/slimkv-decode \
   python -m tools.profile_fa2 --mode model --phase decode \
   --model_name_or_path /path/to/checkpoint-2000 \
   --samples_jsonl /path/to/samples.jsonl --sample_index 2 \
-  --output_dir data/results/slimkv-decode-data
+  --decode_variant graph --output_dir data/results/slimkv-decode-data
 ```
 
 `--phase prefill` 采集 prefill；`--mode capture` 保存第 0、2、28 层真实的 raw/latent Q/K/V、LSE 和输出。对其中一个 case 使用 NCU：
@@ -107,6 +112,8 @@ ncu --nvtx --nvtx-include 'kernel_probe/' \
 ```
 
 GPU 融合算子的独立验证入口为 `python -m tools.validate_decode_ops --output data/results/decode-ops.json`。Nsys/NCU 会增加运行开销；它们的 duration 用于定位问题，正式性能使用前述独立 benchmark 中位数。
+
+`profile_fa2 --decode_variant legacy/fast/graph` 分别采集三种 B1 路径，Graph 模式仍只采预热后的 decode。这里不额外启用 OS runtime 或 CUDA 显存事件；node 级追踪用于展开 Graph 的内部 kernel，也会增加开销。Graph 内的 MLP 不会重新执行 Python NVTX wrapper，因此没有单独 MLP range 不代表计算被删除。B1 状态切换和 Graph replay 的 GPU 验证入口为 `python -m tools.validate_b1_decode --output data/results/b1-validation.json`；`--quick` 只测 BF16，适合 compute-sanitizer memcheck。
 
 ## NIAH 与其他任务
 

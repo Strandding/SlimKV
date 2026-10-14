@@ -89,6 +89,7 @@ class Memory(torch.nn.Module):
         self.all_input_ids = None
         self.all_attention_mask = None
         self.all_labels = None
+        self._input_storage_device = self._cpu
 
         # NOTE: will be reset in prepare()
         self.beacon_skip_first = None
@@ -162,17 +163,19 @@ class Memory(torch.nn.Module):
 
         # accumulate input_ids
         if self.all_input_ids is None:
-            self.all_input_ids = input_ids.cpu()
+            self.all_input_ids = input_ids.to(self._input_storage_device)
         else:
-            self.all_input_ids = torch.cat([self.all_input_ids, input_ids.cpu()], dim=1)
+            self.all_input_ids = torch.cat([self.all_input_ids.to(self._input_storage_device),
+                                            input_ids.to(self._input_storage_device)], dim=1)
 
         # accumulate attention_mask
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids, device=torch.device("cpu"))
         if self.all_attention_mask is None:
-            self.all_attention_mask = attention_mask.cpu()
+            self.all_attention_mask = attention_mask.to(self._input_storage_device)
         else:
-            self.all_attention_mask = torch.cat([self.all_attention_mask, attention_mask.cpu()], dim=1)
+            self.all_attention_mask = torch.cat([self.all_attention_mask.to(self._input_storage_device),
+                                                 attention_mask.to(self._input_storage_device)], dim=1)
 
         # accumulate labels if exisits
         if labels is not None:

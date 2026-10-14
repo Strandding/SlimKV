@@ -164,6 +164,35 @@ LongBench-v1 原八条样本上，融合前后全部生成 token 相同；FA2 �
 
 H20 原始 `.nsys-rep`、SQLite、五个 `.ncu-rep` 和 metrics CSV、真实 kernel 输入、logits、immutable source_baseline/source_optimized/source_abba 与所有预测保存在 `data/results/fa2_profile_20261014/`。本机 `/data/workspace/slimkv_analysis/fa2_profile_20261014/` 保存源码/小文件 SHA receipt、独立评分与计时审核、tensor 审核和 profiler 汇总；大型报告及 tensor 留在 H20。GPU 队列均正常结束、占卡恢复。构建及 profiling 命令见 [评测说明](evaluation.md)。
 
+## B1 GPU bookkeeping 与局部 CUDA Graph（2026-10-14）
+
+在上一轮融合 decoder 基础上，继续降低单请求 decode 的 CPU 调度开销。默认的 `beacon_decode_fast=true` 在兼容 B1 latent FA2 decode 中保留 GPU 输入历史，使用 CPU 已知的 Beacon 插入计划维护角色/raw 索引，预分配 position/role/index buffer，Q2 embedding 用固定 slice；省掉 token 的 CPU 往返和动态 nonzero。输入 padding 仍验证，prefill/训练/多 token 和 attention 诊断保留普通路径。持久 KV 仍按实际维度保存，KV 本身的 cat/动态分配尚未全部改为预分配。
+
+可选 `beacon_decode_graph=true` 对每层 input norm 和 attention 后 residual、post-norm、MLP、residual 两段使用 CUDA Graph；Q1/Q2 两种形状分别 capture。它减少 CPU 单算子发射，attention 与 cache 更新仍走 eager；并非整个生成循环的 Graph。CPU/梯度路径回退，完整 hidden states/attention 诊断停用 Graph，改变模型 dtype/device 会清除缓存。默认关闭，需要显式启用。
+
+同一 H20、同一 f4 BF16 checkpoint/FA2 2.8.3/Torch 2.11、标准 FA2 prefill，复用前轮固定输入 token。五模式正序＋反序、两轮、各模式四次中位数，两条输入共40次测量；每次64生成含首个 prefill token＋63 decode。首次 Graph capture 包含在预热，不在测量区间。
+
+| 输入 token | 上轮融合 FA2（旧 bookkeeping，ms/token） | GPU bookkeeping | bookkeeping＋局部 Graph | 相对旧路径耗时减少 |
+|---|---:|---:|---:|---:|
+| 4009 | 24.772 | 24.263 | 18.381 | 25.80% |
+| 6194 | 24.671 | 24.227 | 18.671 | 24.32% |
+
+bookkeeping 单独降低1.80%–2.06%，主要收益来自 Graph。当前同模型完整缓存标准FA2对照为26.343/26.397ms/token；Graph模式低30.22%/29.27%。当前两输入结果不代表其他 batch、checkpoint、上下文或完整 benchmark 的收益。原始记录包含4009token第二轮后段的延迟波动，保留全部样本、使用预先确定的四次中位数，不删除慢样本。
+
+Graph 在首次预热结束时，相对已预热 bookkeeping 路径增加 live CUDA allocation 540,804,096bytes（约515.75MiB），主要包括图持有的工作区；KV物理字节不变。所有正式计时模式都保留这批 Graph，因此同模型模式间的峰值记录不能当作独立 Graph 显存成本对照。Graph首次capture的启动开销、图工作区的共享、持久KV缓存预分配仍有后续空间。
+
+另行 Nsys 2025.3.1 采集16步decode，按用户建议仅trace cuda,nvtx、关闭CPU采样/上下文切换，cuda-graph-trace=node，不额外采OSRT/显存事件。两臂使用相同采集参数：
+
+- 独立kernel launch API次数25,356→12,889，加上1,024次Graph replay（每步每层两段）；GPU kernel数25,356→25,177，变化很小，改善主要来自提交方式。
+- kernel时间区间取并集：139.79→135.74ms，GPU时间跨度574.10→434.59ms，kernel忙碌比例24.35%→31.23%。这些是profiling诊断值，不是SM算力利用率或正式ms/token；CPU空隙仍存在。
+- stream synchronize124→20；8字节D2H32→0、8字节H2D32→0。仍有每步输入padding检查和Graph输入buffer的设备内copy。全部kernel能关联到CPU API/NVTX；Graph内MLP不重新执行Python wrapper，不能将MLP range缺失解释为MLP计算消失。
+
+H20实际28项CPU回归通过；GPU三个dtype（FP32/BF16/FP16）各42次模型调用，每次旧/fast/Graph三臂逐位相同，覆盖Beacon插入、窗口rollover、multi-token恢复、reset、hidden-state诊断、dtype切换清图和梯度fallback；BF16 quick compute-sanitizer memcheck0errors。两条真实输入各17×128256 logits，三FA2路径在独立CPU读取实际保存文件后全部逐位相同/max0。LongBench-v1原8条样本三FA2路径及前轮生成token全部一致，分数仍为Qasper21.88/HotpotQA100/MultiFieldQA-en40.28/LCC75，reconstruct的Qasper23.49保留，不宣称所有浮点路径一致。
+
+早期source_v1验证器误用低精度LSE，修正为FA2实际FP32约定；source_v1b测试launcher误将复用扩展路径改为不存在的build_v1b。两次均正常失败退出、日志和源码保留，未作为正式性能结果。最终source_v2完整套件EXIT0，现有320维扩展、训练权重不改，GPU占卡已恢复。
+
+H20原始报告、SQLite、PT、全部计时/预测/source_v1/v1b/v2 manifest在`data/results/b1_decode_20261014/`；本机`/data/workspace/slimkv_analysis/b1_decode_20261014/`保存独立计时/评分/tensor审核及小文件SHAreceipt，原始Nsys报告另放`nsys_reports/`。复现命令见[评测说明](evaluation.md)。
+
 ## 待处理问题
 
 以下问题仍待处理：

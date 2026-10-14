@@ -155,6 +155,14 @@ class ModelArgs:
         default=None,
         metadata={'help': 'Llama3 decode backend: reconstruct (default) or inference-only latent FA2.'},
     )
+    beacon_decode_fast: Optional[bool] = field(
+        default=None,
+        metadata={'help': 'Use GPU input bookkeeping and fixed-position metadata for B1 latent FA2 decode.'},
+    )
+    beacon_decode_graph: Optional[bool] = field(
+        default=None,
+        metadata={'help': 'Use inference CUDA Graphs for fixed-shape B1 decode layer operations.'},
+    )
     beacon_stride: Optional[int] = field(
         default=None,
         metadata={'help': 'The stride of the sliding window.'}

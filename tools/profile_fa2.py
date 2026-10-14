@@ -20,6 +20,7 @@ def main():
     p.add_argument('--attn_impl', default='flash_attention_2')
     p.add_argument('--phase', choices=['prefill', 'decode'], default='decode')
     p.add_argument('--decode_steps', type=int, default=16)
+    p.add_argument('--decode_variant', choices=['legacy', 'fast', 'graph'], default='fast')
     p.add_argument('--case_file')
     a = p.parse_args()
     if a.source_dir:
@@ -71,6 +72,8 @@ def main():
         model_name_or_path=a.model_name_or_path, enable_beacon=True,
         dtype='bf16', attn_impl=a.attn_impl, chat_template='llama-3',
         beacon_cache_mode='latent', beacon_decode_backend='fa2',
+        beacon_decode_fast=a.decode_variant != 'legacy',
+        beacon_decode_graph=a.decode_variant == 'graph',
         beacon_ratio=[8], beacon_ratio_mix='sequence'), device='cuda:0')
     model.eval()
     sample = [json.loads(x) for x in Path(a.samples_jsonl).read_text().splitlines()][a.sample_index]
