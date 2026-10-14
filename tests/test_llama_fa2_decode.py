@@ -24,6 +24,26 @@ def reference_forward(q, k, v, scale, causal=False):
 
 
 class LatentDecodeTest(unittest.TestCase):
+    def test_batched_rows_match_independent_sequences_across_windows(self):
+        torch.set_num_threads(1)
+        for batch in [2, 4, 8]:
+            torch.manual_seed(42)
+            slow = make_model(beacon_decode_backend='fa2', beacon_decode_fast=False)
+            fast = copy.deepcopy(slow)
+            fast.config.beacon_decode_fast = True
+            singles = [copy.deepcopy(fast) for _ in range(batch)]
+            offsets = torch.arange(batch)[:, None] * 3
+            calls = [(torch.arange(17)[None] + offsets) % 64]
+            calls += [(torch.tensor([[i]]) + offsets) % 64 for i in range(18, 37)]
+            with torch.inference_mode(), patch('slimkv.llama3.fa2_decode.flash_forward', side_effect=reference_forward) as kernel:
+                for ids in calls:
+                    a, b = slow(input_ids=ids), fast(input_ids=ids)
+                    expected = torch.cat([model(input_ids=ids[row:row + 1]).logits for row, model in enumerate(singles)])
+                    torch.testing.assert_close(a.logits, b.logits, atol=0, rtol=0)
+                    torch.testing.assert_close(b.logits, expected, atol=3e-6, rtol=2e-5)
+                    self.assertEqual(b.logits.shape[0], batch)
+                self.assertTrue(any(x.args[0].shape[0] == batch for x in kernel.call_args_list))
+
     def test_fast_metadata_matches_legacy_across_rollover_and_chunk_resume(self):
         torch.set_num_threads(1)
         torch.manual_seed(42)

@@ -77,7 +77,8 @@ class LlamaMemory(Memory):
     def prepare(self, input_ids, attention_mask, labels, skip_first=None, skip_last=None):
         self._fast_decode_active = (
             not self.training and labels is None and input_ids is not None
-            and input_ids.shape == (1, 1) and self.latent_cache_active and self.finish
+            and input_ids.ndim == 2 and input_ids.shape[1] == 1
+            and self.latent_cache_active and self.finish
             and self._cache_decode_backend == 'fa2'
             and getattr(self.config, 'beacon_decode_fast', True)
             and getattr(self.config, '_slimkv_decode_fast_step', False)
@@ -115,7 +116,7 @@ class LlamaMemory(Memory):
         token = self.all_input_ids[:, -1:]
         if size:
             # Decode inserts at most one Beacon, immediately after the raw token.
-            token = torch.cat([token, token.new_full((1, 1), self.config.vocab_size)], dim=1)
+            token = torch.cat([token, token.new_full((token.shape[0], 1), self.config.vocab_size)], dim=1)
         if self._decode_role_buffer is None:
             capacity = 2 * self.config.beacon_window + 2
             self._decode_role_buffer = torch.zeros(capacity, dtype=torch.long, device=token.device)
@@ -140,7 +141,7 @@ class LlamaMemory(Memory):
         if self._decode_positions is None or self._decode_positions.numel() < length:
             capacity = max(4096, 1 << (length - 1).bit_length())
             self._decode_positions = torch.arange(capacity, dtype=torch.long, device=token.device)
-        positions = self._decode_positions[:length].unsqueeze(0)
+        positions = self._decode_positions[:length].unsqueeze(0).expand(token.shape[0], -1)
         self._beacon_indices = indices
         self._fast_window_roles = self._decode_bool_buffer[:count]
         self._fast_window_raw_indices = self._decode_raw_indices[:previous_raw + 1]

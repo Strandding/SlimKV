@@ -12,6 +12,7 @@ def main():
     p.add_argument('--extension_dir', required=True)
     p.add_argument('--output', required=True)
     p.add_argument('--quick', action='store_true')
+    p.add_argument('--batch_sizes', type=int, nargs='+', help='Focused width-320 batch scaling correctness cases.')
     args = p.parse_args()
     import torch
     sys.path.insert(0, args.extension_dir)
@@ -20,7 +21,10 @@ def main():
     rows = []
     cases = [(1, 1, 1, 32, 1, False, 1), (1, 2, 1, 32, 1, True, 1),
              (1, 2, 129, 32, 1, True, 3), (2, 1, 257, 8, 2, False, 3)]
-    if not args.quick:
+    if args.batch_sizes:
+        cases = [(b, q, n, 32, 1, q == 2, 0)
+                 for b in args.batch_sizes for q in [1, 2] for n in [1, 129, 768]]
+    elif not args.quick:
         cases += [(b, q, n, h, hk, causal, splits)
                   for b in [1, 2] for q in [1, 2] for n in [63, 128, 1027, 2048]
                   for h, hk in [(32, 1), (8, 2)]

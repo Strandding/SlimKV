@@ -157,11 +157,11 @@ class ModelArgs:
     )
     beacon_decode_fast: Optional[bool] = field(
         default=None,
-        metadata={'help': 'Use GPU input bookkeeping and fixed-position metadata for B1 latent FA2 decode.'},
+        metadata={'help': 'Use GPU input bookkeeping and fixed-position metadata for aligned latent FA2 decode batches.'},
     )
     beacon_decode_graph: Optional[bool] = field(
         default=None,
-        metadata={'help': 'Use inference CUDA Graphs for fixed-shape B1 decode layer operations.'},
+        metadata={'help': 'Use inference CUDA Graphs for fixed-shape decode layer operations.'},
     )
     beacon_stride: Optional[int] = field(
         default=None,

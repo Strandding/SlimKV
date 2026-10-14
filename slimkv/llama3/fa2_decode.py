@@ -70,7 +70,7 @@ def eligible(attention, hidden_states, past_key_value, output_attentions):
             and getattr(attention.config, 'beacon_decode_backend', 'reconstruct') == 'fa2'
             and isinstance(past_key_value[0], ReconstructionCache)
             and not attention.training and not output_attentions
-            and hidden_states.shape[0] == 1 and hidden_states.shape[1] in (1, 2))
+            and hidden_states.shape[0] > 0 and hidden_states.shape[1] in (1, 2))
 
 
 def decode(attention, hidden, position_ids, past_key_value, forward=None):
@@ -127,7 +127,7 @@ def decode(attention, hidden, position_ids, past_key_value, forward=None):
             if pk.window_raw_indices is not None:
                 positions.append(pk.window_raw_indices + sink_len + history_len)
             positions.append(position_ids[0, -length:][:1])
-            raw_positions = torch.cat(positions).unsqueeze(0)
+            raw_positions = torch.cat(positions).unsqueeze(0).expand(batch, -1)
             q, raw_k = rotate(q, position_ids[:, -length:]), rotate(raw_k, raw_positions)
     else:
         # Other RoPE variants can add query temperature or change frequencies.
@@ -136,7 +136,7 @@ def decode(attention, hidden, position_ids, past_key_value, forward=None):
         if pk.window_raw_indices is not None:
             positions.append(pk.window_raw_indices + sink_len + history_len)
         positions.append(position_ids[0, -length:][:1])
-        raw_positions = torch.cat(positions).unsqueeze(0)
+        raw_positions = torch.cat(positions).unsqueeze(0).expand(batch, -1)
         rope_positions = torch.cat([raw_positions, position_ids[:, -length:]], dim=1)
         dummy = new_k.new_zeros(batch, attention.num_key_value_heads, length, attention.head_dim)
         q, rotated = rope(q, torch.cat([raw_k, dummy], dim=2), rope_positions)

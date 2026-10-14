@@ -21,6 +21,7 @@ def main():
     p.add_argument('--phase', choices=['prefill', 'decode'], default='decode')
     p.add_argument('--decode_steps', type=int, default=16)
     p.add_argument('--decode_variant', choices=['legacy', 'fast', 'graph'], default='fast')
+    p.add_argument('--batch_size', type=int, default=1)
     p.add_argument('--case_file')
     a = p.parse_args()
     if a.source_dir:
@@ -76,10 +77,13 @@ def main():
         beacon_decode_graph=a.decode_variant == 'graph',
         beacon_ratio=[8], beacon_ratio_mix='sequence'), device='cuda:0')
     model.eval()
+    torch.cuda.reset_peak_memory_stats()
     sample = [json.loads(x) for x in Path(a.samples_jsonl).read_text().splitlines()][a.sample_index]
     data = process_longbench({'input': [sample['input']], 'context': [sample['context']]},
                              [sample['source_index']], tokenizer, 'llama-3', sample['task'])
-    ids = torch.tensor([data['input_ids'][0]], device='cuda')
+    if a.batch_size < 1:
+        p.error('batch_size must be positive')
+    ids = torch.tensor([data['input_ids'][0]], device='cuda').repeat(a.batch_size, 1)
     mask = torch.ones_like(ids)
     active = {'layer': -1, 'profiling': False}
     saved = {}
@@ -158,7 +162,9 @@ def main():
         cases.append({'name': name, 'file': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
                       'shape_qkv': [list(case[n].shape) for n in ('q', 'k', 'v')], 'causal': case['causal']})
     record = {'complete': True, 'args': vars(a), 'input_tokens': ids.shape[1], 'counts': dict(counts),
-              'cases': cases, 'torch': torch.__version__, 'gpu': torch.cuda.get_device_name(0)}
+              'cases': cases, 'torch': torch.__version__, 'gpu': torch.cuda.get_device_name(0),
+              'cuda_allocated_after_decode': torch.cuda.memory_allocated(),
+              'cuda_peak_allocated': torch.cuda.max_memory_allocated()}
     (out/'profile.json').write_text(json.dumps(record, indent=2))
     print('FA2_MODEL_PROFILE_COMPLETE', flush=True)
 

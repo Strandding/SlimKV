@@ -2,6 +2,7 @@
 import argparse
 import copy
 import json
+from itertools import product
 from pathlib import Path
 import sys
 
@@ -11,6 +12,7 @@ def main():
     parser.add_argument('--source_dir')
     parser.add_argument('--output', required=True)
     parser.add_argument('--quick', action='store_true')
+    parser.add_argument('--batch_sizes', type=int, nargs='+', default=[1])
     args = parser.parse_args()
     root = Path(args.source_dir or Path(__file__).resolve().parents[1])
     sys.path.insert(0, str(root))
@@ -35,16 +37,17 @@ def main():
     torch.manual_seed(42)
     torch.set_num_threads(1)
     records = []
-    for dtype in ([torch.bfloat16] if args.quick else [torch.float32, torch.bfloat16, torch.float16]):
+    for batch, dtype in product(args.batch_sizes, [torch.bfloat16] if args.quick else [torch.float32, torch.bfloat16, torch.float16]):
         legacy = make_model(beacon_decode_backend='fa2', beacon_decode_fast=False).to(device='cuda', dtype=dtype)
         fast = copy.deepcopy(legacy)
         fast.config.beacon_decode_fast = True
         graphed = copy.deepcopy(fast)
         graphed.config.beacon_decode_graph = True
-        calls = [torch.arange(17, device='cuda')[None]]
-        calls += [torch.tensor([[i]], device='cuda') for i in range(18, 39)]
-        calls += [torch.tensor([[40, 41, 42]], device='cuda')]
-        calls += [torch.tensor([[i]], device='cuda') for i in range(43, 62)]
+        offsets = torch.arange(batch, device='cuda')[:, None] * 3
+        calls = [(torch.arange(17, device='cuda')[None] + offsets) % 64]
+        calls += [(torch.tensor([[i]], device='cuda') + offsets) % 64 for i in range(18, 39)]
+        calls += [(torch.tensor([[40, 41, 42]], device='cuda') + offsets) % 64]
+        calls += [(torch.tensor([[i]], device='cuda') + offsets) % 64 for i in range(43, 62)]
         with torch.inference_mode(), patch('slimkv.llama3.fa2_decode.flash_forward', side_effect=forward):
             for i, ids in enumerate(calls):
                 expected = legacy(input_ids=ids).logits
@@ -57,12 +60,12 @@ def main():
             graph_count = sum(len(x._decode_graphs.entries) for x in graphed.model.layers)
             assert graph_count == 8, graph_count
             # Diagnostics requesting all hidden states keep ordinary Tensor outputs.
-            graphed(input_ids=torch.tensor([[62]], device='cuda'), output_hidden_states=True)
+            graphed(input_ids=torch.full((batch, 1), 62, device='cuda'), output_hidden_states=True)
             graphed.to(dtype=dtype)
             assert all(x._decode_graphs is None for x in graphed.model.layers)
             for model in [legacy, fast, graphed]:
                 model.memory.reset()
-        records.append({'dtype': str(dtype), 'model_calls': len(calls), 'bitwise_equal': True, 'graphs': graph_count})
+        records.append({'batch': batch, 'dtype': str(dtype), 'model_calls': len(calls), 'bitwise_equal': True, 'graphs': graph_count})
         del legacy, fast, graphed
     # Gradient paths remain ordinary PyTorch, even with an existing graph cache.
     runner = DecodeGraphs()

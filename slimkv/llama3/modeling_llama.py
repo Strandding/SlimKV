@@ -1873,7 +1873,7 @@ class LlamaDecoderLayer(nn.Module):
 
         residual = hidden_states
         graph_step = (not self.training and hidden_states.is_cuda
-                      and hidden_states.shape[:2] in ((1, 1), (1, 2))
+                      and hidden_states.shape[0] > 0 and hidden_states.shape[1] in (1, 2)
                       and not output_attentions
                       and getattr(self.self_attn.config, '_slimkv_decode_graph_step', False)
                       and getattr(self.self_attn.config, 'beacon_decode_graph', False))
@@ -2195,7 +2195,7 @@ class LlamaModel(LlamaPreTrainedModel):
             attention_mask = additive_mask + causal[None, None, :, :]
 
         # BEACON: separately embed ordinal tokens and beacon tokens because ordinal tokens do not receive gradients
-        if (beacon_size == 1 and input_ids.shape == (1, 2)
+        if (beacon_size == 1 and input_ids.ndim == 2 and input_ids.shape[1] == 2
                 and getattr(self.config, '_slimkv_decode_step', False)
                 and getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2'
                 and getattr(self.config, 'beacon_decode_fast', True)):
@@ -2574,14 +2574,14 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
     def _beacon_forward(self, input_ids=None, attention_mask=None, **kwargs):
         decode_step = (not self.training and kwargs.get('labels') is None
-                       and input_ids is not None and input_ids.shape == (1, 1)
+                       and input_ids is not None and input_ids.ndim == 2 and input_ids.shape[1] == 1
                        and self.memory.all_input_ids is not None)
         if decode_step and getattr(self.config, 'beacon_decode_backend', 'reconstruct') == 'fa2':
             old_mask = self.memory.all_attention_mask
             if self.memory._decode_unpadded is None:
                 self.memory._decode_unpadded = not bool((old_mask == 0).any())
             if not self.memory._decode_unpadded or (attention_mask is not None and (attention_mask == 0).any()):
-                raise ValueError('FA2 latent decode currently requires unpadded batch size one.')
+                raise ValueError('FA2 latent decode requires an unpadded batch with aligned sequence lengths.')
         self.config._slimkv_decode_step = decode_step
         requested_attentions = kwargs.get('output_attentions')
         if requested_attentions is None:
