@@ -11,7 +11,7 @@
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e .
+python -m pip install -e . "huggingface_hub[cli]>=0.34,<1"
 python -m pip check
 python -m main.inference.infer --help
 ```

@@ -15,10 +15,10 @@
   <a href="#动态">动态</a> ·
   <a href="#概览">概览</a> ·
   <a href="#方法">方法</a> ·
-  <a href="#结果">结果</a> ·
-  <a href="#安装">安装</a> ·
-  <a href="#使用">使用</a> ·
-  <a href="#复现">复现</a> ·
+  <a href="#模型">模型</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#longbench-v1">LongBench-v1</a> ·
+  <a href="#decode-测速">测速</a> ·
   <a href="#引用">引用</a>
 </p>
 
@@ -31,194 +31,153 @@
 
 ## 动态
 
-- **2026-10-15:** 模型权重已上传至 [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv)。
-
-- **2026-10-14:** 已提供[推理](quickstart.md)、[训练](training.md)、[评测](evaluation.md)和[性能测试](benchmark.md)指南。
+- **2026-10-15:** Llama-3.1-8B 与 Qwen2.5-14B 的2×、4×、8×特征压缩权重已发布至 [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv)。
 - **2026-10-02:** 论文公开于 [arXiv](https://arxiv.org/abs/2610.02953)。
 
 ## 概览
 
-SlimKV 同时压缩 KV Cache 的 token 数量和特征维度，用于长上下文大模型推理。它通过训练紧凑的 Beacon 记忆和逐层自适应低秩 K/V 表示，在固定缓存预算下改善精度与显存之间的权衡。
-
-在 LongBench 上，SlimKV 在16×和32×压缩下优于所评测的基线，并在4×和8×压缩下保留超过96%的 Full KV 得分。128K上下文下，4× token / 4× 特征配置实现7.34×注意力 kernel 加速和3.38×端到端decode加速。
+SlimKV 同时压缩 KV Cache 的 token 数量和特征维度，用于长上下文大模型推理。它通过训练紧凑的 Beacon 记忆和逐层自适应低秩 K/V 表示实现联合压缩。
 
 ## 方法
 
-传统特征压缩通常需要先重建完整维度的 Key，再应用 RoPE。我们发现，去掉 key-side RoPE 对 Beacon Keys 的影响显著小于对 raw-token Keys 的影响。SlimKV 利用这种**位置不对称性**，在关闭 Beacon K-RoPE 的约束下训练低秩投影，同时保留 raw K 和所有 Q 的 RoPE，从而在 decode 中直接计算 latent-space attention，避免历史 Beacon K/V 的完整维度重建。
-
-<p align="center">
-  <img src="../assets/positional_asymmetry.svg" width="450" alt="K-RoPE 消融下的 LongBench 比较">
-</p>
-
-<p align="center"><em>去掉 raw-token K-RoPE 会造成显著退化，Beacon Keys 对此更不敏感。SlimKV 在无 Beacon K-RoPE 的约束下学习低秩记忆（Figure 2）。</em></p>
+传统特征压缩需要先重建原始维度的 Key，再应用 RoPE。Beacon Keys 对去除 key-side RoPE 的敏感度低于 raw-token Keys。SlimKV 利用这种位置不对称性，在关闭 Beacon K-RoPE 的条件下训练低秩 Beacon 投影，同时保留 raw-token Keys 和全部 Queries 的 RoPE。
 
 <p align="center">
   <img src="../assets/method.svg" width="1000" alt="SlimKV 方法概览">
 </p>
 
-SlimKV 将已完成的上下文窗口逐步压缩为 Beacon 记忆。Backbone 保持冻结，Beacon K/V 投影直接在目标低秩约束下训练。逐层 rank 根据各层低秩结构的差异分配容量，而不是给所有层相同维度。
+Prefill 在原始特征维度计算 attention，将完成的窗口存为压缩 Beacon K/V。Decode 可选择先重建再做 attention，或直接进行 latent-space attention，避免重建历史 Beacon K/V。Raw tail 和 sink 保留原始维度的 K/V。实验与结果见[论文](https://arxiv.org/abs/2610.02953)。
 
-Decode 时，attention scores 和 Value 聚合在缓存的 latent Beacon 状态上完成。Query 投影到 latent Key 空间，attention 输出通过 Value basis 映射回原始空间，因此无需重建历史 Beacon K/V。Raw tail 和 sink 仍保留完整维度缓存。
+## 模型
 
-## 结果
+| 基座 | 2× 特征压缩 | 4× 特征压缩 | 8× 特征压缩 |
+| --- | --- | --- | --- |
+| Llama-3.1-8B | [r2](https://huggingface.co/Zihant0513/SlimKV-Llama3.1-8B-r2) | [r4](https://huggingface.co/Zihant0513/SlimKV-Llama3.1-8B-r4) | [r8](https://huggingface.co/Zihant0513/SlimKV-Llama3.1-8B-r8) |
+| Qwen2.5-14B | [r2](https://huggingface.co/Zihant0513/SlimKV-Qwen2.5-14B-r2) | [r4](https://huggingface.co/Zihant0513/SlimKV-Qwen2.5-14B-r4) | [r8](https://huggingface.co/Zihant0513/SlimKV-Qwen2.5-14B-r8) |
 
-<table align="center">
-  <thead>
-    <tr>
-      <th align="center"><strong>16× / 32×</strong></th>
-      <th align="center"><strong>7.34×</strong></th>
-      <th align="center"><strong>3.38×</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center">高压缩比下领先的 LongBench 结果</td>
-      <td align="center">128K 注意力 kernel 加速</td>
-      <td align="center">128K 端到端 decode 加速</td>
-    </tr>
-  </tbody>
-</table>
+`r2`、`r4`、`r8` 表示特征压缩倍数，token 压缩比例在推理时选择。例如 r4 权重配合 token ratio 4 为 t4f4，名义联合压缩16×；配合 token ratio 8 为 t8f4，名义联合压缩32×。这些倍数描述 KV 压缩，不等于整个模型的显存减少倍数。
 
-### LongBench 平均分
+以下流程使用 **Llama-3.1-8B-r4**。下载内容包含基座、训练后的 Beacon 投影、配置和 tokenizer，无需另行下载或合并基座权重。Qwen 使用重建路径，详见[后端支持](implementation_status.md)。
 
-`f2`、`f4`、`f8` 分别表示 2×、4×、8× 特征压缩。16× 总压缩下，对应的 token 压缩为 8×、4×、2×；32× 下则为 16×、8×、4×。
+## 快速开始
 
-#### 16× 压缩
+以下命令在同一个已激活环境的终端中，从仓库根目录执行。FA2 安装示例面向单张 **H20/H100 类 SM90 GPU**，使用 Python 3.11 或3.12、兼容的 NVIDIA 驱动及 **CUDA 12.9 开发工具链（`nvcc`）**。r4 的 latent FA2 路径需要仓库中的320维扩展。其他硬件及 eager 用法见[安装指南](installation.md)。
 
-<div align="center">
-
-| 方法 | Llama-3.1-8B | Qwen2.5-14B |
-| :---: | :---: | :---: |
-| **Full KV (1×)** | **49.50** | **51.52** |
-| KVZip | 28.96 | 13.18 |
-| PALU | 18.92 | 27.70 |
-| SnapKV | 45.60 | 45.81 |
-| Activation Beacon | 45.30 | 44.15 |
-| SlimKV-f2 | 46.19 | **46.48** |
-| SlimKV-f4 | **46.36** | 46.23 |
-| SlimKV-f8 | 45.05 | 44.33 |
-
-</div>
-
-#### 32× 压缩
-
-<div align="center">
-
-| 方法 | Llama-3.1-8B | Qwen2.5-14B |
-| :---: | :---: | :---: |
-| **Full KV (1×)** | **49.50** | **51.52** |
-| KVZip | 9.40 | 5.12 |
-| PALU | 4.79 | 9.25 |
-| SnapKV | 43.24 | 42.28 |
-| Activation Beacon | 43.67 | 42.76 |
-| SlimKV-f2 | 42.91 | 44.66 |
-| SlimKV-f4 | **44.75** | **45.09** |
-| SlimKV-f8 | 43.93 | 44.69 |
-
-</div>
-
-平均分来自论文 Table 2，Full KV 为未压缩基线；压缩结果中的粗体标出各模型和压缩比下的最佳分数。
-
-<details>
-<summary>解码耗时加速比：32K–128K 上下文</summary>
-
-Llama-3.1-8B，A100 80GB，BF16，eager 执行。两项指标分别衡量注意力 kernel 耗时与每 token 端到端解码耗时。表中数值均为 **Full KV 耗时 / 对应方法耗时**，越大越快。Recon 为重建版本，SlimKV 为免重建 latent attention（Table 6）。
-
-#### 16× 压缩：4× token，4× 特征
-
-<div align="center">
-
-| 上下文 | Kernel · Recon | Kernel · SlimKV | 端到端 · Recon | 端到端 · SlimKV |
-| :---: | :---: | :---: | :---: | :---: |
-| 32K | 1.76× | **1.94×** | 1.13× | **1.22×** |
-| 64K | 2.81× | **3.81×** | 1.64× | **2.04×** |
-| 96K | 3.63× | **5.08×** | 2.13× | **2.63×** |
-| 128K | 5.34× | **7.34×** | 2.86× | **3.38×** |
-
-</div>
-
-#### 32× 压缩：8× token，4× 特征
-
-<div align="center">
-
-| 上下文 | Kernel · Recon | Kernel · SlimKV | 端到端 · Recon | 端到端 · SlimKV |
-| :---: | :---: | :---: | :---: | :---: |
-| 32K | 1.52× | **1.62×** | 1.15× | **1.23×** |
-| 64K | 2.35× | **2.54×** | 1.67× | **1.75×** |
-| 96K | 3.84× | **4.36×** | 2.60× | **2.82×** |
-| 128K | 4.92× | **6.09×** | 3.06× | **3.49×** |
-
-</div>
-
-</details>
-
-<details>
-<summary>4× / 8× 压缩的补充结果</summary>
-
-在较低压缩比下，SlimKV-f2 保留超过96%的 Full KV LongBench 得分。以下是 Table 4 的平均分。
-
-<div align="center">
-
-| 模型 | 压缩比 | KVZip | PALU | Activation Beacon | SlimKV-f2 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
-| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
-| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
-| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
-
-</div>
-
-</details>
-
-完整实验协议见[论文](https://arxiv.org/abs/2610.02953)，可运行的耗时与显存对照见[性能评测](benchmark.md)。
-
-## 安装
-
-使用 Python 3.11，先安装匹配硬件的 PyTorch，再执行：
+### 1. 安装
 
 ```bash
 git clone https://github.com/Strandding/SlimKV.git
 cd SlimKV
-python -m pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu129
+python -m pip install -e . "huggingface_hub[cli]>=0.34,<1" ninja packaging
+MAX_JOBS=2 python -m pip install flash-attn==2.8.3 --no-build-isolation
+
+git clone --depth 1 --branch v2.8.3 \
+  https://github.com/Dao-AILab/flash-attention.git .cache/flash-attention-v2.8.3
+git -C .cache/flash-attention-v2.8.3 submodule update --init csrc/cutlass
+python -m tools.build_fa2_decode \
+  --fa2_source .cache/flash-attention-v2.8.3 \
+  --output_dir .cache/fa2_decode_320 --jobs 2
+export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
 ```
 
-模型代码使用 Transformers 4.40.x，已验证4.40.2。Eager推理不需要 FlashAttention。训练依赖和可选 FA2 扩展见[安装说明](installation.md)。
+该扩展用于 SM90 BF16 推理。独立推理和评测脚本使用 Transformers 4.40.2，vLLM 使用单独环境。
 
-## 使用
+### 2. 下载权重
 
-从 [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv) 下载 checkpoint，或按[训练说明](training.md)自行训练。Checkpoint 需包含权重、配置和 tokenizer。
+```bash
+export MODEL_NAME_OR_PATH="$PWD/models/SlimKV-Llama3.1-8B-r4"
+hf download Zihant0513/SlimKV-Llama3.1-8B-r4 \
+  --local-dir "$MODEL_NAME_OR_PATH"
+```
+
+保留下载目录中的全部权重分片、分片索引、配置及 tokenizer。重复运行 `hf download` 会复用已有文件。新开终端后，重新激活 `.venv`，并再次设置 `MODEL_NAME_OR_PATH` 和 `SLIMKV_FA2_DECODE_EXTENSION_DIR`。
+
+### 3. 生成一条回答
 
 ```bash
 python -m main.inference.infer \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --prompt 'Explain why a KV cache helps language model inference.' \
   --max_new_tokens 32
 ```
 
-长上下文使用 `--prompt_file /path/to/context.txt`。示例从 checkpoint 读取 rank 和 Beacon 设置，在 cuda:0 上进行 BF16 greedy 推理。
+长上下文通过 `--prompt_file /path/to/context.txt` 传入 UTF-8 文件。CUDA 默认使用 BF16、原始维度 FA2 prefill、免重建 latent decode，并为满足条件的 B1 调用启用 Graph 和可选 decoder-tail 编译。Python API、eager 和重建路径见[推理指南](quickstart.md)。
 
-CUDA 上的 CLI 默认使用原始维度 FA2 prefill、免重建 latent decode、CUDA Graph 和可选的 decoder-tail 编译。`--no-beacon_decode_compile` 可关闭编译，`--attn_impl eager` 可选择不依赖 FlashAttention 的重建路径。训练和 prefill 在原始注意力维度计算。[快速开始](quickstart.md)提供 Python API 和后端选项。
+## LongBench-v1
 
-单卡 Llama 还提供实验性的 [vLLM 接入](vllm.md)，支持引擎管理的分页 KV 存储与连续请求调度。
+### 下载数据
 
-## 复现
+```bash
+export EVAL_DATA="$PWD/data/datasets/longbench"
+python -m tools.data.download_longbench --output_dir "$EVAL_DATA"
+```
 
-从仓库根目录启动，模型、数据和输出路径由 [.env.example](../../.env.example) 中的环境变量配置。
+下载器获取官方 v1 压缩包并提取所选子集的 JSONL 文件，仓库不包含数据文件。
 
-<div align="center">
+### 先用四条样本检查流程
 
-| 阶段 | 入口 | 说明 |
-| :---: | :---: | :---: |
+```bash
+TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 BATCH_SIZE=1 \
+RESULT_DIR=quickstart-t4f4 \
+  bash scripts/evaluation/eval_longbench_slimkv.sh
+```
+
+该命令评测每个所选子集的前两条样本。流程跑通后，再执行下面的完整英文/代码子集评测。
+
+### 运行 t4f4 或 t8f4
+
+```bash
+BEACON_RATIO=4 RESULT_DIR=longbench-t4f4 \
+  bash scripts/evaluation/eval_longbench_slimkv.sh
+
+BEACON_RATIO=8 RESULT_DIR=longbench-t8f4 \
+  bash scripts/evaluation/eval_longbench_slimkv.sh
+```
+
+默认评测14个英文/代码子集，使用 BF16 greedy decode，**最终聊天模板处理后的输入上限为31,500 token**，超长输入保留首尾。训练语料只有中文，因此过滤中文子集；另行排除 `passage_count` 和 `passage_retrieval_en`。Batch 上限32，仅将等长输入组成 batch，不做 padding，可根据显存调整 `BATCH_SIZE` 和 `MAX_BATCH_TOKENS`。
+
+输出位于 `data/results/longbench/<RESULT_DIR>/`：`scores.json` 保存得分，`task_timings.csv` 保存每个子集的耗时，`progress.json` 保存进度。保持配置一致并设置 `LOAD_RESULT=True` 可以复用已完成子集。任务选择、输出定义和后端选项见[评测指南](evaluation.md)。
+
+## Decode 测速
+
+测速无需下载 LongBench，脚本会构造并保存合成输入。使用前面下载的权重和已导出的扩展路径。
+
+先测试一组32K输入、t4f4：
+
+```bash
+CONTEXT_LENGTHS=32768 BEACON_RATIOS=4 REPETITIONS=1 \
+OUTPUT_DIR=data/results/speed-smoke \
+  bash scripts/benchmark/benchmark_context_decode.sh
+```
+
+再测试默认的 **32K、64K、96K、128K** 输入及 **t4f4、t8f4** 两种配置：
+
+```bash
+OUTPUT_DIR=data/results/speed-32k-128k \
+  bash scripts/benchmark/benchmark_context_decode.sh
+```
+
+每个输入长度都对比 Full KV、重建和直接 latent attention，统一 **B1、BF16、FA2**，采用相同的预分配、整模型 Graph 和可选编译策略。每轮在 prefill 后测量 **128次 decode forward**，各方法使用相同输入及后续 token。完整预设先预热一次，再测四次取中位数，decode 计时排除 prefill、编译和 Graph 构建。测速前会对照各自参考路径检查优化后的 logits 和最终 KV。
+
+分别保存**attention GPU kernel 耗时**和**端到端 decode 耗时**，重建路径的前者包含每一步 KV 重建及 RoPE。`results.json` 包含时间、tokens/s 与数值检查，`summary.csv` 包含各模式的中位数。每次测速使用新的 `OUTPUT_DIR`。Full KV、参考快照及 Graph 工作区都需要额外显存，显存不足时减少 `CONTEXT_LENGTHS`。指标边界、运行开关及 profiling 见[测速指南](benchmark.md)。
+
+生成的输出保存在已忽略的 `data/results/` 下。仓库提供实验代码和操作说明，实验结果统一见[论文](https://arxiv.org/abs/2610.02953)。
+
+## 训练与其他工具
+
+| 任务 | 入口 | 指南 |
+| --- | --- | --- |
 | 低秩初始化 | `python -m main.conversion.convert_kv_lowrank --help` | [训练](training.md) |
 | 预训练 | `bash scripts/training/train_llama_8B.sh` | [训练](training.md) |
 | 微调 | `bash scripts/training/finetune_llama_8B.sh` | [训练](training.md) |
-| LongBench-v1 | `bash scripts/evaluation/eval_longbench_slimkv.sh` | [评测](evaluation.md) |
-| NIAH | `python -m main.evaluation.eval_needle --help` | [评测](evaluation.md) |
-| 32K–128K decode 测速 | `bash scripts/benchmark/benchmark_context_decode.sh` | [性能评测](benchmark.md) |
+| Needle-in-a-Haystack | `python -m main.evaluation.eval_needle --help` | [评测](evaluation.md) |
+| vLLM 推理 | `python -m main.inference.infer_vllm --help` | [vLLM](vllm.md) |
 
-</div>
-
-实验协议与所需资源见[复现指南](reproducibility.md)，源码导航见[模块说明](structure.md)，缓存与注意力路径见[后端支持](implementation_status.md)。
+其他细节见[复现说明](reproducibility.md)、[源码导航](structure.md)和[后端支持](implementation_status.md)。
 
 ## 引用
 

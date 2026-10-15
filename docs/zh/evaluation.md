@@ -4,12 +4,23 @@
 
 Llama3 预设评测 14 个英文及代码子集。训练语料只有中文，因此排除中文评测子集。Synthetic 子集 `passage_count` 和 `passage_retrieval_en` 单独排除，保留 `lcc` 和 `repobench-p`。设置 `TASKS=all` 可评测 LongBench-v1 全部子集。
 
+## 下载模型
+
+按[安装指南](installation.md)准备环境，在仓库根目录下载默认 f4 权重：
+
+```bash
+export MODEL_NAME_OR_PATH="$PWD/models/SlimKV-Llama3.1-8B-r4"
+hf download Zihant0513/SlimKV-Llama3.1-8B-r4 \
+  --local-dir "$MODEL_NAME_OR_PATH"
+```
+
 ## 准备数据
 
 下载官方 [LongBench-v1 压缩包](https://huggingface.co/datasets/zai-org/LongBench/tree/main)，提取所选子集：
 
 ```bash
-python -m tools.data.download_longbench --output_dir data/datasets/longbench
+export EVAL_DATA="$PWD/data/datasets/longbench"
+python -m tools.data.download_longbench --output_dir "$EVAL_DATA"
 ```
 
 工具固定数据 revision `5e628be450b7e67fb7ae6e201bd6d8f7056f7672`，将压缩包和各任务文件的 SHA256 保存到 `dataset_manifest.json`。已有 `data.zip` 时，添加 `--archive /path/to/data.zip`，无需下载。不会覆盖内容不同的已有任务文件。使用 v1 JSONL，不混用 LongBench-E 或 LongBench-v2。
@@ -19,8 +30,8 @@ python -m tools.data.download_longbench --output_dir data/datasets/longbench
 使用包含权重、config 和 tokenizer 的 Llama3 SlimKV checkpoint。特征 rank 从 checkpoint 读取。f4 权重搭配 `BEACON_RATIO=4` 即 t4f4，标称 token-feature 压缩比为 16×。
 
 ```bash
-MODEL_NAME_OR_PATH=/path/to/slimkv-f4-checkpoint \
-EVAL_DATA=/path/to/longbench \
+MODEL_NAME_OR_PATH="$MODEL_NAME_OR_PATH" \
+EVAL_DATA="$EVAL_DATA" \
 CUDA_VISIBLE_DEVICES=0 \
 bash scripts/evaluation/eval_longbench_slimkv.sh
 ```
@@ -55,8 +66,8 @@ Batch 上限为 32。仅将最终 token 长度完全相同的输入合批，不 
 评测两个子集各自的前两条：
 
 ```bash
-MODEL_NAME_OR_PATH=/path/to/slimkv-f4-checkpoint \
-EVAL_DATA=/path/to/longbench \
+MODEL_NAME_OR_PATH="$MODEL_NAME_OR_PATH" \
+EVAL_DATA="$EVAL_DATA" \
 TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 RESULT_DIR=smoke \
 bash scripts/evaluation/eval_longbench_slimkv.sh
 ```

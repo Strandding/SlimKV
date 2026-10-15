@@ -1,15 +1,20 @@
 # Quick start
 
-[中文](zh/quickstart.md)
-## Required checkpoint
+[Chinese](zh/quickstart.md)
 
-Use a local trained SlimKV checkpoint with `config.json`, the complete `.safetensors`/PyTorch weight shards, tokenizer files, and any shard index. Checkpoints retain `beacon_*` fields and tensor names. Model weights are not distributed with this repository. Use an existing SlimKV checkpoint or follow [training](training.md).
+Follow [installation](installation.md) to prepare the environment and required FA2 extension, then download the full checkpoint from the repository root:
 
-The minimal command from the repository root is:
+```bash
+export MODEL_NAME_OR_PATH="$PWD/models/SlimKV-Llama3.1-8B-r4"
+hf download Zihant0513/SlimKV-Llama3.1-8B-r4 \
+  --local-dir "$MODEL_NAME_OR_PATH"
+```
+
+This includes the backbone, trained Beacon projections, config and tokenizer; no base-model merge is needed. Other checkpoints are in the [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv). In the same activated shell, run:
 
 ```bash
 python -m main.inference.infer \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --prompt 'Explain why a KV cache helps language model inference.' \
   --max_new_tokens 32
 ```
@@ -21,11 +26,12 @@ Use `--prompt_file /path/to/context.txt` for a long context. The file is used as
 ## Python API
 
 ```python
+import os
 import torch
 from slimkv import ModelArgs, apply_chat_template, get_model_and_tokenizer
 
 model, tokenizer = get_model_and_tokenizer(
-    ModelArgs(model_name_or_path='/path/to/slimkv-checkpoint',
+    ModelArgs(model_name_or_path=os.environ['MODEL_NAME_OR_PATH'],
               enable_beacon=True, dtype='bf16', attn_impl='flash_attention_2',
               beacon_cache_mode='latent', beacon_decode_backend='latent',
               beacon_decode_fast=True, beacon_decode_graph=True,
@@ -54,7 +60,7 @@ For eager decode over compressed Beacon K/V, no FlashAttention installation is n
 
 ```bash
 python -m main.inference.infer \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --attn_impl eager --beacon_cache_mode latent --beacon_decode_backend latent \
   --prompt_file /path/to/context.txt
 ```
@@ -64,7 +70,7 @@ For FlashAttention, install FA2 and build any required width-320 extension:
 ```bash
 export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
 python -m main.inference.infer \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --attn_impl flash_attention_2 \
   --beacon_cache_mode latent --beacon_decode_backend latent \
   --beacon_decode_graph --prompt_file /path/to/context.txt
@@ -86,7 +92,7 @@ Tests use small CPU models, exercise prefill/decode/rollover/cache/checkpoint co
 
 ```bash
 python -m main.inference.infer \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --no-beacon_decode_compress --prompt_file /path/to/context.txt
 ```
 

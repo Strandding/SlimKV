@@ -1,6 +1,6 @@
 # vLLM integration
 
-[中文](zh/vllm.md)
+[Chinese](zh/vllm.md)
 
 SlimKV can use vLLM's scheduler and KV allocator on a single GPU with a converted BF16 Llama checkpoint. Prefill retains the original attention dimensions. Decode uses the existing reconstruction-free FA2 implementation with the checkpoint's actual per-layer K/V ranks.
 
@@ -66,13 +66,3 @@ vLLM owns the physical pages, block tables and request lifetimes. Each layer has
 Each scheduled request restores transient SlimKV workspaces from its block tables, executes the original B1 attention math, writes new KV values back and releases the request KV views. Completed requests return their pages to vLLM. Multiple requests can enter and leave a running batch, and prefill can share a scheduling step with other requests' decode. The current implementation executes those requests sequentially within each step. It does not yet provide a fused batch or an attention kernel that directly reads paged KV.
 
 The validated configuration is single-device Llama, BF16, interleaved full-coverage Beacons, nonoverlapping windows and at most one sink token. Keep prefix caching, speculative decoding, quantization and chunked prefill disabled. Prompt log-probability output, tensor/pipeline parallelism and Qwen are not supported by this entry point.
-
-## Validation and performance
-
-On H20 with the original f4 checkpoint and t8 compression, both 4,009- and 6,194-token inputs matched the standalone implementation bitwise across prefill and 63 fixed decode steps. Eight fixed LongBench-v1 samples also retained identical generated tokens and official scores. Their continuous scheduling reached four simultaneous requests and five mixed prefill/decode steps.
-
-The native paged B1 prototype measured **32.73 and 32.59 decode tokens/s**, with **0.727 and 1.139 seconds** for prefill. Measurements used one warmup and four runs, fixed decode inputs and synchronized host timing of `LLMEngine.step`, including scheduler, sampler and teacher-forcing overhead.
-
-Page-boundary and window-transition checks at 399, 1,023 and 4,095 prefix tokens also matched all 17 logit steps bitwise. Physical pages were reused across requests, and the allocator's free-block count returned to its initial value after every request.
-
-The [standalone FA2 path](benchmark.md#b1-decode-graphs) remains the faster implementation at 82.38 and 82.09 tokens/s under its documented protocol. The native prototype gathers pages into contiguous workspaces every step. Removing this traffic and batching the original attention work are the next performance tasks.

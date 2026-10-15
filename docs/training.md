@@ -1,6 +1,6 @@
 # Initialization and training
 
-[中文](zh/training.md)
+[Chinese](zh/training.md)
 Training has three stages: offline SVD initialization, low-rank pretraining, and long-context finetuning. By default the backbone is frozen and only Beacon parameters are updated (`only_train_beacon`). Existing `beacon_*` fields and weight names remain compatible.
 
 ## Inputs and resources

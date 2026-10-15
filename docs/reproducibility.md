@@ -1,6 +1,6 @@
 # Reproducing SlimKV
 
-[中文](zh/reproducibility.md)
+[Chinese](zh/reproducibility.md)
 Use the entry points below to initialize, train and evaluate SlimKV. Complete reproduction also requires the final checkpoints, processed data manifests and per-result configurations.
 
 The paper's efficiency protocol uses Llama-3.1-8B on an A100 80GB with batch size 1, BF16 eager execution, 32K–128K contexts and 128 generated tokens. It reports the median of three runs after warmup and uses synthetic Full KV tensors. The FA2 tools in this repository provide a separate inference benchmark; keep the backend and protocol with each reported result.

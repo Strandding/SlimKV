@@ -1,6 +1,6 @@
 # Backend support
 
-[中文](zh/implementation_status.md)
+[Chinese](zh/implementation_status.md)
 The table below describes the available cache and attention paths. Existing `beacon_*` configuration and weight keys remain the checkpoint API.
 
 ## Execution paths

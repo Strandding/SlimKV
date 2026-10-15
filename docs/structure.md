@@ -1,6 +1,6 @@
 # Repository structure
 
-[中文](zh/structure.md)
+[Chinese](zh/structure.md)
 
 Start with `scripts/` to run an experiment, `main/` to inspect its Python entry
 point, and `slimkv/` to inspect the model. Entry points and tools are grouped by

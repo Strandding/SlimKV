@@ -1,15 +1,26 @@
 # LongBench-v1 evaluation
 
-[中文](zh/evaluation.md)
+[Chinese](zh/evaluation.md)
 
 The Llama3 preset evaluates 14 English and code subsets. The training corpus is Chinese-only, so Chinese evaluation subsets are excluded. The synthetic subsets `passage_count` and `passage_retrieval_en` are excluded separately. `lcc` and `repobench-p` are included. Use `TASKS=all` to evaluate all LongBench-v1 subsets.
+
+## Download the model
+
+Prepare the environment with [installation](installation.md), then download the default f4 checkpoint from the repository root:
+
+```bash
+export MODEL_NAME_OR_PATH="$PWD/models/SlimKV-Llama3.1-8B-r4"
+hf download Zihant0513/SlimKV-Llama3.1-8B-r4 \
+  --local-dir "$MODEL_NAME_OR_PATH"
+```
 
 ## Prepare data
 
 Download the official [LongBench-v1 archive](https://huggingface.co/datasets/zai-org/LongBench/tree/main) and extract the selected task files:
 
 ```bash
-python -m tools.data.download_longbench --output_dir data/datasets/longbench
+export EVAL_DATA="$PWD/data/datasets/longbench"
+python -m tools.data.download_longbench --output_dir "$EVAL_DATA"
 ```
 
 The downloader pins revision `5e628be450b7e67fb7ae6e201bd6d8f7056f7672` and records archive and task-file SHA256 hashes in `dataset_manifest.json`. If `data.zip` is already available locally, add `--archive /path/to/data.zip`. Existing task files with different contents are never overwritten. This uses v1 JSONL files, excluding LongBench-E and LongBench-v2.
@@ -19,8 +30,8 @@ The downloader pins revision `5e628be450b7e67fb7ae6e201bd6d8f7056f7672` and reco
 Use a trained Llama3 SlimKV checkpoint containing weights, config and tokenizer. Feature ranks come from the checkpoint. An f4 checkpoint with `BEACON_RATIO=4` gives nominal t4f4, or 16× token-feature compression.
 
 ```bash
-MODEL_NAME_OR_PATH=/path/to/slimkv-f4-checkpoint \
-EVAL_DATA=/path/to/longbench \
+MODEL_NAME_OR_PATH="$MODEL_NAME_OR_PATH" \
+EVAL_DATA="$EVAL_DATA" \
 CUDA_VISIBLE_DEVICES=0 \
 bash scripts/evaluation/eval_longbench_slimkv.sh
 ```
@@ -55,8 +66,8 @@ Batch size is an upper limit of 32. Only inputs with exactly equal token lengths
 Run the first two rows of two subsets:
 
 ```bash
-MODEL_NAME_OR_PATH=/path/to/slimkv-f4-checkpoint \
-EVAL_DATA=/path/to/longbench \
+MODEL_NAME_OR_PATH="$MODEL_NAME_OR_PATH" \
+EVAL_DATA="$EVAL_DATA" \
 TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 RESULT_DIR=smoke \
 bash scripts/evaluation/eval_longbench_slimkv.sh
 ```

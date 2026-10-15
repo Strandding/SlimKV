@@ -2,11 +2,19 @@
 
 [English](../quickstart.md)
 
-需要本地训练后的 SlimKV checkpoint：`config.json`、完整 safetensors/PyTorch shards 和 index、tokenizer。`beacon_*` 字段与权重键保留；已有目录名不用改。本仓库不提供模型权重，请使用已有 SlimKV checkpoint 或按[训练说明](training.md)自行训练。
+先按[安装指南](installation.md)准备环境和所需 FA2 扩展，然后从仓库根目录下载完整权重：
+
+```bash
+export MODEL_NAME_OR_PATH="$PWD/models/SlimKV-Llama3.1-8B-r4"
+hf download Zihant0513/SlimKV-Llama3.1-8B-r4 \
+  --local-dir "$MODEL_NAME_OR_PATH"
+```
+
+下载内容包含基座、训练后的 Beacon 投影、配置及 tokenizer，无需合并基座。其他权重见 [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv)。使用同一个已激活环境的终端运行：
 
 ```bash
 python -m main.inference.infer \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --prompt 'Explain why a KV cache helps language model inference.' \
   --max_new_tokens 32
 ```
@@ -19,7 +27,7 @@ CUDA 默认使用 BF16、FA2 prefill、latent 缓存和免重建 decode、prefil
 
 ```bash
 python -m main.inference.infer \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --attn_impl eager --beacon_cache_mode latent --beacon_decode_backend latent \
   --prompt_file /path/to/context.txt
 ```
@@ -29,7 +37,7 @@ python -m main.inference.infer \
 ```bash
 export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
 python -m main.inference.infer \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --attn_impl flash_attention_2 \
   --beacon_cache_mode latent --beacon_decode_backend latent \
   --beacon_decode_graph --prompt_file /path/to/context.txt
@@ -45,7 +53,7 @@ CUDA CLI 默认开启 Graph 和编译。`--no-beacon_decode_graph` 关闭 Graph�
 
 ```bash
 python -m main.inference.infer \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --no-beacon_decode_compress --prompt_file /path/to/context.txt
 ```
 

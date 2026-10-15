@@ -1,7 +1,21 @@
 # Latency and memory benchmarking
 
-[中文](zh/benchmark.md)
+[Chinese](zh/benchmark.md)
 Use the tools below with the current model implementation. Run commands from the repository root.
+
+## Before you start
+
+Follow the [README walkthrough](../README.md#quick-start) to install FA2, build the SM90 extension and download `Zihant0513/SlimKV-Llama3.1-8B-r4`. Run the commands below in that environment, with `MODEL_NAME_OR_PATH` and `SLIMKV_FA2_DECODE_EXTENSION_DIR` exported. The fixed-context runner generates synthetic tokens; LongBench files are needed only for fixture-based tools.
+
+For a smaller first check:
+
+```bash
+CONTEXT_LENGTHS=32768 BEACON_RATIOS=4 REPETITIONS=1 \
+OUTPUT_DIR=data/results/speed-smoke \
+  bash scripts/benchmark/benchmark_context_decode.sh
+```
+
+For the full matrix, use `OUTPUT_DIR=data/results/speed-32k-128k bash scripts/benchmark/benchmark_context_decode.sh`. Each invocation requires a fresh output directory. Both attention GPU kernel time and end-to-end decode time are written locally to `results.json` and `summary.csv`; generated files under `data/results/` are ignored by Git. For experiments and results, see the [paper](https://arxiv.org/abs/2610.02953).
 
 ## Preparing small LongBench-v1 fixtures
 
@@ -23,7 +37,7 @@ Performance tools expect a local Llama3 checkpoint and long prompts: the current
 
 ```bash
 python -m tools.benchmark.benchmark_reconstruction \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --samples_jsonl data/results/fixtures/samples.jsonl \
   --output_dir data/results/reconstruction-benchmark \
   --attn_impl eager --beacon_ratio 8 \
@@ -57,32 +71,11 @@ The build manifest includes Torch/CUDA, upstream FA2/CUTLASS commits and source/
 
 Training, padded inputs and unsupported configurations use the existing path. Unsupported rotary kernels also fall back to the existing rotary operations. For a direct comparison, pass `--beacon_prefill_fast False` to `main.evaluation.eval_longbench`, or set `model.config.beacon_prefill_fast = False`. The first eligible call compiles the Triton kernel.
 
-On H20, with the BF16 Llama-3.1-8B f4 checkpoint and t4f4, one warmup followed by four alternating measurements gives these prefill medians. These are synchronized forward times, including all prompt windows and final-token logits, without decode.
-
-| Input tokens | Original (s) | Optimized (s) | Speedup |
-| ---: | ---: | ---: | ---: |
-| 4,009 | 0.796 | 0.695 | 1.14× |
-| 6,194 | 1.283 | 1.112 | 1.15× |
-| 31,500 | 7.427 | 6.585 | 1.13× |
-
-The logits and every layer's persistent KV tensors match bitwise on these inputs, window-boundary cases and B4/B32 batches of distinct 31,500-token prompts. A single paired validation run takes 26.28 → 24.54 s at B4 and 196.98 → 187.12 s at B32; these batch timings are individual observations, rather than repeated medians. Large batches spend more time in matrix multiplications, which this optimization leaves unchanged.
-
-Two prompts followed by 128 fixed decode steps also retain bitwise logits and final KV across Beacon insertions and window transitions. Greedy token sequences and official scores match on eight fixed LongBench-v1 samples. The CUDA test in `tests/test_llama_prefill.py` checks BF16 rotary rounding, tensor strides, sinks and Beacon history; it is skipped in CPU CI.
-
 ## B1 decode graphs
 
 With the rebuilt extension, `--beacon_decode_graph True` also enables whole-model graphs for eligible B1 single-token latent FA2 decode, including steps that insert a Beacon. KV buffers use fixed addresses and append in place. Larger batches and diagnostic calls use the ordinary path. Set `--beacon_decode_graph_full False` to retain only the layer graphs.
 
 On Beacon insertion steps, the raw-token and Beacon queries use two single-query sequences with shared KV storage. Their valid lengths differ by one, preserving the raw query's exclusion of the new Beacon. FA2 packs each query's GQA heads for better KV reuse. The split count stays the same as the original two-query call to preserve its softmax reduction order. Persistent ranks and cache contents are unchanged.
-
-On H20 with the BF16 Llama-3.1-8B f4 checkpoint and t8f4, the same two prompts and 63 teacher-forced decode steps give the following medians after one warmup and four measurements. Timing includes forward and argmax.
-
-| Input tokens | Layer graphs (tokens/s) | Whole-model graphs (tokens/s) | Prefill (s) | Peak allocated (GiB) |
-| ---: | ---: | ---: | ---: | ---: |
-| 4,009 | 54.13 | 82.38 | 0.76 | 22.66 |
-| 6,194 | 55.08 | 82.09 | 1.21 | 22.72 |
-
-Peak allocation includes the model, cache, FA workspaces and retained graphs. In this comparison, all 64 logit steps match the original implementation bitwise. Greedy outputs and official scores also match on eight fixed LongBench-v1 samples from Qasper, HotpotQA, MultiFieldQA-en and LCC.
 
 ## Optional decoder-tail compilation
 
@@ -90,13 +83,11 @@ Peak allocation includes the model, cache, FA workspaces and retained graphs. In
 
 The CUDA inference CLI and `eval_longbench_slimkv.sh` enable this option by default. Disable it with `--no-beacon_decode_compile` in `main.inference.infer`, `DECODE_COMPILE=False` in the shell preset, or `--beacon_decode_compile False` in `main.evaluation.eval_longbench`. The Python API and comparison tools preserve their original defaults. Training is unchanged.
 
-On H20 with the same f4 checkpoint, t8f4, B1 and 63 fixed decode steps, four alternating measurements after warmup give 87.76 → 89.48 tokens/s for a 4,009-token prompt and 87.62 → 89.39 tokens/s for a 6,194-token prompt. Compilation is outside the timing interval. All 64 logit steps and final persistent KV tensors match bitwise, and greedy tokens and official scores match on eight fixed LongBench-v1 samples. These controls use the current source; the historical 82 tokens/s result is a separate baseline.
-
 ## Current FA2 and Graph comparison
 
 ```bash
 python -m tools.benchmark.benchmark_fa2_decode \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --samples_jsonl data/results/fixtures/samples.jsonl \
   --output_dir data/results/fa2-benchmark \
   --attn_impl flash_attention_2 --beacon_ratio 8 \
@@ -114,7 +105,7 @@ Results include `results.json`, predictions and logit tensors, checkpoint config
 
 ```bash
 python -m tools.benchmark.benchmark_batch_decode \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --samples_jsonl data/results/fixtures/samples.jsonl \
   --forced_tokens_json /path/to/fixed-tokens.json \
   --output_dir data/results/batch-scaling \
@@ -135,7 +126,7 @@ nsys profile --sample=none --cpuctxsw=none --trace=cuda,nvtx \
   --capture-range=cudaProfilerApi --capture-range-end=stop \
   --force-overwrite=false -o data/results/nsys-decode \
   python -m tools.benchmark.profile_fa2 --mode model --phase decode \
-    --model_name_or_path /path/to/slimkv-checkpoint \
+    --model_name_or_path "$MODEL_NAME_OR_PATH" \
     --samples_jsonl data/results/fixtures/samples.jsonl \
     --output_dir data/results/nsys-inputs --decode_variant graph --batch_size 1
 ```
@@ -152,7 +143,7 @@ Compare Full KV, reconstruction and direct latent attention with the same
 checkpoint, BF16, B1 and FlashAttention 2:
 
 ```bash
-MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
+MODEL_NAME_OR_PATH="$MODEL_NAME_OR_PATH" \
   bash scripts/benchmark/benchmark_context_decode.sh
 ```
 
@@ -194,34 +185,12 @@ Two measurements are saved separately:
 - **End-to-end decode time:** synchronized wall time for all 128 model forwards
   and argmax operations. Cache restoration, tokenization, prefill, graph capture,
   compilation and profiler overhead are excluded. Four repetitions follow one
-  warmup, with alternating method order. Tables use median times.
-
-On H20 with the BF16 Llama-3.1-8B f4 checkpoint, the optimized runner gives the following results. Every method uses FA2, preallocated caches, whole-model Graphs and exact decoder-tail compilation. End-to-end values are medians of four measurements over 128 decode steps after warmup. Kernel times come from a separate uncaptured profiling pass.
-
-**End-to-end decode time (ms/token)**
-
-| Input | Full KV | Recon t4f4 | Latent t4f4 | Recon t8f4 | Latent t8f4 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
-| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
-| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
-| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
-
-**Attention GPU kernel time (ms/token)**
-
-| Input | Full KV | Recon t4f4 | Latent t4f4 | Recon t8f4 | Latent t8f4 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 32K | 5.83 | 10.38 | 4.84 | 6.95 | 3.61 |
-| 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
-| 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
-| 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
-
-Reconstruction times include rebuilding historical KV and applying RoPE at every step. All four context lengths pass bitwise logit and persistent-KV comparisons against their original model paths. The synthetic inputs measure performance; LongBench quality is evaluated separately.
+  warmup, with alternating method order. Summaries use median times.
 
 For the original non-Graph implementation comparison, use:
 
 ```bash
-EXECUTION_MODE=matched MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
+EXECUTION_MODE=matched MODEL_NAME_OR_PATH="$MODEL_NAME_OR_PATH" \
   bash scripts/benchmark/benchmark_context_decode.sh
 ```
 
@@ -244,4 +213,4 @@ pass `--execution_mode optimized` for the optimized runner.
 
 ### Selecting decode token compression
 
-The tables above use `DECODE_COMPRESS=True`, the default. For prompt-only token compression, run the same launcher with `DECODE_COMPRESS=False` (Python: `--no-beacon_decode_compress`). Prompt token/feature compression stays the same. During decode, SlimKV adds only raw KV and no new Beacons; Full KV is unchanged. The optimized runner also supports continuations longer than one Beacon window when decode compression is disabled. Each method is validated against its original path with the same policy. Results record this flag, and the default output directory gains `_raw_decode` when disabled.
+`DECODE_COMPRESS=True` is the default. For prompt-only token compression, run the same launcher with `DECODE_COMPRESS=False` (Python: `--no-beacon_decode_compress`). Prompt token/feature compression stays the same. During decode, SlimKV adds only raw KV and no new Beacons; Full KV is unchanged. The optimized runner also supports continuations longer than one Beacon window when decode compression is disabled. Each method is validated against its original path with the same policy. Results record this flag, and the default output directory gains `_raw_decode` when disabled.

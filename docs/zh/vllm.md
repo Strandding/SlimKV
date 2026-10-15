@@ -39,13 +39,3 @@ python -m main.inference.infer_vllm \
 每个请求执行时，按自己的 block table 取回临时工作区，运行原有 B1 注意力计算，写回新 K/V，再释放请求 KV 视图。请求结束后，vLLM 回收物理页。运行中的 batch 可以加入新请求、移除已完成请求，已有请求的 decode 也可以与新请求的 prefill 在同一调度步执行。目前同一步内仍逐请求计算，尚未实现合并 batch 计算或直接读取分页 KV 的 attention kernel。
 
 已验证的配置为单卡 Llama、BF16、交错插入的 full-coverage Beacon、不重叠窗口，以及最多一个 sink token。请关闭 prefix caching、推测解码、量化和 chunked prefill。此入口不支持 prompt log-probability 输出、张量/流水线并行或 Qwen。
-
-## 验证与性能
-
-H20 上使用原 f4 权重和 t8 token 压缩，4,009 和 6,194 token 两条输入的 prefill 与 63 步固定 decode logits 均与原实现逐位一致。8 条固定 LongBench-v1 样本的生成 token 与官方评分也完全一致。连续调度中最多同时运行 4 条请求，覆盖了 5 个 prefill/decode 混合调度步。
-
-原生分页 B1 原型的 decode 吞吐为 **32.73 / 32.59 tokens/s**，prefill 耗时为 **0.727 / 1.139 秒**。采用一次预热、四次测量、固定 decode 输入，对 `LLMEngine.step` 进行 GPU 同步后的主机计时，包含调度、采样与强制 token 输入的额外开销。
-
-399、1,023、4,095 token 前缀的边界检查覆盖分页边界与窗口切换，各自 17 步 logits 均逐位一致。测试实际复用了先前请求释放的物理页，每个请求结束后，分配器的空闲页数都恢复到初始值。
-
-已有[独立 FA2 路径](benchmark.md#b1-解码-graph)在其文档所述协议下达到 82.38 / 82.09 tokens/s，仍然更快。分页原型每步都要把页取回连续工作区，后续性能改进应减少这部分搬运，并合并请求的注意力计算。

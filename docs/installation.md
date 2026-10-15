@@ -1,6 +1,6 @@
 # Installation
 
-[中文](zh/installation.md)
+[Chinese](zh/installation.md)
 Use an isolated Python 3.11 environment (package minimum: 3.10). Model/config code is based on Transformers 4.40.x; use **4.40.2**. Do not upgrade Transformers independently of checkpoint and model-code validation.
 
 ## Eager inference and CPU checks
@@ -11,7 +11,7 @@ Install PyTorch for your hardware before installing the project. For GPU inferen
 python -m venv .venv
 source .venv/bin/activate
 # Install a hardware-compatible torch wheel here.
-python -m pip install -e .
+python -m pip install -e . "huggingface_hub[cli]>=0.34,<1"
 python -m pip check
 python -m main.inference.infer --help
 ```

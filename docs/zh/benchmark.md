@@ -4,6 +4,20 @@
 
 正式对照使用下列 tools 工具和当前模型实现，从仓库根目录运行命令。
 
+## 开始前
+
+先按 [README 的完整流程](README.md#快速开始)安装 FA2、构建 SM90 扩展并下载 `Zihant0513/SlimKV-Llama3.1-8B-r4`。在同一环境中导出 `MODEL_NAME_OR_PATH` 和 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，再运行下列命令。固定上下文测速会生成合成输入，仅基于 fixture 的工具需要 LongBench 文件。
+
+首次可先运行一组32K输入：
+
+```bash
+CONTEXT_LENGTHS=32768 BEACON_RATIOS=4 REPETITIONS=1 \
+OUTPUT_DIR=data/results/speed-smoke \
+  bash scripts/benchmark/benchmark_context_decode.sh
+```
+
+完整对照使用 `OUTPUT_DIR=data/results/speed-32k-128k bash scripts/benchmark/benchmark_context_decode.sh`。每次使用新的输出目录，`results.json` 和 `summary.csv` 分别保存详细记录和汇总；`data/results/` 下的生成文件已被 Git 忽略。实验结果见[论文](https://arxiv.org/abs/2610.02953)。
+
 ## 样本和运行
 
 ```bash
@@ -25,36 +39,15 @@ Llama 默认开启 `--beacon_prefill_fast True`。推理时，对使用 latent �
 
 训练、带 padding 的输入和不支持的配置使用原路径。不支持的 RoPE kernel 也回退到原 RoPE 操作。在 `main.evaluation.eval_longbench` 中传入 `--beacon_prefill_fast False`，或设置 `model.config.beacon_prefill_fast = False`，可关闭上述优化进行对照。首次符合条件的调用会编译 Triton kernel。
 
-H20 上使用 BF16 Llama-3.1-8B f4 权重和 t4f4，预热一次后交替测量四次，得到以下 prefill 中位数。计时使用同步 forward 耗时，包含全部 prompt 窗口和最后一个 token 的 logits，不含 decode。
-
-| 输入 token 数 | 原实现（秒） | 优化后（秒） | 加速比 |
-| ---: | ---: | ---: | ---: |
-| 4,009 | 0.796 | 0.695 | 1.14× |
-| 6,194 | 1.283 | 1.112 | 1.15× |
-| 31,500 | 7.427 | 6.585 | 1.13× |
-
-以上输入、窗口边界用例，以及不同真实 prompt 组成的 B4/B32 × 31,500-token 批次，logits 和各层持久 KV 均逐位一致。单次配对验证中，B4 耗时从26.28降至24.54秒，B32从196.98降至187.12秒；这两组是单次观测，并非重复测量的中位数。大 batch 的耗时更集中于矩阵乘法，而本轮保持矩阵乘法不变。
-
-两条输入各接续128步固定 decode，在跨 Beacon 插入和窗口切换后，logits 和最终 KV 仍逐位一致。八条固定 LongBench-v1 样本的贪心生成 token 和官方评分一致。`tests/test_llama_prefill.py` 中的 CUDA 测试覆盖 BF16 RoPE 舍入、张量 stride、sink 和历史 Beacon，在 CPU CI 中跳过。
-
 ## B1 解码 Graph
 
 重新构建扩展后，`--beacon_decode_graph True` 会对符合条件的 B1 单 token latent FA2 解码启用整模型 Graph，包括插入 Beacon 的步骤。KV 使用固定地址的缓冲区原位追加。较大 batch 和诊断调用使用普通路径。设置 `--beacon_decode_graph_full False` 可保留原来的局部层 Graph。
 
 插入 Beacon 时，将 raw token 与 Beacon 的两个 query 表示为共享 KV 存储的两条单 query 序列。两者的有效 KV 长度相差一个位置，raw query 仍不可见新插入的 Beacon。FA2 可以分别打包 GQA heads，提高 KV 复用率。split 数与原双 query 调用一致，以保留 softmax 的归约顺序。持久缓存的秩和内容不变。
 
-H20 上使用 BF16 Llama-3.1-8B f4 权重和 t8f4，同样的两条输入及63步固定解码输入，预热一次后测量四次，得到以下中位数。计时包含 forward 和 argmax。
-
-| 输入 token 数 | 局部层 Graph（tokens/s） | 整模型 Graph（tokens/s） | Prefill（秒） | 分配显存峰值（GiB） |
-| ---: | ---: | ---: | ---: | ---: |
-| 4,009 | 54.13 | 82.38 | 0.76 | 22.66 |
-| 6,194 | 55.08 | 82.09 | 1.21 | 22.72 |
-
-显存峰值包含模型、缓存、FA 工作区和保留的 Graph。这组对照的64步 logits 与原实现逐位一致。来自 Qasper、HotpotQA、MultiFieldQA-en 和 LCC 的八条固定 LongBench-v1 样本，贪心生成内容和官方评分也完全一致。
-
 ```bash
 python -m tools.benchmark.benchmark_fa2_decode \
-  --model_name_or_path /path/to/slimkv-checkpoint \
+  --model_name_or_path "$MODEL_NAME_OR_PATH" \
   --samples_jsonl data/results/fixtures/samples.jsonl \
   --output_dir data/results/fa2-benchmark \
   --attn_impl flash_attention_2 --beacon_ratio 8 \
@@ -74,8 +67,6 @@ KV物理字节、live/peak CUDA allocated、allocator reserved 是不同概念�
 
 CUDA 推理 CLI 和 `eval_longbench_slimkv.sh` 默认打开此选项。`main.inference.infer` 使用 `--no-beacon_decode_compile` 关闭，shell 预设使用 `DECODE_COMPILE=False`，`main.evaluation.eval_longbench` 使用 `--beacon_decode_compile False`。Python API 和对照测试工具保留原默认设置，训练不变。
 
-H20 上同一 f4 权重、t8f4、B1 和63步固定 decode，预热后交替测量四次：4,009-token 输入从87.76提升到89.48 tokens/s，6,194-token 输入从87.62提升到89.39 tokens/s。编译不计入耗时。全部64步 logits 和最终持久 KV 逐位一致，八条固定 LongBench-v1 样本的 greedy token 和官方评分一致。这里采用当前源码的同期对照，历史82 tokens/s 是另一组基线。
-
 ## 多 batch
 
 `tools.benchmark.benchmark_batch_decode` 需要 checkpoint、samples_jsonl、forced_tokens_json、output_dir。固定输入 JSON 为样本索引到 token ID 列表（默认每条至少63个）；从reference/warmup保存的`logits_<index>.pt`中提取`forced_token_ids`，不能拿任意token冒充same-input对照。
@@ -93,7 +84,7 @@ H20 上同一 f4 权重、t8f4、B1 和63步固定 decode，预热后交替测�
 使用同一 checkpoint，统一 BF16、B1 和 FlashAttention 2，对比 Full KV、重建和直接 latent attention：
 
 ```bash
-MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
+MODEL_NAME_OR_PATH="$MODEL_NAME_OR_PATH" \
   bash scripts/benchmark/benchmark_context_decode.sh
 ```
 
@@ -110,32 +101,8 @@ Full KV 不插入 Beacon、不丢弃原始 token，每个新 Key 仅做一次原
 - **Attention GPU kernel 耗时**：attention 内实际 GPU kernel 耗时之和，包含 QKV/输出投影、KV 重建、RoPE、缓存操作和 latent 映射。重建与 RoPE 单列明细，已包含在总值内，排除 Norm、MLP 和 LM head。独立 profiler pass 在未捕获模式执行相同的优化操作并检查预测一致。GPU annotation 只用于定位 kernel，不把 annotation 跨度当成 kernel 时间，并检查 FA2 分项不超过 attention 总值。
 - **端到端 decode 耗时**：128 次模型 forward 与 argmax 的同步墙钟时间，排除缓存恢复、分词、prefill、编译、Graph 构建和 profiler 开销。预热一次后交替测试顺序，重复四次，使用中位数。
 
-H20 上使用 BF16 Llama-3.1-8B f4 权重，优化 runner 得到以下结果。各方法统一使用 FA2、预分配缓存、整模型 Graph 和精确 decoder-tail 编译。端到端耗时为预热后四次测量的中位数，每次执行 128 步 decode。kernel 耗时来自独立的未捕获 profiling pass。
-
-**端到端 decode 耗时（ms/token）**
-
-| 输入 | Full KV | Recon t4f4 | Latent t4f4 | Recon t8f4 | Latent t8f4 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
-| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
-| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
-| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
-
-**Attention GPU kernel 耗时（ms/token）**
-
-| 输入 | Full KV | Recon t4f4 | Latent t4f4 | Recon t8f4 | Latent t8f4 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 32K | 5.83 | 10.38 | 4.84 | 6.95 | 3.61 |
-| 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
-| 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
-| 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
-
-重建路径的 kernel 耗时包含每一步的历史 KV 重建及 RoPE。四个输入长度均通过与各自原模型路径的 logits 和持久 KV 逐位一致检查。这里使用合成输入测速，LongBench 精度评估单独进行。
-
-如需比较原先关闭 Graph 的实现路径，使用：
-
 ```bash
-EXECUTION_MODE=matched MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
+EXECUTION_MODE=matched MODEL_NAME_OR_PATH="$MODEL_NAME_OR_PATH" \
   bash scripts/benchmark/benchmark_context_decode.sh
 ```
 
@@ -147,4 +114,4 @@ EXECUTION_MODE=matched MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
 
 ### 选择 decode token 压缩
 
-上表采用默认 `DECODE_COMPRESS=True`。仅压缩 prompt 时，设置 `DECODE_COMPRESS=False` 运行同一测速脚本，Python 对应 `--no-beacon_decode_compress`。Prompt 的 token/feature 压缩配置不变；decode 只追加 raw KV，不再产生新 Beacon，Full KV 对照不变。关闭 decode 压缩后，优化 runner 也支持超过一个 Beacon 窗口的后续生成。每种方法都与相同策略的原路径校验。输出记录该开关，默认输出目录增加 `_raw_decode`。
+默认使用 `DECODE_COMPRESS=True`。仅压缩 prompt 时，设置 `DECODE_COMPRESS=False` 运行同一测速脚本，Python 对应 `--no-beacon_decode_compress`。Prompt 的 token/feature 压缩配置不变；decode 只追加 raw KV，不再产生新 Beacon，Full KV 对照不变。关闭 decode 压缩后，优化 runner 也支持超过一个 Beacon 窗口的后续生成。每种方法都与相同策略的原路径校验。输出记录该开关，默认输出目录增加 `_raw_decode`。
