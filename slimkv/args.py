@@ -156,6 +156,10 @@ class ModelArgs:
         metadata={'help': 'Llama3 decode: reconstruct, latent (uses attn_impl), or fa2 (legacy explicit FA2).',
                   'choices': ['reconstruct', 'latent', 'fa2']},
     )
+    beacon_prefill_fast: Optional[bool] = field(
+        default=True,
+        metadata={"help": "Use exact prefill indexing and fused no-Beacon-K-RoPE operations when supported."}
+    )
     beacon_decode_fast: Optional[bool] = field(
         default=None,
         metadata={'help': 'Use GPU input bookkeeping and fixed-position metadata for aligned latent FA2 decode batches.'},

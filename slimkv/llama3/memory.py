@@ -237,13 +237,18 @@ class LlamaMemory(Memory):
             old_raw_k, old_raw_v = self.raw_activations[idx]
             old_window_k, old_window_v = self.window_beacon_activations[idx]
             # Boolean indexing owns its storage, unlike a view into a full projection.
-            if getattr(update, 'raw_only', False):
-                new_raw_k, new_raw_v = key, value
-            else:
-                current_roles = indices[-key.shape[2]:] != 0
-                new_raw_k, new_raw_v = key[:, :, ~current_roles], value[:, :, ~current_roles]
-            raw_k = cat_tensor([old_raw_k, new_raw_k], dim=2)
-            raw_v = cat_tensor([old_raw_v, new_raw_v], dim=2)
+            raw_indices = getattr(update, 'raw_indices', None)
+            if not (self._is_full_window and raw_indices is not None):
+                if getattr(update, 'raw_only', False):
+                    new_raw_k, new_raw_v = key, value
+                elif raw_indices is not None:
+                    new_raw_k = key.index_select(2, raw_indices)
+                    new_raw_v = value.index_select(2, raw_indices)
+                else:
+                    current_roles = indices[-key.shape[2]:] != 0
+                    new_raw_k, new_raw_v = key[:, :, ~current_roles], value[:, :, ~current_roles]
+                raw_k = cat_tensor([old_raw_k, new_raw_k], dim=2)
+                raw_v = cat_tensor([old_raw_v, new_raw_v], dim=2)
             window_k = cat_tensor([old_window_k, update.key_latents], dim=2)
             window_v = cat_tensor([old_window_v, update.value_latents], dim=2)
             if self.beacon_activations[idx][0] is None and self.config.beacon_sink_size > 0:

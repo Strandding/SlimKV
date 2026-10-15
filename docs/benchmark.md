@@ -51,6 +51,24 @@ python -m tools.validate_fa2_decode \
 
 The build manifest includes Torch/CUDA, upstream FA2/CUTLASS commits and source/binary SHA256. The extension supports width 128 for raw KV and widths 200–256/320 for static latent decode. Ordinary decode uses standard FA2 at widths ≤256. Larger actual ranks are temporarily padded to 320 for computation. Persistent cache stores actual ranks, with no padding.
 
+## Prefill indexing and rotary fusion
+
+`--beacon_prefill_fast True` is the default for Llama. During inference, unpadded interleaved FA2 windows with a latent cache share token indices across layers and skip raw-cache copies at completed windows. BF16 Q/K rotary operations use one Triton kernel while leaving Beacon K unrotated. Multiplications still round to BF16 before addition, matching the original operations. Projection shapes, weights, ranks, attention scale and masks stay the same. Attention itself runs in the original feature dimensions.
+
+Training, padded inputs and unsupported configurations use the existing path. Unsupported rotary kernels also fall back to the existing rotary operations. For a direct comparison, pass `--beacon_prefill_fast False` to `main.eval_longbench`, or set `model.config.beacon_prefill_fast = False`. The first eligible call compiles the Triton kernel.
+
+On H20, with the BF16 Llama-3.1-8B f4 checkpoint and t4f4, one warmup followed by four alternating measurements gives these prefill medians. These are synchronized forward times, including all prompt windows and final-token logits, without decode.
+
+| Input tokens | Original (s) | Optimized (s) | Speedup |
+| ---: | ---: | ---: | ---: |
+| 4,009 | 0.796 | 0.695 | 1.14× |
+| 6,194 | 1.283 | 1.112 | 1.15× |
+| 31,500 | 7.427 | 6.585 | 1.13× |
+
+The logits and every layer's persistent KV tensors match bitwise on these inputs, window-boundary cases and B4/B32 batches of distinct 31,500-token prompts. A single paired validation run takes 26.28 → 24.54 s at B4 and 196.98 → 187.12 s at B32; these batch timings are individual observations, rather than repeated medians. Large batches spend more time in matrix multiplications, which this optimization leaves unchanged.
+
+Two prompts followed by 128 fixed decode steps also retain bitwise logits and final KV across Beacon insertions and window transitions. Greedy token sequences and official scores match on eight fixed LongBench-v1 samples. The CUDA test in `tests/test_llama_prefill.py` checks BF16 rotary rounding, tensor strides, sinks and Beacon history; it is skipped in CPU CI.
+
 ## B1 decode graphs
 
 With the rebuilt extension, `--beacon_decode_graph True` also enables whole-model graphs for eligible B1 single-token latent FA2 decode. KV buffers use fixed addresses and append in place. Beacon insertion, larger batches and diagnostic calls use the ordinary path. Set `--beacon_decode_graph_full False` to retain only the layer graphs.

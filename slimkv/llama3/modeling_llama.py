@@ -1126,6 +1126,14 @@ class LlamaAttention(nn.Module):
         chunk_fixed_beacon_k_rope = self.beacon_chunk_fixed_rope_for_beacon_k
         raw_nokrope = bool(getattr(self.config, "raw_nokrope", False))
 
+        metadata = getattr(self, '_prefill_metadata', None)
+        if metadata is not None:
+            from .prefill_ops import fused_prefill_rope
+            result = fused_prefill_rope(query_states, key_states, self.rotary_emb,
+                                       metadata, self.config.beacon_sink_size)
+            if result is not None:
+                return result
+
         # No Beacon metadata means native raw mode. With metadata, historical
         # Beacon keys still need custom handling even when no new Beacon is added.
         if beacon_indices is None:
@@ -1282,6 +1290,8 @@ class LlamaAttention(nn.Module):
 
     def qkv_proj_with_beacon(self, hidden_states, beacon_size, beacon_indices, return_latents=False):
         key_latent, value_latent = None, None
+        metadata = getattr(self, '_prefill_metadata', None)
+        replicas = lambda indices: metadata.replicas if metadata is not None else (indices == 2).any()
         if beacon_size > 0:
             # NOTE: when beacon_pos == "interleave", the beacon_indices points to all beacon tokens in the current window (cached activations + input_ids), so we shall slice out the part corresponding to the input_ids
             cur_beacon_indices = beacon_indices[-hidden_states.shape[1]:]
@@ -1290,7 +1300,7 @@ class LlamaAttention(nn.Module):
                 ordinal_query_states = self.q_proj(hidden_states)
                 beacon_query_states = self.beacon_q_proj(hidden_states)
                 query_states = torch.where((cur_beacon_indices == 0)[:, None], ordinal_query_states, beacon_query_states)
-                if (cur_beacon_indices == 2).any():
+                if replicas(cur_beacon_indices):
                     # beacon_indices == 2 means the beacon token is used to replicate the ones in previous window for parallel encoding
                     # we should slice out all beacon tokens then copy them to the replicate beacon tokens
                     query_states[:, cur_beacon_indices == 2] = beacon_query_states[:, cur_beacon_indices == 1][:, :(cur_beacon_indices == 2).sum()]
@@ -1304,7 +1314,7 @@ class LlamaAttention(nn.Module):
                 else:
                     beacon_key_states = self._project_beacon_key(hidden_states)
                 key_states = torch.where((cur_beacon_indices == 0)[:, None], ordinal_key_states, beacon_key_states)
-                if (cur_beacon_indices == 2).any():
+                if replicas(cur_beacon_indices):
                     # beacon_indices == 2 means the beacon token is used to replicate the ones in previous window for parallel encoding
                     # we should slice out all beacon tokens then copy them to the replicate beacon tokens
                     key_states[:, cur_beacon_indices == 2] = beacon_key_states[:, cur_beacon_indices == 1][:, :(cur_beacon_indices == 2).sum()]
@@ -1318,7 +1328,7 @@ class LlamaAttention(nn.Module):
                 else:
                     beacon_value_states = self._project_beacon_value(hidden_states)
                 value_states = torch.where((cur_beacon_indices == 0)[:, None], ordinal_value_states, beacon_value_states)
-                if (cur_beacon_indices == 2).any():
+                if replicas(cur_beacon_indices):
                     # beacon_indices == 2 means the beacon token is used to replicate the ones in previous window for parallel encoding
                     # we should slice out all beacon tokens then copy them to the replicate beacon tokens
                     value_states[:, cur_beacon_indices == 2] = beacon_value_states[:, cur_beacon_indices == 1][:, :(cur_beacon_indices == 2).sum()]
@@ -1337,20 +1347,24 @@ class LlamaAttention(nn.Module):
     def _incremental_cache(self, key, value, beacon_size, indices, latents):
         if latents is None:
             return key, value, beacon_size, indices
-        roles = indices[-key.shape[2]:] != 0
+        metadata = getattr(self, '_prefill_metadata', None)
+        roles = indices[-key.shape[2]:] != 0 if metadata is None else None
 
         def pack(latent):
             if latent is None:
                 return None
-            selected = latent[:, roles]
+            selected = latent[:, roles] if metadata is None else latent.index_select(1, metadata.beacon_indices)
             batch, length, rank = selected.shape
             if uses_latent_decode(self.config):
                 return selected.unsqueeze(1).contiguous()
             return selected.reshape(batch, length, self.num_key_value_heads,
                                     rank // self.num_key_value_heads).transpose(1, 2).contiguous()
 
-        return ReconstructionCacheUpdate(key, value, beacon_size, indices,
-                                         pack(latents[0]), pack(latents[1]))
+        update = ReconstructionCacheUpdate(key, value, beacon_size, indices,
+                                           pack(latents[0]), pack(latents[1]))
+        if metadata is not None:
+            update.raw_indices = metadata.raw_indices
+        return update
 
     def o_proj_with_beacon(self, attn_output, beacon_size, beacon_indices):
         if beacon_size > 0:
@@ -2618,6 +2632,10 @@ class LlamaForCausalLM(LlamaPreTrainedModel, GenerationMixin):
             self.config._slimkv_decode_step = False
             self.config._slimkv_decode_fast_step = False
             self.config._slimkv_decode_graph_step = False
+            if getattr(self, '_prefill_metadata_active', False):
+                for layer in self.model.layers:
+                    layer.self_attn._prefill_metadata = None
+                self._prefill_metadata_active = False
 
     def _beacon_forward_impl(self,
         input_ids: torch.LongTensor = None,
@@ -2659,6 +2677,13 @@ class LlamaForCausalLM(LlamaPreTrainedModel, GenerationMixin):
 
             input_ids, attention_mask, position_ids, past_key_values, labels = self.memory.step()
             self.config._beacon_runtime_chunk_idx = int(self.memory._step_idx)
+            from .prefill_ops import prepare_metadata
+            metadata = prepare_metadata(self, input_ids, attention_mask, position_ids,
+                                        past_key_values, labels)
+            if metadata is not None:
+                self._prefill_metadata_active = True
+                for layer in self.model.layers:
+                    layer.self_attn._prefill_metadata = metadata
             loss_weights = build_beacon_loss_weights(
                 input_ids=input_ids,
                 labels=labels,
@@ -2718,6 +2743,10 @@ class LlamaForCausalLM(LlamaPreTrainedModel, GenerationMixin):
                     # Beacon insertion and diagnostic/multi-token calls use the
                     # ordinary path. Refresh static buffers before the next Q1.
                     self._static_decode.epoch = None
+            if metadata is not None:
+                for layer in self.model.layers:
+                    layer.self_attn._prefill_metadata = None
+                self._prefill_metadata_active = False
 
             # t6 = time.time()
 

@@ -19,6 +19,24 @@ python -m tools.prepare_longbench \
 
 [扩展构建命令](../benchmark.md#building-the-width-320-extension) 基于 FA2 v2.8.3/CUTLASS，只编 BF16 SM90 forward。静态解码支持 raw KV 的128维和 latent KV 的200–256/320维；普通解码在≤256维使用标准 FA2。较大 rank 临时补到320，持久缓存保留真实 rank。
 
+## Prefill 索引与 RoPE 融合
+
+Llama 默认开启 `--beacon_prefill_fast True`。推理时，对使用 latent 缓存、无 padding 的 interleave FA2 窗口，在层间共享 token 索引，并跳过完整窗口结束时不再保留的 raw KV 拷贝。BF16 Q/K 的 RoPE 操作合并到一个 Triton kernel，Beacon K 保持不旋转。每次乘法仍先舍入为 BF16 再做加法，与原操作一致。投影矩阵形状、权重、秩、注意力 scale 和 mask 保持不变，prefill 注意力仍在原始特征维度计算。
+
+训练、带 padding 的输入和不支持的配置使用原路径。不支持的 RoPE kernel 也回退到原 RoPE 操作。在 `main.eval_longbench` 中传入 `--beacon_prefill_fast False`，或设置 `model.config.beacon_prefill_fast = False`，可关闭上述优化进行对照。首次符合条件的调用会编译 Triton kernel。
+
+H20 上使用 BF16 Llama-3.1-8B f4 权重和 t4f4，预热一次后交替测量四次，得到以下 prefill 中位数。计时使用同步 forward 耗时，包含全部 prompt 窗口和最后一个 token 的 logits，不含 decode。
+
+| 输入 token 数 | 原实现（秒） | 优化后（秒） | 加速比 |
+| ---: | ---: | ---: | ---: |
+| 4,009 | 0.796 | 0.695 | 1.14× |
+| 6,194 | 1.283 | 1.112 | 1.15× |
+| 31,500 | 7.427 | 6.585 | 1.13× |
+
+以上输入、窗口边界用例，以及不同真实 prompt 组成的 B4/B32 × 31,500-token 批次，logits 和各层持久 KV 均逐位一致。单次配对验证中，B4 耗时从26.28降至24.54秒，B32从196.98降至187.12秒；这两组是单次观测，并非重复测量的中位数。大 batch 的耗时更集中于矩阵乘法，而本轮保持矩阵乘法不变。
+
+两条输入各接续128步固定 decode，在跨 Beacon 插入和窗口切换后，logits 和最终 KV 仍逐位一致。八条固定 LongBench-v1 样本的贪心生成 token 和官方评分一致。`tests/test_llama_prefill.py` 中的 CUDA 测试覆盖 BF16 RoPE 舍入、张量 stride、sink 和历史 Beacon，在 CPU CI 中跳过。
+
 ## B1 解码 Graph
 
 重新构建扩展后，`--beacon_decode_graph True` 会对符合条件的 B1 单 token latent FA2 解码启用整模型 Graph。KV 使用固定地址的缓冲区原位追加。插入 Beacon、较大 batch 和诊断调用使用普通路径。设置 `--beacon_decode_graph_full False` 可保留原来的局部层 Graph。
