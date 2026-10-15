@@ -2713,10 +2713,15 @@ class LlamaForCausalLM(LlamaPreTrainedModel, GenerationMixin):
                     if latent_length > 0:
                         required = latent_length + past_key_values[0][2]
                         capacity = max(64, (required + 63) // 64 * 64)
+                        raw_required = sum(0 if x is None else x.shape[2] for x in (first.sink, first.raw)) + 1
                         static = getattr(self, '_static_decode', None)
                         if (static is None or static.capacity != capacity
+                                or static.raw_capacity < raw_required
                                 or static.layers[0]['raw_k'].device != input_ids.device):
-                            static = self._static_decode = StaticDecode(self, capacity)
+                            raw_capacity = self.config.beacon_window + self.config.beacon_sink_size + 1
+                            if raw_required > raw_capacity:
+                                raw_capacity = 1 << (raw_required-1).bit_length()
+                            static = self._static_decode = StaticDecode(self, capacity, raw_capacity=raw_capacity)
             if static is not None:
                 value = static.run(input_ids, position_ids, past_key_values,
                                    return_normalized_hidden=return_normalized_hidden)

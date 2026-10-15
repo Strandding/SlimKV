@@ -79,3 +79,15 @@ python -m unittest discover -s tests -v
 ```
 
 Tests use small CPU models, exercise prefill/decode/rollover/cache/checkpoint compatibility, and run the inference CLI against a temporary tiny checkpoint and tokenizer. Passing them does not validate a trained model's quality.
+
+## Decode token compression
+
+`beacon_decode_compress` defaults to `True`: both prefill and decode insert Beacons according to `beacon_ratio`. Set it to `False` to compress the prompt while retaining every newly decoded token as original-dimensional raw KV:
+
+```bash
+python -m main.inference.infer \
+  --model_name_or_path /path/to/slimkv-checkpoint \
+  --no-beacon_decode_compress --prompt_file /path/to/context.txt
+```
+
+The Python setting is `ModelArgs(beacon_decode_compress=False)`. Existing prompt Beacons and the unfinished prompt window are retained, and raw KV grows with the continuation. History still uses the selected reconstruction or latent attention backend. Training ignores this inference setting. Reset Memory before changing the setting after decoding has begun. Different compression policies can produce different outputs, so compare quality separately.

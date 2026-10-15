@@ -143,6 +143,7 @@ class LlamaConfig(PretrainedConfig):
         beacon_cache_mode="auto",
         beacon_decode_backend="reconstruct",
         beacon_decode_fast=True,
+        beacon_decode_compress=True,
         beacon_prefill_fast=True,
         beacon_decode_compile=False,
         beacon_decode_graph=False,
@@ -219,6 +220,7 @@ class LlamaConfig(PretrainedConfig):
             raise ValueError(f'Unknown beacon_decode_backend: {beacon_decode_backend}')
         self.beacon_decode_backend = beacon_decode_backend
         self.beacon_decode_fast = beacon_decode_fast
+        self.beacon_decode_compress = beacon_decode_compress
         self.beacon_prefill_fast = beacon_prefill_fast
         self.beacon_decode_compile = beacon_decode_compile
         self.beacon_decode_graph = beacon_decode_graph

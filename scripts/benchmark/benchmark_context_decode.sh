@@ -13,6 +13,11 @@ execution_mode="${EXECUTION_MODE:-optimized}"
 read -r -a lengths <<< "${CONTEXT_LENGTHS:-32768 65536 98304 131072}"
 read -r -a ratios <<< "${BEACON_RATIOS:-4 8}"
 optional=()
+decode_suffix=""
+if [[ "${DECODE_COMPRESS:-True}" == "False" ]]; then
+  optional+=(--no-beacon_decode_compress)
+  decode_suffix="_raw_decode"
+fi
 if [[ -n "${PROMPT_FILE:-}" ]]; then
   optional+=(--prompt_file "${PROMPT_FILE}")
 fi
@@ -24,7 +29,7 @@ if [[ "${DECODE_COMPILE:-True}" == "False" ]]; then
 fi
 "${PYTHON:-python3}" -m tools.benchmark.benchmark_context_decode \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
-  --output_dir "${OUTPUT_DIR:-data/results/context_decode_${execution_mode}}" \
+  --output_dir "${OUTPUT_DIR:-data/results/context_decode_${execution_mode}${decode_suffix}}" \
   --execution_mode "${execution_mode}" \
   --context_lengths "${lengths[@]}" --beacon_ratios "${ratios[@]}" \
   --decode_steps "${DECODE_STEPS:-128}" --warmup "${WARMUP:-1}" \

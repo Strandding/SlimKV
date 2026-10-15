@@ -90,6 +90,8 @@ class Memory(torch.nn.Module):
         self.all_attention_mask = None
         self.all_labels = None
         self._input_storage_device = self._cpu
+        self._decode_uncompressed = False
+        self._decode_compress_setting = None
 
         # NOTE: will be reset in prepare()
         self.beacon_skip_first = None
@@ -160,6 +162,13 @@ class Memory(torch.nn.Module):
         # assert attention_mask is None or (attention_mask == 1).all(), "Make sure there is no padding!"
 
         self._device = input_ids.device
+        if not self.training and labels is None:
+            compress = getattr(self.config, 'beacon_decode_compress', True)
+            if self._decode_compress_setting is not None and compress != self._decode_compress_setting:
+                raise RuntimeError('Reset Memory before changing beacon_decode_compress during decoding.')
+            if self.all_input_ids is not None and self.finish and input_ids.shape[1] == 1:
+                self._decode_compress_setting = compress
+                self._decode_uncompressed = not compress
 
         # accumulate input_ids
         if self.all_input_ids is None:
@@ -278,7 +287,7 @@ class Memory(torch.nn.Module):
         # parallel does not support non-compression
         # the input_ids is not long enough for parallel
         if \
-        (self.config.beacon_parallel_window > 1) and \
+        (not self._decode_uncompressed) and (self.config.beacon_parallel_window > 1) and \
         (self.config.beacon_stride == self.config.beacon_window) and \
         (0 not in self.config.beacon_ratio) and \
         (self.all_input_ids[:, self._end_idx:].shape[1] >= self.config.beacon_parallel_window * self.config.beacon_window):
@@ -417,7 +426,16 @@ class Memory(torch.nn.Module):
 
         # NOTE: in training, the entire sequence is input to the model at once
         # In the last window, we do not need to append beacons because they will not be used at all
-        if self.training and end_idx == self.all_sequence_length:
+        if not self.training and self._decode_uncompressed:
+            # Retain the unfinished prompt window and all subsequent raw tokens.
+            end_idx = self.all_sequence_length
+            next_start_idx = start_idx
+            is_full_window = False
+            raw_size_to_cache = -1
+            beacon_size = 0
+            compression_ratio = -1
+
+        elif self.training and end_idx == self.all_sequence_length:
             next_start_idx = start_idx
             is_full_window = False
             raw_size_to_cache = -1
@@ -676,7 +694,8 @@ class Memory(torch.nn.Module):
                 # NOTE: no need to update raw activations and beacon activations as all activations are kept as sink activations
                 continue
 
-            if self.beacon_activations[layer_idx][0] is None and self.config.beacon_sink_size > 0:
+            if (self.beacon_activations[layer_idx][0] is None and self.config.beacon_sink_size > 0
+                    and (not self._decode_uncompressed or self.sink_activations[layer_idx][0] is None)):
                 # save the sink activations
                 # NOTE: we do not slice the key/value activations, which may cause duplication when beacon_ratio=-1 for the first window, but it's okay
                 self.sink_activations[layer_idx] = [

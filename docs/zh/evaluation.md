@@ -94,3 +94,7 @@ t8f4 可设置 `BEACON_RATIO=8`，并使用独立结果目录。脚本名之后�
 | Synthetic passkey retrieval | `python -m main.evaluation.eval_passkey --help` | Seed、长度和深度 |
 | LM perplexity | `python -m main.evaluation.eval_lm --help` | 本地数据及对应 tokenization/stride |
 | 诊断 | `main.analysis.eval_longbench_beacon_probe`、`main.analysis.eval_longbench_chunk2_heatmap` | Probe 和注意力分析 |
+
+## Decode 压缩策略
+
+默认 `DECODE_COMPRESS=True`。设置 `DECODE_COMPRESS=False` 后，prefill 仍按原配置压缩 prompt，decode 不再插入 Beacon。评测 Python 入口对应 `--beacon_decode_compress False`。它独立于 `ATTN_IMPL`、`DECODE_BACKEND`、Graph 和编译。后续生成的 raw KV 随输出长度增长，默认结果目录增加 `-rawdecode`，分别保存两种策略。

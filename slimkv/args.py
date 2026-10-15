@@ -161,6 +161,10 @@ class ModelArgs:
         default=None,
         metadata={'help': 'Use GPU input bookkeeping and fixed-position metadata for aligned latent FA2 decode batches.'},
     )
+    beacon_decode_compress: Optional[bool] = field(
+        default=None,
+        metadata={'help': 'Continue token compression during decode; False preserves new raw KV after prefill.'},
+    )
     beacon_decode_graph: Optional[bool] = field(
         default=None,
         metadata={'help': 'Use inference CUDA Graphs for fixed-shape decode layer operations.'},

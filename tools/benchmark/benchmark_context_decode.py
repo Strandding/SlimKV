@@ -276,6 +276,8 @@ def main():
     parser.add_argument('--save_trace', action='store_true')
     parser.add_argument('--execution_mode', choices=['matched', 'optimized'], default='matched')
     parser.add_argument('--compile_tail', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--beacon_decode_compress', action=argparse.BooleanOptionalAction, default=True,
+                        help='Continue token compression after prefill; False keeps all new raw KV.')
     parser.add_argument('--reference_dir', type=Path)
     args = parser.parse_args()
     if min(args.context_lengths + args.beacon_ratios + [args.decode_steps, args.repetitions, args.warmup, args.prefill_chunk_size]) < 1:
@@ -297,6 +299,7 @@ def main():
         model_name_or_path=args.model_name_or_path, enable_beacon=True, dtype='bf16',
         attn_impl='flash_attention_2', beacon_ratio=[args.beacon_ratios[0]], beacon_ratio_mix='sequence',
         beacon_cache_mode='latent', beacon_decode_backend='latent', beacon_decode_fast=True,
+        beacon_decode_compress=args.beacon_decode_compress,
         beacon_decode_graph=False, beacon_decode_graph_full=False, beacon_decode_compile=False,
         beacon_prefill_fast=True), device='cuda:0')
     model.eval()

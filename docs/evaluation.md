@@ -94,3 +94,7 @@ The older `eval_longbench_llama31_8B.sh` and Qwen presets remain available with 
 | Synthetic passkey retrieval | `python -m main.evaluation.eval_passkey --help` | Seed, lengths and depths |
 | LM perplexity | `python -m main.evaluation.eval_lm --help` | Local data and matching tokenization/stride |
 | Diagnostics | `main.analysis.eval_longbench_beacon_probe`, `main.analysis.eval_longbench_chunk2_heatmap` | Probe and attention analysis |
+
+## Decode compression policy
+
+`DECODE_COMPRESS=True` is the default. Set `DECODE_COMPRESS=False` to keep prompt compression while disabling new Beacon insertion during decode. The evaluator argument is `--beacon_decode_compress False`. This setting is independent of `ATTN_IMPL`, `DECODE_BACKEND`, Graphs and compilation. Existing prompt KV uses the same compression settings, and generated raw KV grows with output length. The default result directory gains `-rawdecode` when disabled, keeping both policies separate.

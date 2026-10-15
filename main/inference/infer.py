@@ -19,6 +19,8 @@ def main():
     parser.add_argument('--beacon_decode_graph', action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument('--beacon_decode_graph_full', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--beacon_decode_compile', action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument('--beacon_decode_compress', action=argparse.BooleanOptionalAction, default=None,
+                        help='Insert Beacons during decode (default: checkpoint setting, normally enabled).')
     parser.add_argument('--beacon_prefill_fast', action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args()
     if args.max_new_tokens < 1:
@@ -47,6 +49,7 @@ def main():
         dtype=args.dtype, attn_impl=args.attn_impl, chat_template=args.chat_template,
         beacon_cache_mode=args.beacon_cache_mode, beacon_decode_backend=args.beacon_decode_backend,
         beacon_decode_fast=fast, beacon_decode_graph=args.beacon_decode_graph,
+        beacon_decode_compress=args.beacon_decode_compress,
         beacon_decode_graph_full=args.beacon_decode_graph_full,
         beacon_prefill_fast=args.beacon_prefill_fast,
         beacon_decode_compile=args.beacon_decode_compile), device=args.device)

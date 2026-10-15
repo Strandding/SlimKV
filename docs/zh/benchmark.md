@@ -144,3 +144,7 @@ EXECUTION_MODE=matched MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
 输出默认 `data/results/context_decode_<execution_mode>`，必须使用新目录。文件包含 `results.json`、`summary.csv`、实际输入与后续 token、数值验证、源码和配置哈希、逐次耗时。设置 `REFERENCE_DIR` 可以复用并核对上一轮的实际输入和后续 token。可以通过 `OUTPUT_DIR`、`CONTEXT_LENGTHS`、`BEACON_RATIOS`、`REPETITIONS`、`PROMPT_FILE` 调整实验。
 
 实现位于 `tools/benchmark/benchmark_context_decode.py` 和 `context_decode_runtime.py`，使用 Transformers 4.40 环境及兼容的 FA2 decode 扩展。直接运行 Python 模块默认 `matched`，优化模式需显式传入 `--execution_mode optimized`。
+
+### 选择 decode token 压缩
+
+上表采用默认 `DECODE_COMPRESS=True`。仅压缩 prompt 时，设置 `DECODE_COMPRESS=False` 运行同一测速脚本，Python 对应 `--no-beacon_decode_compress`。Prompt 的 token/feature 压缩配置不变；decode 只追加 raw KV，不再产生新 Beacon，Full KV 对照不变。关闭 decode 压缩后，优化 runner 也支持超过一个 Beacon 窗口的后续生成。每种方法都与相同策略的原路径校验。输出记录该开关，默认输出目录增加 `_raw_decode`。

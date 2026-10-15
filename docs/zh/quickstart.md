@@ -38,3 +38,15 @@ python -m main.inference.infer \
 CUDA CLI 默认开启 Graph 和编译。`--no-beacon_decode_graph` 关闭 Graph，`--no-beacon_decode_graph_full` 只保留局部层 Graph，`--no-beacon_decode_compile` 关闭编译，`--no-beacon_prefill_fast` 关闭 prefill 优化。编译目前仅用于 Torch 2.11 下启用 Graph 的 B1 BF16 FA2 decode；训练、更大 batch 和不支持的配置使用原路径。首次编译有额外启动耗时。Python API 保持原默认设置，使用时按[英文示例](../quickstart.md#python-api)显式选择优化。两条路径的 prefill 都在原始维度计算，符合条件的 decode 直接进行 latent Beacon attention。`beacon_decode_backend=latent` 使用所选 `attn_impl`；`reconstruct` 先重建 Beacon K/V，旧值 `fa2` 显式使用 latent FA2 decode。支持等长、无 padding、插入计划同步的 dense batch，不同长度请求的服务另见实验性 [vLLM 接入](vllm.md)，Qwen latent decode 暂不可用。CLI 演示单请求。
 
 无需 checkpoint 的 smoke：`python -m unittest discover -s tests -v`。其中真实 CLI 测试会生成临时小 checkpoint/tokenizer 并离线加载，不证明训练权重的质量。
+
+## Decode token 压缩
+
+`beacon_decode_compress` 默认 `True`：prefill 和 decode 都按 `beacon_ratio` 插入 Beacon。设置 `False` 后，prefill 仍压缩输入，decode 新增 token 保留原始维度 raw KV：
+
+```bash
+python -m main.inference.infer \
+  --model_name_or_path /path/to/slimkv-checkpoint \
+  --no-beacon_decode_compress --prompt_file /path/to/context.txt
+```
+
+Python API 使用 `ModelArgs(beacon_decode_compress=False)`。保留已有 prompt Beacon 和未完成的 prompt 窗口，后续 raw KV 随生成长度增长。历史 Beacon 继续使用所选重建或 latent attention 后端。训练忽略这个推理选项。decode 开始后切换设置，需要先 reset Memory。不同压缩策略的输出可能不同，应单独比较精度。

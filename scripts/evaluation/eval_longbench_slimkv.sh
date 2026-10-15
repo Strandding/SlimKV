@@ -11,7 +11,7 @@ head/tail truncation, latent FA2 decode, CUDA Graphs, optional B1 compilation, b
 Feature ranks are read from the checkpoint; use an f4 checkpoint for t4f4.
 Environment: PYTHON, CUDA_VISIBLE_DEVICES, OUTPUT_DIR, RESULT_DIR, TASKS,
 BEACON_RATIO, BATCH_SIZE, MAX_BATCH_TOKENS, MAX_LENGTH, MAX_SAMPLES_PER_TASK,
-DECODE_BACKEND, ATTN_IMPL, DECODE_GRAPH, DECODE_COMPILE, PREFILL_FAST,
+DECODE_BACKEND, ATTN_IMPL, DECODE_GRAPH, DECODE_COMPILE, DECODE_COMPRESS, PREFILL_FAST,
 LOAD_RESULT, MAP_NUM_PROC.
 TASKS is a space-separated task list or 'english'/'all'.
 ATTN_IMPL=eager defaults to reconstruction decode with Graphs disabled.
@@ -21,6 +21,7 @@ DECODE_BACKEND=reconstruct or latent selects reconstruction or direct latent att
 The legacy value fa2 explicitly selects latent FA2, independent of ATTN_IMPL.
 DECODE_COMPILE defaults to True for latent FA2; False disables compilation.
 Compilation only runs for eligible B1 BF16 decode with Torch 2.11 and Graphs.
+DECODE_COMPRESS defaults to True. False compresses prefill only and retains new raw KV.
 HELP
   exit 0
 fi
@@ -40,6 +41,10 @@ case "${ATTN_IMPL}" in
   *) echo "ERROR: ATTN_IMPL must be eager or flash_attention_2." >&2; exit 2 ;;
 esac
 DECODE_BACKEND="${DECODE_BACKEND:-${backend_default}}"
+decode_suffix=""
+if [[ "${DECODE_COMPRESS:-True}" == "False" ]]; then
+  decode_suffix="-rawdecode"
+fi
 case "${DECODE_BACKEND}" in
   fa2) decode_fast=True; graph_default=True ;;
   latent)
@@ -63,7 +68,7 @@ fi
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --eval_data "${EVAL_DATA}" \
   --output_dir "${OUTPUT_DIR:-data/results/longbench}" \
-  --result_dir "${RESULT_DIR:-slimkv-t${BEACON_RATIO}-${ATTN_IMPL}-${DECODE_BACKEND}}" \
+  --result_dir "${RESULT_DIR:-slimkv-t${BEACON_RATIO}-${ATTN_IMPL}-${DECODE_BACKEND}${decode_suffix}}" \
   --tasks "${tasks[@]}" \
   --enable_beacon True --dtype bf16 --chat_template llama-3 \
   --beacon_ratio "${BEACON_RATIO}" --beacon_ratio_mix sequence \
@@ -71,6 +76,7 @@ fi
   --beacon_chunk_fixed_rope_for_beacon_k False \
   --beacon_cache_mode latent --beacon_decode_backend "${DECODE_BACKEND}" \
   --beacon_decode_fast "${decode_fast}" \
+  --beacon_decode_compress "${DECODE_COMPRESS:-True}" \
   --beacon_decode_graph "${DECODE_GRAPH:-${graph_default}}" \
   --beacon_decode_graph_full True \
   --beacon_prefill_fast "${PREFILL_FAST:-True}" \

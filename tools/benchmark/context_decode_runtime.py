@@ -87,6 +87,7 @@ class OptimizedDecodeRuntime:
                  graph=True, compile_tail=False):
         self.model, self.mode = model, mode
         self.decode_steps = decode_steps
+        self.compress_decode = getattr(model.config, 'beacon_decode_compress', True)
         self.use_graph, self.compile_tail = graph, compile_tail
         self.graphs = {}
         self.pool = torch.cuda.graph_pool_handle() if graph and model.device.type == 'cuda' else None
@@ -113,12 +114,13 @@ class OptimizedDecodeRuntime:
         else:
             if memory.raw_activations[0][0] is not None or memory.window_beacon_activations[0][0] is not None:
                 raise ValueError('Optimized comparison requires a completed Beacon window.')
-            if decode_steps > model.config.beacon_window:
+            if self.compress_decode and decode_steps > model.config.beacon_window:
                 raise ValueError('Continuation must fit in one Beacon window.')
             self.ratio = memory.config.beacon_ratio[0]
             self.history = count(memory.beacon_activations[0][0])
             self.sink = count(memory.sink_activations[0][0])
             self.prefix = self.history + self.sink
+            new_beacons = (decode_steps+self.ratio-1)//self.ratio if self.compress_decode else 0
             for layer in model.model.layers:
                 attn = layer.self_attn
                 template = attn.q_proj.weight
@@ -128,8 +130,8 @@ class OptimizedDecodeRuntime:
                 width = 320 if width > 256 else (width + 7) // 8 * 8
                 raw_cap = (self.sink + decode_steps + 127)//128*128
                 self.raw_capacity = raw_cap
-                latent_cap = (self.history + (decode_steps+self.ratio-1)//self.ratio + 63)//64*64
-                capacity = (self.prefix + decode_steps + (decode_steps+self.ratio-1)//self.ratio + 127)//128*128
+                latent_cap = (self.history + new_beacons + 63)//64*64
+                capacity = (self.prefix + decode_steps + new_beacons + 127)//128*128
                 state = {'raw_k': template.new_zeros(1, heads, raw_cap, dim),
                          'raw_v': template.new_zeros(1, heads, raw_cap, dim),
                          'rotated_k': template.new_zeros(1, heads, raw_cap, dim),
@@ -146,8 +148,8 @@ class OptimizedDecodeRuntime:
             self.latent_lengths = torch.empty_like(self.lengths)
             self.latent_index = self.token.new_empty(1)
             self.raw_slots = torch.arange(decode_steps, device=model.device)
-            self.raw_slots = self.raw_slots + self.raw_slots//self.ratio + self.prefix
-            self.beacon_slots = torch.arange((decode_steps+self.ratio-1)//self.ratio, device=model.device)
+            self.raw_slots = self.raw_slots + (self.raw_slots//self.ratio if self.compress_decode else 0) + self.prefix
+            self.beacon_slots = torch.arange(new_beacons, device=model.device)
             self.beacon_slots = self.prefix + (self.beacon_slots+1)*(self.ratio+1)-1
             self.current_slots = {q: self.token.new_empty(q) for q in (1, 2)}
             self.key_positions = torch.arange(capacity, device=model.device)[None]
@@ -336,7 +338,7 @@ class OptimizedDecodeRuntime:
         if self.step_index >= self.decode_steps:
             raise ValueError('Decode continuation exceeded the reserved capacity.')
         i = self.step_index
-        size = int(self.mode != 'full_kv' and (i+1)%self.ratio == 0)
+        size = int(self.mode != 'full_kv' and self.compress_decode and (i+1)%self.ratio == 0)
         length = 1+size
         self.token.copy_(token)
         if self.mode == 'full_kv':
@@ -347,7 +349,7 @@ class OptimizedDecodeRuntime:
             self.bucket = (end+127)//128*128
             key = (1, self.bucket)
         else:
-            self.old_beacons = i//self.ratio
+            self.old_beacons = i//self.ratio if self.compress_decode else 0
             self.raw_length = self.sink+i+1
             self.raw_bucket = min(self.raw_capacity, (self.raw_length+127)//128*128)
             total = self.prefix+i+self.old_beacons+length

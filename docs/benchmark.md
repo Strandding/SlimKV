@@ -241,3 +241,7 @@ Implementation: `tools/benchmark/benchmark_context_decode.py` and
 `context_decode_runtime.py`. Use the Transformers 4.40 environment and the
 compatible FA2 decode extension. Direct Python invocation defaults to `matched`;
 pass `--execution_mode optimized` for the optimized runner.
+
+### Selecting decode token compression
+
+The tables above use `DECODE_COMPRESS=True`, the default. For prompt-only token compression, run the same launcher with `DECODE_COMPRESS=False` (Python: `--no-beacon_decode_compress`). Prompt token/feature compression stays the same. During decode, SlimKV adds only raw KV and no new Beacons; Full KV is unchanged. The optimized runner also supports continuations longer than one Beacon window when decode compression is disabled. Each method is validated against its original path with the same policy. Results record this flag, and the default output directory gains `_raw_decode` when disabled.

@@ -43,7 +43,7 @@ def _rotate(x, rope, positions):
 class StaticDecode:
     """One aligned B1 stream; unsupported calls retain the ordinary model path."""
 
-    def __init__(self, model, capacity):
+    def __init__(self, model, capacity, raw_capacity=None):
         self.model = model
         self.capacity = capacity
         self.layers = []
@@ -60,7 +60,8 @@ class StaticDecode:
         self.paired_enabled = False
         self.sm_count = torch.cuda.get_device_properties(device).multi_processor_count if device.type == 'cuda' else 0
         self.query_cu = {q: torch.tensor([0, q], dtype=torch.int32, device=device) for q in (1, 2)}
-        self.raw_capacity = model.config.beacon_window + model.config.beacon_sink_size + 1
+        self.raw_capacity = max(model.config.beacon_window + model.config.beacon_sink_size + 1,
+                                raw_capacity or 0)
         self.raw_bucket = self.raw_capacity
         for layer in model.model.layers:
             attn = layer.self_attn
@@ -228,7 +229,7 @@ class StaticDecode:
         if self.epoch != self.model.memory._static_decode_epoch:
             self.initialize(past)
         positions = positions[:, -ids.shape[1]:]
-        refresh_sink = pk.history is None
+        refresh_sink = pk.history is None and not self.model.memory._decode_uncompressed
         graph_key = (size, refresh_sink, self.raw_bucket, return_normalized_hidden,
                      bool(getattr(self.model.config, 'beacon_decode_compile', False)), self.paired_enabled)
         if graph_key not in self.graphs:

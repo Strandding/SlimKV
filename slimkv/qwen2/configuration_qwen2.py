@@ -126,6 +126,7 @@ class Qwen2Config(PretrainedConfig):
         beacon_attend_prev=True,
         beacon_pos="interleave",
         beacon_parallel_window=1,
+        beacon_decode_compress=True,
         beacon_skip_rope_for_beacon_k=False,
         beacon_shared_kv_down_proj=False,
         beacon_k_compression="none",
@@ -173,6 +174,7 @@ class Qwen2Config(PretrainedConfig):
         self.beacon_attend_prev = beacon_attend_prev
         self.beacon_pos = beacon_pos
         self.beacon_parallel_window = beacon_parallel_window
+        self.beacon_decode_compress = beacon_decode_compress
         self.beacon_skip_rope_for_beacon_k = beacon_skip_rope_for_beacon_k
         self.beacon_shared_kv_down_proj = beacon_shared_kv_down_proj
         # convenience: beacon_kv_compression overrides both k and v

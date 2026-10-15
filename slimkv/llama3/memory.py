@@ -104,7 +104,7 @@ class LlamaMemory(Memory):
         import torch
         start = self._start_idx
         end = self.all_sequence_length
-        full = end >= start + self.config.beacon_window
+        full = not self._decode_uncompressed and end >= start + self.config.beacon_window
         if self._is_full_window:
             ratio = self.set_compression_ratio(start_idx=start, end_idx=end)
             self._interleave_compression_ratio = ratio
@@ -114,23 +114,26 @@ class LlamaMemory(Memory):
             ratio = self._interleave_compression_ratio
             previous_roles = self._beacon_indices.numel()
             previous_raw = 0 if self._window_raw_indices is None else self._window_raw_indices.numel()
-        size = (self._interleave_remainder + 1) // ratio
-        self._interleave_remainder = (self._interleave_remainder + 1) % ratio
+        size = 0
+        if not self._decode_uncompressed:
+            size = (self._interleave_remainder + 1) // ratio
+            self._interleave_remainder = (self._interleave_remainder + 1) % ratio
         token = self.all_input_ids[:, -1:]
         if size:
             # Decode inserts at most one Beacon, immediately after the raw token.
             token = torch.cat([token, token.new_full((token.shape[0], 1), self.config.vocab_size)], dim=1)
-        if self._decode_role_buffer is None:
-            capacity = 2 * self.config.beacon_window + 2
+        count = previous_roles + 1 + size
+        if (self._decode_role_buffer is None or self._decode_role_buffer.numel() < count
+                or self._decode_raw_indices.numel() < previous_raw + 1):
+            capacity = max(2 * self.config.beacon_window + 2, 1 << (count-1).bit_length())
             self._decode_role_buffer = torch.zeros(capacity, dtype=torch.long, device=token.device)
             self._decode_bool_buffer = torch.zeros(capacity, dtype=torch.bool, device=token.device)
-            self._decode_raw_indices = torch.empty(self.config.beacon_window + 1, dtype=torch.long, device=token.device)
+            self._decode_raw_indices = torch.empty(capacity, dtype=torch.long, device=token.device)
             if previous_roles:
                 self._decode_role_buffer[:previous_roles].copy_(self._beacon_indices)
                 self._decode_bool_buffer[:previous_roles].copy_(self._window_roles)
             if previous_raw:
                 self._decode_raw_indices[:previous_raw].copy_(self._window_raw_indices)
-        count = previous_roles + 1 + size
         self._decode_role_buffer[previous_roles:count].fill_(0)
         self._decode_bool_buffer[previous_roles:count].fill_(False)
         if size:
@@ -251,7 +254,8 @@ class LlamaMemory(Memory):
                 raw_v = cat_tensor([old_raw_v, new_raw_v], dim=2)
             window_k = cat_tensor([old_window_k, update.key_latents], dim=2)
             window_v = cat_tensor([old_window_v, update.value_latents], dim=2)
-            if self.beacon_activations[idx][0] is None and self.config.beacon_sink_size > 0:
+            if (self.beacon_activations[idx][0] is None and self.config.beacon_sink_size > 0
+                    and (not self._decode_uncompressed or self.sink_activations[idx][0] is None)):
                 self.sink_activations[idx] = (
                     slice_tensor(key, end=self.config.beacon_sink_size, dim=2).clone(),
                     slice_tensor(value, end=self.config.beacon_sink_size, dim=2).clone(),
