@@ -13,20 +13,22 @@
 
 <p align="center">
   <a href="#-news">📢 News</a> ·
-  <a href="#overview">Overview</a> ·
-  <a href="#method">Method</a> ·
-  <a href="#results">Results</a> ·
+  <a href="#-overview">🔎 Overview</a> ·
+  <a href="#-method">🧠 Method</a> ·
+  <a href="#-results">📈 Results</a> ·
   <a href="#-models">🤗 Models</a> ·
   <a href="#-quick-start">🚀 Quick start</a> ·
   <a href="#-longbench-v1">📊 LongBench-v1</a> ·
   <a href="#-decode-speed">⚡ Speed</a> ·
-  <a href="#citation">Citation</a>
+  <a href="#-training-and-other-tools">🔧 Training</a> ·
+  <a href="#-citation">📝 Citation</a> ·
+  <a href="#-acknowledgements-and-license">📜 License</a>
 </p>
 
 <p align="center">
   <a href="https://arxiv.org/abs/2610.02953">Paper</a> ·
   <a href="https://github.com/Strandding/SlimKV">Code</a> ·
-  <a href="https://huggingface.co/collections/Zihant0513/slimkv">🤗 Models</a> ·
+  <a href="https://huggingface.co/collections/Zihant0513/slimkv">Models</a> ·
   <a href="docs/zh/README.md">Chinese</a>
 </p>
 
@@ -37,13 +39,17 @@
 - **2026-10-15:** Llama-3.1-8B and Qwen2.5-14B checkpoints with 2×, 4× and 8× feature compression are available in the [🤗 Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv).
 - **2026-10-02:** The paper is available on [arXiv](https://arxiv.org/abs/2610.02953).
 
-## Overview
+<a id="overview"></a>
+
+## 🔎 Overview
 
 SlimKV compresses both the number of cached tokens and their feature dimensions for long-context LLM inference. It learns compact Beacon memories with layer-adaptive low-rank K/V representations, improving the accuracy–memory trade-off under a fixed cache budget.
 
 On LongBench, SlimKV outperforms the evaluated baselines at 16× and 32× compression and retains over 96% of the full-cache score at 4× and 8×.
 
-## Method
+<a id="method"></a>
+
+## 🧠 Method
 
 Conventional feature compression reconstructs full-dimensional Keys before applying RoPE. Beacon Keys are less sensitive to removing key-side RoPE than raw-token Keys. SlimKV uses this positional asymmetry to train low-rank Beacon projections without Beacon K-RoPE, while retaining RoPE for raw-token Keys and all Queries.
 
@@ -59,15 +65,21 @@ Conventional feature compression reconstructs full-dimensional Keys before apply
 
 Prefill computes attention in the original feature dimensions and stores completed windows as compressed Beacon K/V. Decode can use either reconstruction followed by attention, or direct latent-space attention without reconstructing historical Beacon K/V. Raw-token tails and sinks retain full-dimensional K/V. See the [paper](https://arxiv.org/abs/2610.02953) for experiments and results.
 
-## Results
+<a id="results"></a>
+
+## 📈 Results
 
 LongBench accuracy is reported from the paper. Decoding measurements below use NVIDIA H20 and this repository's FA2 implementation.
 
-### LongBench average scores
+<a id="longbench-average-scores"></a>
+
+### 🏆 LongBench average scores
 
 `f2`, `f4` and `f8` denote 2×, 4× and 8× feature compression. Their token compression ratios are 8×, 4× and 2× at 16× total compression, and 16×, 8× and 4× at 32×.
 
-#### 16× compression
+<a id="16-compression"></a>
+
+#### 🔹 16× compression
 
 <div align="center">
 
@@ -84,7 +96,9 @@ LongBench accuracy is reported from the paper. Decoding measurements below use N
 
 </div>
 
-#### 32× compression
+<a id="32-compression"></a>
+
+#### 🔹 32× compression
 
 <div align="center">
 
@@ -104,7 +118,7 @@ LongBench accuracy is reported from the paper. Decoding measurements below use N
 Averages from Table 2. Full KV is the uncompressed reference. Bold compressed scores mark the best result for each backbone and ratio.
 
 <details>
-<summary>Additional results at 4× / 8× compression</summary>
+<summary>📚 Additional results at 4× / 8× compression</summary>
 
 At lower compression ratios, SlimKV-f2 retains over 96% of the Full KV LongBench score. Averages from Table 4:
 
@@ -121,7 +135,9 @@ At lower compression ratios, SlimKV-f2 retains over 96% of the Full KV LongBench
 
 </details>
 
-### H20 decoding with Flash Attention 2
+<a id="h20-decoding-with-flash-attention-2"></a>
+
+### ⚡ H20 decoding with Flash Attention 2
 
 Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA2)**. Every method uses the same preallocation policy, whole-model CUDA Graphs and `torch.compile` decoder-tail compilation, with PyTorch 2.11.0+cu129 and FlashAttention 2.8.3. Full KV uses the same checkpoint's raw backbone, Recon rebuilds Beacon K/V at every step, and SlimKV uses direct latent attention.
 
@@ -158,7 +174,7 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 <p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2. Kernel times come from a separate uncaptured profiling pass, including QKV/output projections, cache operations, per-step KV reconstruction and RoPE, and excluding Norm, MLP and the LM head.</em></p>
 
 <details>
-<summary>End-to-end throughput (tokens/s, higher is better)</summary>
+<summary>📈 End-to-end throughput (tokens/s, higher is better)</summary>
 
 <div align="center">
 
@@ -176,7 +192,7 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 
 **256K note:** End-to-end values come from a separate capacity probe with four sequential runs per mode; the 32K–128K matrix alternates method order. Kernel profiling was not collected at 256K, shown as “—”. The probe extends position tables with unchanged RoPE frequencies beyond the checkpoint's native 128K configuration; it checks execution and numerical equivalence, without a 256K task-quality evaluation.
 
-All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [Decode speed](#-decode-speed) for run commands, [installation](#1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
+All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [Decode speed](#-decode-speed) for run commands, [installation](#-1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
 
 <a id="models"></a>
 
@@ -201,7 +217,9 @@ The walkthrough below uses **Llama-3.1-8B-r4**. It includes the backbone, traine
 
 Run all commands from the repository root in the same activated shell. The FA2 setup below targets a single **H20/H100-class SM90 GPU**, Python 3.11 or 3.12, a compatible NVIDIA driver and the **CUDA 12.9 development toolkit (`nvcc`)**. The r4 latent FA2 path needs the included width-320 extension. For other hardware or eager attention, see [installation](docs/installation.md).
 
-### 1. Install
+<a id="1-install"></a>
+
+### 🔧 1. Install
 
 ```bash
 git clone https://github.com/Strandding/SlimKV.git
@@ -224,7 +242,9 @@ export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
 
 The `tools.build_fa2_decode` command above compiles the SM90 BF16 CUDA extension. The benchmark command uses `DECODE_COMPILE=True` to enable `torch.compile`; the decoder tail compiles automatically on its first call, with no separate compilation script. Set `DECODE_COMPILE=False` to disable it. Standalone scripts use Transformers 4.40.2; keep vLLM in a separate environment.
 
-### 2. Download the checkpoint
+<a id="2-download-the-checkpoint"></a>
+
+### 📥 2. Download the checkpoint
 
 ```bash
 export MODEL_NAME_OR_PATH="$PWD/models/SlimKV-Llama3.1-8B-r4"
@@ -234,7 +254,9 @@ hf download Zihant0513/SlimKV-Llama3.1-8B-r4 \
 
 Keep all downloaded weight shards, the shard index, config and tokenizer together. `hf download` reuses files already present when rerun. In a new shell, reactivate `.venv` and export `MODEL_NAME_OR_PATH` and `SLIMKV_FA2_DECODE_EXTENSION_DIR` again.
 
-### 3. Generate a response
+<a id="3-generate-a-response"></a>
+
+### 💬 3. Generate a response
 
 ```bash
 python -m main.inference.infer \
@@ -249,7 +271,9 @@ Use `--prompt_file /path/to/context.txt` for a UTF-8 context. CUDA defaults to B
 
 ## 📊 LongBench-v1
 
-### Download the data
+<a id="download-the-data"></a>
+
+### 📥 Download the data
 
 ```bash
 export EVAL_DATA="$PWD/data/datasets/longbench"
@@ -258,7 +282,9 @@ python -m tools.data.download_longbench --output_dir "$EVAL_DATA"
 
 The downloader fetches the official v1 archive and extracts the selected JSONL task files. No dataset files are bundled in this repository.
 
-### Check the workflow with four samples
+<a id="check-the-workflow-with-four-samples"></a>
+
+### 🧪 Check the workflow with four samples
 
 ```bash
 TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 BATCH_SIZE=1 \
@@ -268,7 +294,9 @@ RESULT_DIR=quickstart-t4f4 \
 
 This evaluates the first two samples of each selected task. It checks the full evaluation workflow; use the next commands for the complete English/code preset.
 
-### Run t4f4 or t8f4
+<a id="run-t4f4-or-t8f4"></a>
+
+### 🔬 Run t4f4 or t8f4
 
 ```bash
 BEACON_RATIO=4 RESULT_DIR=longbench-t4f4 \
@@ -309,7 +337,9 @@ Two metrics are saved: **attention GPU kernel time**, including per-step KV reco
 
 Raw generated outputs stay under ignored `data/results/` directories. Paper accuracy and H20 timing summaries appear above; see the [paper](https://arxiv.org/abs/2610.02953) for its full experiments.
 
-## Training and other tools
+<a id="training-and-other-tools"></a>
+
+## 🔧 Training and other tools
 
 <div align="center">
 
@@ -325,7 +355,9 @@ Raw generated outputs stay under ignored `data/results/` directories. Paper accu
 
 See [reproduction](docs/reproducibility.md), the [source map](docs/structure.md) and [backend support](docs/implementation_status.md) for further details.
 
-## Citation
+<a id="citation"></a>
+
+## 📝 Citation
 
 The formal ACL Anthology record is not yet available. Use this provisional conference citation with the arXiv link.
 
@@ -343,6 +375,8 @@ The formal ACL Anthology record is not yet available. Use this provisional confe
 }
 ```
 
-## Acknowledgements and license
+<a id="acknowledgements-and-license"></a>
+
+## 📜 Acknowledgements and license
 
 SlimKV builds on [Activation Beacon](https://github.com/FlagOpen/FlagEmbedding/tree/master/research/Long_LLM/activation_beacon), Hugging Face Transformers and [FlashAttention](https://github.com/Dao-AILab/flash-attention). See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and licenses. Original SlimKV code is licensed under [Apache License 2.0](LICENSE). Third-party components retain their own copyrights and licenses. Model weights and datasets remain subject to their respective terms.

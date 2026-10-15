@@ -13,20 +13,22 @@
 
 <p align="center">
   <a href="#-动态">📢 动态</a> ·
-  <a href="#概览">概览</a> ·
-  <a href="#方法">方法</a> ·
-  <a href="#结果">结果</a> ·
+  <a href="#-概览">🔎 概览</a> ·
+  <a href="#-方法">🧠 方法</a> ·
+  <a href="#-结果">📈 结果</a> ·
   <a href="#-模型">🤗 模型</a> ·
   <a href="#-快速开始">🚀 快速开始</a> ·
   <a href="#-longbench-v1">📊 LongBench-v1</a> ·
   <a href="#-decode-测速">⚡ 测速</a> ·
-  <a href="#引用">引用</a>
+  <a href="#-训练与其他工具">🔧 训练与工具</a> ·
+  <a href="#-引用">📝 引用</a> ·
+  <a href="#-致谢与许可">📜 许可</a>
 </p>
 
 <p align="center">
   <a href="https://arxiv.org/abs/2610.02953">论文</a> ·
   <a href="https://github.com/Strandding/SlimKV">代码</a> ·
-  <a href="https://huggingface.co/collections/Zihant0513/slimkv">🤗 模型</a> ·
+  <a href="https://huggingface.co/collections/Zihant0513/slimkv">模型</a> ·
   <a href="../../README.md">English</a>
 </p>
 
@@ -37,13 +39,17 @@
 - **2026-10-15:** Llama-3.1-8B 与 Qwen2.5-14B 的2×、4×、8×特征压缩权重已发布至 [🤗 Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv)。
 - **2026-10-02:** 论文公开于 [arXiv](https://arxiv.org/abs/2610.02953)。
 
-## 概览
+<a id="概览"></a>
+
+## 🔎 概览
 
 SlimKV 同时压缩 KV Cache 的 token 数量和特征维度，用于长上下文大模型推理。它通过训练紧凑的 Beacon 记忆和逐层自适应低秩 K/V 表示，在固定缓存预算下改善精度与显存之间的权衡。
 
 在 LongBench 上，SlimKV 在16×和32×压缩下优于所评测的基线，并在4×和8×压缩下保留超过96%的 Full KV 得分。
 
-## 方法
+<a id="方法"></a>
+
+## 🧠 方法
 
 传统特征压缩需要先重建原始维度的 Key，再应用 RoPE。Beacon Keys 对去除 key-side RoPE 的敏感度低于 raw-token Keys。SlimKV 利用这种位置不对称性，在关闭 Beacon K-RoPE 的条件下训练低秩 Beacon 投影，同时保留 raw-token Keys 和全部 Queries 的 RoPE。
 
@@ -59,15 +65,21 @@ SlimKV 同时压缩 KV Cache 的 token 数量和特征维度，用于长上下�
 
 Prefill 在原始特征维度计算 attention，将完成的窗口存为压缩 Beacon K/V。Decode 可选择先重建再做 attention，或直接进行 latent-space attention，避免重建历史 Beacon K/V。Raw tail 和 sink 保留原始维度的 K/V。实验与结果见[论文](https://arxiv.org/abs/2610.02953)。
 
-## 结果
+<a id="结果"></a>
+
+## 📈 结果
 
 LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与本仓库的 FA2 实现。
 
-### LongBench 平均分
+<a id="longbench-平均分"></a>
+
+### 🏆 LongBench 平均分
 
 `f2`、`f4`、`f8` 分别表示 2×、4×、8× 特征压缩。16× 总压缩下，对应的 token 压缩为 8×、4×、2×；32× 下则为 16×、8×、4×。
 
-#### 16× 压缩
+<a id="16-压缩"></a>
+
+#### 🔹 16× 压缩
 
 <div align="center">
 
@@ -84,7 +96,9 @@ LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与�
 
 </div>
 
-#### 32× 压缩
+<a id="32-压缩"></a>
+
+#### 🔹 32× 压缩
 
 <div align="center">
 
@@ -104,7 +118,7 @@ LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与�
 平均分来自论文 Table 2，Full KV 为未压缩基线；压缩结果中的粗体标出各模型和压缩比下的最佳分数。
 
 <details>
-<summary>4× / 8× 压缩的补充结果</summary>
+<summary>📚 4× / 8× 压缩的补充结果</summary>
 
 在较低压缩比下，SlimKV-f2 保留超过96%的 Full KV LongBench 得分。以下是 Table 4 的平均分。
 
@@ -121,7 +135,9 @@ LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与�
 
 </details>
 
-### H20：Flash Attention 2 解码性能
+<a id="h20flash-attention-2-解码性能"></a>
+
+### ⚡ H20：Flash Attention 2 解码性能
 
 Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2）**。所有方法使用相同的预分配策略、整模型 CUDA Graph 和 `torch.compile` decoder-tail 编译；软件环境为 PyTorch 2.11.0+cu129、FlashAttention 2.8.3。Full KV 使用同一 checkpoint 的原始基座，Recon 每一步重建 Beacon K/V，SlimKV 直接进行 latent-space attention。
 
@@ -158,7 +174,7 @@ Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2�
 <p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2。Kernel 数据来自独立的非 Graph profiling，包含 QKV/输出投影、缓存操作、每步 KV 重建及 RoPE，不含 Norm、MLP 和 LM head。</em></p>
 
 <details>
-<summary>端到端吞吐量（tokens/s，越高越好）</summary>
+<summary>📈 端到端吞吐量（tokens/s，越高越好）</summary>
 
 <div align="center">
 
@@ -176,7 +192,7 @@ Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2�
 
 **256K 表注：** 端到端数据来自单独的容量测试，逐模式执行四轮测量；32K–128K 使用交替顺序对照。256K 未采集 kernel profiling，以“—”表示。256K 沿用既有 RoPE 频率扩展位置表，超过权重原生128K配置；本次验证运行和优化前后数值等价，未评估256K任务精度。
 
-各方法使用相同的合成输入和 Full KV 后续 token，并在计时前对照各自原路径验证完整 logits 和最终 KV 逐位一致。运行命令与编译选项见下方 [Decode 测速](#-decode-测速)和[安装步骤](#1-安装)，指标定义见[测速指南](benchmark.md)。
+各方法使用相同的合成输入和 Full KV 后续 token，并在计时前对照各自原路径验证完整 logits 和最终 KV 逐位一致。运行命令与编译选项见下方 [Decode 测速](#-decode-测速)和[安装步骤](#-1-安装)，指标定义见[测速指南](benchmark.md)。
 
 <a id="模型"></a>
 
@@ -201,7 +217,9 @@ Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2�
 
 以下命令在同一个已激活环境的终端中，从仓库根目录执行。FA2 安装示例面向单张 **H20/H100 类 SM90 GPU**，使用 Python 3.11 或3.12、兼容的 NVIDIA 驱动及 **CUDA 12.9 开发工具链（`nvcc`）**。r4 的 latent FA2 路径需要仓库中的320维扩展。其他硬件及 eager 用法见[安装指南](installation.md)。
 
-### 1. 安装
+<a id="1-安装"></a>
+
+### 🔧 1. 安装
 
 ```bash
 git clone https://github.com/Strandding/SlimKV.git
@@ -224,7 +242,9 @@ export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
 
 上面的 `tools.build_fa2_decode` 命令编译 SM90 BF16 CUDA 扩展。测速命令使用 `DECODE_COMPILE=True` 启用 `torch.compile`，decoder tail 在首次调用时自动编译，无需单独执行编译脚本；`DECODE_COMPILE=False` 可关闭。独立推理和评测使用 Transformers 4.40.2，vLLM 使用单独环境。
 
-### 2. 下载权重
+<a id="2-下载权重"></a>
+
+### 📥 2. 下载权重
 
 ```bash
 export MODEL_NAME_OR_PATH="$PWD/models/SlimKV-Llama3.1-8B-r4"
@@ -234,7 +254,9 @@ hf download Zihant0513/SlimKV-Llama3.1-8B-r4 \
 
 保留下载目录中的全部权重分片、分片索引、配置及 tokenizer。重复运行 `hf download` 会复用已有文件。新开终端后，重新激活 `.venv`，并再次设置 `MODEL_NAME_OR_PATH` 和 `SLIMKV_FA2_DECODE_EXTENSION_DIR`。
 
-### 3. 生成一条回答
+<a id="3-生成一条回答"></a>
+
+### 💬 3. 生成一条回答
 
 ```bash
 python -m main.inference.infer \
@@ -249,7 +271,9 @@ python -m main.inference.infer \
 
 ## 📊 LongBench-v1
 
-### 下载数据
+<a id="下载数据"></a>
+
+### 📥 下载数据
 
 ```bash
 export EVAL_DATA="$PWD/data/datasets/longbench"
@@ -258,7 +282,9 @@ python -m tools.data.download_longbench --output_dir "$EVAL_DATA"
 
 下载器获取官方 v1 压缩包并提取所选子集的 JSONL 文件，仓库不包含数据文件。
 
-### 先用四条样本检查流程
+<a id="先用四条样本检查流程"></a>
+
+### 🧪 先用四条样本检查流程
 
 ```bash
 TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 BATCH_SIZE=1 \
@@ -268,7 +294,9 @@ RESULT_DIR=quickstart-t4f4 \
 
 该命令评测每个所选子集的前两条样本。流程跑通后，再执行下面的完整英文/代码子集评测。
 
-### 运行 t4f4 或 t8f4
+<a id="运行-t4f4-或-t8f4"></a>
+
+### 🔬 运行 t4f4 或 t8f4
 
 ```bash
 BEACON_RATIO=4 RESULT_DIR=longbench-t4f4 \
@@ -309,7 +337,9 @@ DECODE_COMPILE=True OUTPUT_DIR=data/results/speed-32k-128k \
 
 生成的原始输出保存在已忽略的 `data/results/` 下。上方展示论文精度和 H20 测速汇总，完整论文实验见[论文](https://arxiv.org/abs/2610.02953)。
 
-## 训练与其他工具
+<a id="训练与其他工具"></a>
+
+## 🔧 训练与其他工具
 
 <div align="center">
 
@@ -325,7 +355,9 @@ DECODE_COMPILE=True OUTPUT_DIR=data/results/speed-32k-128k \
 
 其他细节见[复现说明](reproducibility.md)、[源码导航](structure.md)和[后端支持](implementation_status.md)。
 
-## 引用
+<a id="引用"></a>
+
+## 📝 引用
 
 ACL Anthology 的正式论文记录尚未公开，以下使用临时会议引用并链接 arXiv 版本。
 
@@ -343,6 +375,8 @@ ACL Anthology 的正式论文记录尚未公开，以下使用临时会议引用
 }
 ```
 
-## 致谢与许可
+<a id="致谢与许可"></a>
+
+## 📜 致谢与许可
 
 SlimKV 基于 [Activation Beacon](https://github.com/FlagOpen/FlagEmbedding/tree/master/research/Long_LLM/activation_beacon)、Hugging Face Transformers 和 [FlashAttention](https://github.com/Dao-AILab/flash-attention)。归属和许可见[第三方声明](../../THIRD_PARTY_NOTICES.md)。SlimKV 原创代码采用 [Apache License 2.0](../../LICENSE)。第三方组件保留各自的版权与许可，模型权重和数据集遵循各自的授权条款。
