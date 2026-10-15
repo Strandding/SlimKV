@@ -13,15 +13,15 @@
 </p>
 
 <p align="center">
-  <a href="#-news">📢 News</a> ·
-  <a href="#-overview">🔎 Overview</a> ·
-  <a href="#-method">🧠 Method</a> ·
-  <a href="#-models">🤗 Models</a> ·
-  <a href="#-quick-start">🚀 Quick start</a> ·
-  <a href="#-evaluation">📊 Evaluation</a> ·
-  <a href="#-training-and-other-tools">🔧 Training</a> ·
-  <a href="#-citation">📝 Citation</a> ·
-  <a href="#-acknowledgements-and-license">📜 License</a>
+  <a href="#news">📢 News</a> ·
+  <a href="#overview">🔎 Overview</a> ·
+  <a href="#method">🧠 Method</a> ·
+  <a href="#models">🤗 Models</a> ·
+  <a href="#quick-start">🚀 Quick start</a> ·
+  <a href="#evaluation">📊 Evaluation</a> ·
+  <a href="#training-and-other-tools">🔧 Training and other tools</a> ·
+  <a href="#citation">📝 Citation</a> ·
+  <a href="#acknowledgements-and-license">📜 Acknowledgements and license</a>
 </p>
 
 <a id="news"></a>
