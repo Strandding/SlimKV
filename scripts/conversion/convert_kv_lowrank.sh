@@ -85,7 +85,7 @@ else
   latent_dim_args+=(--beacon_v_latent_head_dim "${BEACON_V_LATENT_HEAD_DIM}")
 fi
 
-"${PYTHON_BIN}" -m main.convert_kv_lowrank \
+"${PYTHON_BIN}" -m main.conversion.convert_kv_lowrank \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --output_dir "${OUTPUT_DIR}" \
   --dtype "${DTYPE}" \

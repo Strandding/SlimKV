@@ -21,7 +21,7 @@ Global coupled rank缓存形状[B,1,N,R]。FA2在rank超过256时使用BF16 SM90
 
 Fast默认True，仅eligible FA2；Graph默认False，只捕获norm及attention之后MLP/residual，Q1/Q2和B分开缓存。Attention/KV更新仍eager；CPU/梯度/诊断fallback，dtype/device变化清图。
 
-`main.convert_kv_lowrank` 已实现等能量阈值、秩下限和剩余预算分配，K/V 预算独立，秩按 KV head 粒度对齐。用法见[自动初始化](training.md#自动等能量秩分配)。
+`main.conversion.convert_kv_lowrank` 已实现等能量阈值、秩下限和剩余预算分配，K/V 预算独立，秩按 KV head 粒度对齐。用法见[自动初始化](training.md#自动等能量秩分配)。
 
 ## 已知问题和未完成项
 

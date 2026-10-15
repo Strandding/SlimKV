@@ -24,7 +24,7 @@ Ranks are global and coupled across KV heads: cached shapes are `[B,1,N,R]`. FA2
 
 `beacon_decode_fast=True` is the default for eligible FA2 decode and retains GPU token bookkeeping. `beacon_decode_graph=False` is the default; opt-in partial Graph captures input norm and post-attention norm/MLP/residual segments, separately for Q1/Q2 and batch shapes. Attention and dynamic KV updates remain eager. CPU/gradient and diagnostics fall back; dtype/device changes clear Graph caches.
 
-Floor-constrained equal-energy rank allocation and residual budget completion are available in `main.convert_kv_lowrank`. K/V budgets are independent and ranks align to the KV head count. See [automatic initialization](training.md#automatic-equal-energy-allocation).
+Floor-constrained equal-energy rank allocation and residual budget completion are available in `main.conversion.convert_kv_lowrank`. K/V budgets are independent and ranks align to the KV head count. See [automatic initialization](training.md#automatic-equal-energy-allocation).
 
 ## Known issues retained for follow-up
 

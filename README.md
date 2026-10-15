@@ -189,7 +189,7 @@ The model code uses Transformers 4.40.x, tested with 4.40.2. Eager inference doe
 Download a checkpoint from the [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv) or [train one](docs/training.md). Include its weights, configuration and tokenizer.
 
 ```bash
-python -m main.infer \
+python -m main.inference.infer \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --prompt 'Explain why a KV cache helps language model inference.' \
   --max_new_tokens 32
@@ -209,12 +209,12 @@ Run the following entry points from the repository root. Model, data and output 
 
 | Stage | Entry point | Guide |
 | :---: | :---: | :---: |
-| Low-rank initialization | `python -m main.convert_kv_lowrank --help` | [Training](docs/training.md) |
+| Low-rank initialization | `python -m main.conversion.convert_kv_lowrank --help` | [Training](docs/training.md) |
 | Pretraining | `bash scripts/training/train_llama_8B.sh` | [Training](docs/training.md) |
 | Finetuning | `bash scripts/training/finetune_llama_8B.sh` | [Training](docs/training.md) |
 | LongBench-v1 | `bash scripts/evaluation/eval_longbench_slimkv.sh` | [Evaluation](docs/evaluation.md) |
-| Needle-in-a-Haystack | `python -m main.eval_needle --help` | [Evaluation](docs/evaluation.md) |
-| Latency and memory | `python -m tools.benchmark_fa2_decode --help` | [Benchmarking](docs/benchmark.md) |
+| Needle-in-a-Haystack | `python -m main.evaluation.eval_needle --help` | [Evaluation](docs/evaluation.md) |
+| Decode speed at 32K–128K | `bash scripts/benchmark/benchmark_context_decode.sh` | [Benchmarking](docs/benchmark.md) |
 
 </div>
 

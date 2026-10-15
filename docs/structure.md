@@ -1,40 +1,79 @@
-# Source and tool map
+# Repository structure
 
 [中文](zh/structure.md)
-Model implementations live in `slimkv`, command modules in `main`, and launch presets in `scripts`. Configuration and environment constraints are grouped under `config`.
 
-| Location | Responsibility |
+Start with `scripts/` to run an experiment, `main/` to inspect its Python entry
+point, and `slimkv/` to inspect the model. Entry points and tools are grouped by
+purpose; directory names are stable and contain no experiment timestamps.
+
+```text
+slimkv/                 Model and cache implementation
+  llama3/               Llama training, prefill, latent and reconstruction decode
+  qwen2/                Qwen2/Qwen2.5 model implementation
+  vllm_plugin/          Experimental paged cache and continuous scheduling
+main/                   Python application entry points
+  conversion/           SVD initialization and projection conversion
+  training/             Training and pretraining data processing
+  inference/            Standalone and vLLM inference
+  evaluation/           LongBench, NIAH and other accuracy evaluations
+  analysis/             Beacon probes, attention heatmaps and plotting
+scripts/                Shell launch presets grouped by task
+  conversion/
+  training/
+  evaluation/
+  benchmark/
+  slurm/                Scheduler templates
+  vllm/                 Separate-environment baseline utilities
+tools/                 Development and measurement tools
+  benchmark/            Decode timing, batch scaling and FA2 profiling
+  data/                 LongBench download and deterministic fixture preparation
+  validation/           GPU numerical and communication checks
+config/
+  data/                 Training data mixtures
+  accelerate/           FSDP and inference launcher configurations
+  deepspeed/            DeepSpeed training configurations
+  environments/         CPU dependency constraints
+kernels/fa2_decode/     Optional SM90 width-320 FA2 extension
+integrations/vllm/      Separate vLLM installation profile
+tests/                  Automated regression tests
+docs/                   English guides, zh/ translations and license texts
+```
+
+## Common entry points
+
+| Task | Launcher or module |
 |---|---|
-| `slimkv/__init__.py` | `get_model_and_tokenizer`, architecture dispatch and public exports |
-| `slimkv/args.py`, `slimkv/data.py`, `slimkv/trainer.py` | CLI dataclasses, dataset preprocessing and Trainer integration |
-| `slimkv/memory.py` | Shared Beacon window/insertion and cache management |
-| `slimkv/llama3/memory.py` | Low-rank storage, reconstruction views, cache eligibility and decode bookkeeping |
-| `slimkv/llama3/modeling_llama.py` | Llama attention/projections/model forward; original-dimension prefill and training |
-| `slimkv/llama3/fa2_decode.py`, `decode_ops.py`, `decode_kernels.py`, `decode_graph.py` | Optional global-latent decode, fused operators and partial Graph |
-| `slimkv/qwen2` | Qwen2/Qwen2.5 training and full-cache inference |
-| `slimkv/vllm_plugin` | Experimental Llama paged cache and continuous scheduling integration |
-| `main` | Installation-visible command modules; `infer`, `train`, conversion and evaluation |
-| `scripts/conversion`, `training`, `evaluation`, `benchmark` | Environment-configurable launch presets; source `scripts/common.sh`. Qwen and Llama LongBench presets share `scripts/evaluation/longbench_common.sh` |
-| `scripts/slurm` | Cluster-specific scheduler templates; check partition/GPU/module settings |
-| `scripts/vllm` | Separate-environment Full KV baseline setup/evaluation utilities |
-| `config/data`, `config/deepspeed` | Data mixtures and distributed-training settings |
-| `config/environments` | Dependency constraints for CPU validation |
-| `docs/zh`, `docs/licenses` | Chinese README/guides and third-party license texts |
-| `tests` | CPU regression and CLI/provenance checks; no download required |
-| `kernels/fa2_decode` | BF16 SM90 forward-only width-320 extension and upstream license |
+| Initialize low-rank Beacon weights | `scripts/conversion/convert_kv_lowrank.sh` |
+| Train / finetune Llama | `scripts/training/train_llama_8B.sh` / `finetune_llama_8B.sh` |
+| Run inference | `python -m main.inference.infer` |
+| Run vLLM inference | `python -m main.inference.infer_vllm` |
+| Evaluate LongBench-v1 | `scripts/evaluation/eval_longbench_slimkv.sh` |
+| Inspect LongBench preprocessing and scoring | `main/evaluation/eval_longbench.py`, `longbench_utils.py` |
+| Compare Full KV, reconstruction and latent at 32K–128K | `scripts/benchmark/benchmark_context_decode.sh` |
+| Inspect the fixed-context benchmark | `tools/benchmark/benchmark_context_decode.py` |
+| Profile FA2 | `python -m tools.benchmark.profile_fa2` |
+| Build the optional FA2 extension | `python -m tools.build_fa2_decode` |
+| Check repository syntax, imports and links | `python tools/check_repository.py` |
+| Record run configuration and source hashes | `python -m tools.record_run` |
 
-## Tools by purpose
+The shell launchers keep model/data/output paths configurable. They call the
+corresponding Python modules rather than implementing model logic.
 
-**General maintenance:** `check_repository.py` (syntax, local imports, shell paths, Markdown links, tracked artifacts); `record_run.py` (configuration/source/package/hardware provenance).
+## Model internals
 
-**Controlled evaluation:** `prepare_longbench.py` produces benchmark JSONL fixtures from official local task files; selection is explicit and deterministic, with hashes and source indices.
+`slimkv/__init__.py` exports the loader and selects Llama3 or Qwen2. Shared
+arguments, data processing, Trainer integration and Beacon window planning live
+in `args.py`, `data.py`, `trainer.py` and `memory.py`.
 
-**Current performance:** `benchmark_reconstruction.py`, `benchmark_fa2_decode.py` (including `--compare_b1` and `--reference_decode_source` controls), and `benchmark_batch_decode.py`. Each is a specialized experiment harness, not a unified serving benchmark.
-
-**GPU development:** `build_fa2_decode.py`, `validate_fa2_decode.py`, `validate_decode_ops.py`, `validate_b1_decode.py`, `profile_fa2.py`; some need the width-320 extension or a real checkpoint. GPU validation is outside public CPU CI.
-
-**Communication check:** `nccl_comm_test.py` checks distributed GPU communication.
+In `slimkv/llama3/`, `modeling_llama.py` contains the projections and model
+forward, and `memory.py` manages compressed storage and reconstruction views.
+`latent_decode.py` and `fa2_decode.py` implement direct latent attention;
+`decode_ops.py` / `decode_kernels.py`, `static_decode.py`, `decode_graph.py` and
+`compile_decode.py` provide optional decode acceleration. `prefill_ops.py` and
+`prefill_kernels.py` implement the original-dimensional prefill fast path.
 
 ## Generated files
 
-Checkpoints, datasets, predictions, profiler traces and build products are excluded by `.gitignore`. Store machine-specific notes and settings in `.local/`, or add personal exclusions to `.git/info/exclude`.
+Checkpoints, datasets, predictions, profiler traces and build products are
+excluded by `.gitignore`. Local settings and notes belong in `.local/`, with
+personal exclusions in `.git/info/exclude`.

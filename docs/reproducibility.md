@@ -9,17 +9,17 @@ The paper's efficiency protocol uses Llama-3.1-8B on an A100 80GB with batch siz
 
 | Stage | Available entry | Required author assets / remaining work |
 |---|---|---|
-| Initialization | `main.convert_kv_lowrank`; conversion presets | Exact initialization checkpoint revision and per-result rank lists; equal-energy/floor/budget allocation is available |
-| Pretraining | `main.train`; Llama/Qwen2 presets | Exact 0.5B-token processed RedPajama manifest, schedule, seeds and training environment |
+| Initialization | `main.conversion.convert_kv_lowrank`; conversion presets | Exact initialization checkpoint revision and per-result rank lists; equal-energy/floor/budget allocation is available |
+| Pretraining | `main.training.train`; Llama/Qwen2 presets | Exact 0.5B-token processed RedPajama manifest, schedule, seeds and training environment |
 | Finetuning | Same Trainer; finetuning presets | Exact 0.2B-token mixture and generated GPT/needle data, model-only versus resumable state policy |
-| LongBench | `main.eval_longbench` | Final weights for each backbone/compression ratio and full outputs/configs/task sets |
-| NIAH | `main.eval_needle` | Three-seed construction, manuscript judge and aggregation; current tool is not equivalent |
+| LongBench | `main.evaluation.eval_longbench` | Final weights for each backbone/compression ratio and full outputs/configs/task sets |
+| NIAH | `main.evaluation.eval_needle` | Three-seed construction, manuscript judge and aggregation; current tool is not equivalent |
 | Paper efficiency | Existing prototype and current tools | Audited A100 eager synthetic Full KV/Recon/LSA harness, attention-only timings, paper controls and long-context evidence |
 | Multi-request/ablations/MoE | Probes and archived prototypes | Final shared-context and ablation protocols; Qwen3 MoE implementation missing |
 
 ## Recording a run
 
-`main.train` and `main.eval_longbench` write `run_manifest.json` alongside outputs. It records seed/configuration, package and hardware versions, commit, actual source hashes, and available checkpoint-config/input hashes. Performance tools additionally save raw synchronized timing, input hashes, warmup/order information and cache/allocation measurements. A dirty worktree cannot be identified by commit alone; preserve the source hash manifest.
+`main.training.train` and `main.evaluation.eval_longbench` write `run_manifest.json` alongside outputs. It records seed/configuration, package and hardware versions, commit, actual source hashes, and available checkpoint-config/input hashes. Performance tools additionally save raw synchronized timing, input hashes, warmup/order information and cache/allocation measurements. A dirty worktree cannot be identified by commit alone; preserve the source hash manifest.
 
 For another entry point, use the standard-library provenance helper:
 

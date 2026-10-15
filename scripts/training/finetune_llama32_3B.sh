@@ -198,7 +198,7 @@ echo "attn_impl: flash_attention_2 | dtype: bf16 | lr: 1e-5"
 echo "log_file: ${LOG_FILE}"
 echo "================================="
 
-torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m main.train \
+torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" -m main.training.train \
 --output_dir "${OUTPUT_DIR}" \
 --model_name_or_path "${MODEL_NAME_OR_PATH}" \
 --train_data \

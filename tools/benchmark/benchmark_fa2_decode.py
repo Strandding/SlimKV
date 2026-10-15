@@ -1,4 +1,4 @@
-"""Measure ordinary reconstruction inference and a small LongBench-v1 subset."""
+"""Measure FA2 latent decode and reconstruction inference and a small LongBench-v1 subset."""
 import argparse
 from collections import defaultdict
 import gc
@@ -33,15 +33,22 @@ def main():
     parser.add_argument('--output_dir', required=True)
     parser.add_argument('--source_dir', default=None)
     parser.add_argument('--attn_impl', choices=['eager', 'flash_attention_2'], default='eager')
+    parser.add_argument('--forced_tokens_json', help='Optional mapping from sample index to fixed decode input tokens.')
+    parser.add_argument('--reference_decode_source', help='Optional prior fa2_decode.py for a same-model optimization control.')
+    parser.add_argument('--compare_b1', action='store_true', help='Compare legacy, GPU bookkeeping, and partial CUDA Graph decode in the same model.')
     parser.add_argument('--beacon_ratio', type=int, default=8)
     parser.add_argument('--decode_tokens', type=int, default=64)
     parser.add_argument('--warmup', type=int, default=1)
     parser.add_argument('--rounds', type=int, default=2,
                         help='Each symmetric round measures each cache mode twice.')
     parser.add_argument('--perf_sample_indices', type=int, nargs='+', default=[0, 2])
+    parser.add_argument('--validation_steps', type=int, default=16)
+    parser.add_argument('--skip_quality', action='store_true')
     parser.add_argument('--disable_optional_flash_import', action='store_true')
     args = parser.parse_args()
-    if args.decode_tokens < 2 or args.warmup < 1 or args.rounds < 1:
+    if args.compare_b1 and args.reference_decode_source:
+        parser.error('compare_b1 and reference_decode_source are separate controls.')
+    if args.decode_tokens < 2 or args.warmup < 1 or args.rounds < 1 or args.validation_steps < 1:
         parser.error('Require at least 2 generated tokens, 1 warmup and 1 round.')
     if args.source_dir:
         import sys
@@ -53,12 +60,17 @@ def main():
         transformers.utils.is_flash_attn_2_available = lambda: False
         transformers.utils.import_utils.is_flash_attn_2_available = lambda: False
     from slimkv import ModelArgs, get_model_and_tokenizer
-    from main.eval_longbench import process_longbench
-    from main.longbench_utils import DATASET2MAXNEWTOKENS, scorer
+    from main.evaluation.eval_longbench import process_longbench
+    from main.evaluation.longbench_utils import DATASET2MAXNEWTOKENS, scorer
 
     torch.manual_seed(42)
     torch.set_num_threads(8)
     samples = [json.loads(x) for x in Path(args.samples_jsonl).read_text().splitlines()]
+    supplied_tokens = json.loads(Path(args.forced_tokens_json).read_text()) if args.forced_tokens_json else None
+    if supplied_tokens is not None:
+        for index in args.perf_sample_indices:
+            if len(supplied_tokens[str(index)]) < args.decode_tokens - 1:
+                parser.error('Supplied decode inputs must cover all measured steps.')
     if any(i < 0 or i >= len(samples) for i in args.perf_sample_indices):
         parser.error('perf_sample_indices must refer to supplied samples.')
     outdir = Path(args.output_dir)
@@ -68,6 +80,22 @@ def main():
         dtype='bf16', attn_impl=args.attn_impl, chat_template='llama-3',
         beacon_ratio=[args.beacon_ratio], beacon_ratio_mix='sequence'), device='cuda:0')
     model.eval()
+    from slimkv.llama3 import modeling_llama, fa2_decode as decode_backend
+    actual_decode = decode_backend.decode
+    reference_decode = None
+    if args.reference_decode_source:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('slimkv.llama3._decode_reference', args.reference_decode_source)
+        reference_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reference_module)
+        reference_decode = reference_module.decode
+    modes = ['full_compact', 'reconstruct'] + (['fa2_reference'] if reference_decode else []) + ['fa2']
+    order = modes + list(reversed(modes))
+    quality_modes = ['reconstruct'] + (['fa2_reference'] if reference_decode else []) + ['fa2']
+    if args.compare_b1:
+        modes = ['full_compact', 'reconstruct', 'fa2_legacy', 'fa2_fast', 'fa2']
+        order = modes + list(reversed(modes))
+        quality_modes = ['reconstruct', 'fa2_legacy', 'fa2_fast', 'fa2']
     state = {'compact_sink': False}
     install_compact_sink_control(model.memory, state)
     encoded = []
@@ -78,7 +106,7 @@ def main():
         assert 2 * model.config.beacon_window < len(ids) <= 31550
         encoded.append(ids)
 
-    source = Path(args.source_dir or Path(__file__).resolve().parents[1])
+    source = Path(args.source_dir or Path(__file__).resolve().parents[2])
     commit = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
     metadata = {
         'source_commit': commit, 'checkpoint': args.model_name_or_path,
@@ -90,18 +118,25 @@ def main():
         'model_parameter_bytes': sum(x.numel() * x.element_size() for x in model.parameters()),
         'timing': 'Synchronized host wall time; tokenization/file IO excluded; no logits recording.',
         'decode_steps': args.decode_tokens - 1,
-        'measurement_order_per_round': ['full', 'full_compact', 'latent', 'latent', 'full_compact', 'full'],
+        'performance_inputs': 'Identical teacher-forced decode tokens from the full_compact warmup; quality uses normal greedy generation.',
+        'supplied_tokens_sha256': hashlib.sha256(Path(args.forced_tokens_json).read_bytes()).hexdigest() if args.forced_tokens_json else None,
+        'measurement_order_per_round': order,
+        'reference_decode_sha256': hashlib.sha256(Path(args.reference_decode_source).read_bytes()).hexdigest() if reference_decode else None,
         'memory': 'CUDA live allocated bytes, peak allocated bytes and unique persistent K/V storage; reserved allocator bytes excluded.',
         'full_compact': 'Full cache with first sink views cloned in the harness; same values and attention math.',
     }
-    result = {'metadata': metadata, 'performance': [], 'quality': [], 'complete': False}
+    result = {'metadata': metadata, 'performance': [], 'quality': [], 'logit_validation': [], 'complete': False}
 
     def save():
         (outdir / 'results.json').write_text(json.dumps(result, ensure_ascii=False, indent=2))
 
     def set_mode(mode):
         model.memory.reset()
-        model.config.beacon_cache_mode = 'latent' if mode == 'latent' else 'full'
+        model.config.beacon_cache_mode = 'full' if mode == 'full_compact' else 'latent'
+        model.config.beacon_decode_backend = 'fa2' if mode.startswith('fa2') else 'reconstruct'
+        model.config.beacon_decode_fast = mode != 'fa2_legacy'
+        model.config.beacon_decode_graph = args.compare_b1 and mode == 'fa2'
+        modeling_llama.fa2_decode = reference_decode if mode == 'fa2_reference' else actual_decode
         state['compact_sink'] = mode == 'full_compact'
         gc.collect()
         torch.cuda.synchronize()
@@ -120,6 +155,8 @@ def main():
                 'logical_kv_bytes': model.memory.cache_bytes(),
                 'unique_kv_storage_bytes': sum(storages.values()),
                 'memory_sizes': model.memory.get_memory_size()}
+
+    forced_tokens = None
 
     def measure(ids, mask, mode):
         set_mode(mode)
@@ -142,8 +179,9 @@ def main():
         token_mask = torch.ones_like(token)
         torch.cuda.reset_peak_memory_stats()
         decode_start = time.perf_counter()
-        for _ in range(args.decode_tokens - 1):
-            output = model(input_ids=token, attention_mask=token_mask)
+        for step in range(args.decode_tokens - 1):
+            input_token = token if forced_tokens is None else forced_tokens[:, step:step+1]
+            output = model(input_ids=input_token, attention_mask=token_mask)
             token = output.logits[:, -1].argmax(-1, keepdim=True)
             tokens.append(token)
             del output
@@ -173,19 +211,23 @@ def main():
             ids = torch.tensor([encoded[sample_index]], device='cuda:0')
             mask = torch.ones_like(ids)
             reference_tokens = None
+            forced_tokens = (torch.tensor([supplied_tokens[str(sample_index)]], device='cuda:0')
+                             if supplied_tokens is not None else None)
             warmups = []
-            for mode in ['full', 'full_compact', 'latent']:
+            for mode in modes:
                 for _ in range(args.warmup):
                     warmup = measure(ids, mask, mode)
                     if reference_tokens is None:
                         reference_tokens = warmup['generated_token_ids']
-                    assert warmup['generated_token_ids'] == reference_tokens
+                        if forced_tokens is None:
+                            forced_tokens = torch.tensor([reference_tokens], device='cuda:0')
+                    warmup['same_generated_tokens_as_reference'] = warmup['generated_token_ids'] == reference_tokens
                     warmups.append(warmup)
             runs = []
             for round_index in range(args.rounds):
                 for position, mode in enumerate(metadata['measurement_order_per_round']):
                     run = measure(ids, mask, mode)
-                    assert run['generated_token_ids'] == reference_tokens
+                    run['same_generated_tokens_as_reference'] = run['generated_token_ids'] == reference_tokens
                     run.update(round=round_index, order_position=position)
                     runs.append(run)
                     print('PERF_RUN', sample_index, mode, round_index, round(run['prefill_ms'], 2),
@@ -194,13 +236,66 @@ def main():
                       'peak_cuda_allocated_bytes', 'prefill_peak_cuda_allocated_bytes',
                       'decode_peak_cuda_allocated_bytes']
             medians = {mode: {key: statistics.median(r[key] for r in runs if r['mode'] == mode)
-                              for key in fields} for mode in ['full', 'full_compact', 'latent']}
+                              for key in fields} for mode in modes}
             result['performance'].append({'sample_index': sample_index, 'task': sample['task'],
                                           'id': sample['_id'], 'input_tokens': ids.shape[1],
                                           'input_ids_sha256': hashlib.sha256(ids.cpu().numpy().tobytes()).hexdigest(),
                                           'warmups': warmups, 'runs': runs, 'medians': medians})
             save()
+            # Independent teacher-forced logit checks and actual kernel coverage
+            # are deliberately outside the timing sections above.
+            from unittest.mock import patch
+            from slimkv.llama3 import fa2_decode as backend
+            vectors, calls = {}, defaultdict(int)
+            real_forward = backend.flash_forward
+
+            def observed_forward(q, k, v, scale, causal=False):
+                bucket = 320 if max(q.shape[-1], k.shape[-1], v.shape[-1]) > 256 else max(q.shape[-1], k.shape[-1], v.shape[-1])
+                calls[f'{bucket}:q{q.shape[1]}:causal{causal}'] += 1
+                return real_forward(q, k, v, scale, causal)
+
+            validation_steps = min(args.validation_steps, args.decode_tokens - 1)
+            for mode in quality_modes:
+                set_mode(mode)
+                with patch.object(backend, 'flash_forward', observed_forward):
+                    output = model(input_ids=ids, attention_mask=mask)
+                    scores = [output.logits[:, -1].cpu()]
+                    del output
+                    for step in range(validation_steps):
+                        output = model(input_ids=forced_tokens[:, step:step+1], attention_mask=torch.ones_like(forced_tokens[:, :1]))
+                        scores.append(output.logits[:, -1].cpu())
+                        del output
+                vectors[mode] = torch.cat(scores)
+            delta = vectors['fa2'] - vectors['reconstruct']
+            assert all(torch.isfinite(x).all() for x in vectors.values())
+            tensor_file = outdir / f'logits_{sample_index}.pt'
+            torch.save({'vectors': vectors, 'forced_token_ids': reference_tokens, 'kernel_calls': dict(calls)}, tensor_file)
+            result['logit_validation'].append({
+                'sample_index': sample_index, 'steps': validation_steps, 'prefill_max_abs_error': delta[0].abs().max().item(),
+                'decode_max_abs_error': delta[1:].abs().max().item(), 'decode_mean_abs_error': delta[1:].abs().mean().item(),
+                'argmax_agreements': (vectors['fa2'].argmax(-1) == vectors['reconstruct'].argmax(-1)).tolist(),
+                'kernel_calls': dict(calls), 'tensor_file': tensor_file.name,
+                'tensor_sha256': hashlib.sha256(tensor_file.read_bytes()).hexdigest(),
+                'optimized_bitwise_equal_to_reference': torch.equal(vectors['fa2'].contiguous().view(torch.uint8), vectors['fa2_reference'].contiguous().view(torch.uint8)) if reference_decode else None,
+                'optimized_max_abs_error_to_reference': (vectors['fa2'] - vectors['fa2_reference']).abs().max().item() if reference_decode else None,
+                'b1_bitwise_equal_to_legacy': {
+                    mode: torch.equal(vectors[mode].contiguous().view(torch.uint8), vectors['fa2_legacy'].contiguous().view(torch.uint8))
+                    for mode in ['fa2_fast', 'fa2']
+                } if args.compare_b1 else None,
+            })
+            if args.compare_b1:
+                assert all(result['logit_validation'][-1]['b1_bitwise_equal_to_legacy'].values())
+            assert any(key.startswith('320:') for key in calls)
+            save()
+            del vectors, delta, scores
+            forced_tokens = None
             del ids, mask
+
+        if args.skip_quality:
+            result['complete'] = True
+            save()
+            print('FA2_DECODE_BENCHMARK_COMPLETE', 0, flush=True)
+            return
 
         raw_eos = model.generation_config.eos_token_id
         raw_eos = [raw_eos] if isinstance(raw_eos, int) else list(raw_eos)
@@ -219,7 +314,7 @@ def main():
                    'input_tokens': ids.shape[1], 'answers': sample['answers'],
                    'all_classes': sample['all_classes'],
                    'input_ids_sha256': hashlib.sha256(ids.cpu().numpy().tobytes()).hexdigest()}
-            for mode in ['full', 'latent']:
+            for mode in quality_modes:
                 set_mode(mode)
                 eos = qa_eos if sample['task'] in qa_tasks else raw_eos
                 generated = model.generate(input_ids=ids, attention_mask=mask, do_sample=False,
@@ -235,7 +330,7 @@ def main():
                 print('QUALITY_SAMPLE', sample['task'], sample['source_index'], mode,
                       row[mode]['score'], repr(prediction[:180]), flush=True)
                 del generated
-            row['same_generated_tokens'] = row['full']['generated_token_ids'] == row['latent']['generated_token_ids']
+            row['same_generated_tokens'] = row['reconstruct']['generated_token_ids'] == row['fa2']['generated_token_ids']
             result['quality'].append(row)
             save()
             del ids, mask
@@ -244,10 +339,10 @@ def main():
             by_task[row['task']].append(row)
         result['task_scores'] = {task: {mode: scorer(task, [r[mode]['prediction'] for r in rows],
                                                     [r['answers'] for r in rows], rows[0]['all_classes'])
-                                      for mode in ['full', 'latent']} for task, rows in by_task.items()}
+                                      for mode in quality_modes} for task, rows in by_task.items()}
         result['complete'] = True
         save()
-    print('RECONSTRUCTION_BENCHMARK_COMPLETE', len(result['quality']), flush=True)
+    print('FA2_DECODE_BENCHMARK_COMPLETE', len(result['quality']), flush=True)
 
 
 if __name__ == '__main__':

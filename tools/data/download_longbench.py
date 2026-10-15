@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import zipfile
 
-from main.longbench_utils import ENGLISH_TASKS, DATASET2PROMPT
+from main.evaluation.longbench_utils import ENGLISH_TASKS, DATASET2PROMPT
 
 DATASET_ID = 'zai-org/LongBench'
 DATASET_REVISION = '5e628be450b7e67fb7ae6e201bd6d8f7056f7672'

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import torch
 
-from main.convert_kv_lowrank import (allocate_equal_energy_ranks, _prepare_equal_energy_projection,
+from main.conversion.convert_kv_lowrank import (allocate_equal_energy_ranks, _prepare_equal_energy_projection,
                                    _convert_proj, main)
 
 

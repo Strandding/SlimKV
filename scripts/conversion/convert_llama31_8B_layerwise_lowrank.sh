@@ -61,7 +61,7 @@ echo "[convert_llama31_8B_layerwise_lowrank] SHARED_DOWN=${BEACON_SHARED_KV_DOWN
 echo "[convert_llama31_8B_layerwise_lowrank] K_LATENT_DIMS=${BEACON_K_LATENT_HEAD_DIM_LIST}"
 echo "[convert_llama31_8B_layerwise_lowrank] V_LATENT_DIMS=${BEACON_V_LATENT_HEAD_DIM_LIST}"
 
-"${PYTHON_BIN}" -m main.convert_kv_lowrank \
+"${PYTHON_BIN}" -m main.conversion.convert_kv_lowrank \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --output_dir "${OUTPUT_DIR}" \
   --dtype "${DTYPE}" \

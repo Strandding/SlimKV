@@ -11,10 +11,10 @@ from unittest.mock import patch
 
 import torch
 
-from main.eval_longbench import EqualLengthBatchSampler
-from main import eval_longbench
-from main.longbench_utils import ENGLISH_TASKS
-from tools.download_longbench import extract_tasks
+from main.evaluation.eval_longbench import EqualLengthBatchSampler
+from main.evaluation import eval_longbench
+from main.evaluation.longbench_utils import ENGLISH_TASKS
+from tools.data.download_longbench import extract_tasks
 
 
 class LengthBatchingTest(unittest.TestCase):

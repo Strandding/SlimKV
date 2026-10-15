@@ -8,7 +8,7 @@ Use a local trained SlimKV checkpoint with `config.json`, the complete `.safeten
 The minimal command from the repository root is:
 
 ```bash
-python -m main.infer \
+python -m main.inference.infer \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --prompt 'Explain why a KV cache helps language model inference.' \
   --max_new_tokens 32
@@ -53,7 +53,7 @@ Memory persists across forward calls. Reset it between independent requests and 
 For eager decode over compressed Beacon K/V, no FlashAttention installation is needed:
 
 ```bash
-python -m main.infer \
+python -m main.inference.infer \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --attn_impl eager --beacon_cache_mode latent --beacon_decode_backend latent \
   --prompt_file /path/to/context.txt
@@ -63,7 +63,7 @@ For FlashAttention, install FA2 and build any required width-320 extension:
 
 ```bash
 export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
-python -m main.infer \
+python -m main.inference.infer \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --attn_impl flash_attention_2 \
   --beacon_cache_mode latent --beacon_decode_backend latent \

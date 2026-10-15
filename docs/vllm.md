@@ -21,7 +21,7 @@ Build the [width-320 FA2 extension](benchmark.md#building-the-width-320-extensio
 ## Inference
 
 ```bash
-python -m tools.infer_vllm \
+python -m main.inference.infer_vllm \
   --model /path/to/slimkv-checkpoint \
   --token-ratio 8 --max-num-seqs 4 \
   --prompt 'Explain why a KV cache helps language model inference.' \

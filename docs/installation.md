@@ -13,7 +13,7 @@ source .venv/bin/activate
 # Install a hardware-compatible torch wheel here.
 python -m pip install -e .
 python -m pip check
-python -m main.infer --help
+python -m main.inference.infer --help
 ```
 
 A CPU environment used for CI and local regression is reproducible with:

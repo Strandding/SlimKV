@@ -29,7 +29,7 @@ fi
 # Quick Start: one length x one depth (fast smoke test)
 CUDA_VISIBLE_DEVICES=4,5,6,7 \
 MASTER_PORT=29563 \
-torchrun --nproc_per_node=4 -m main.eval_needle \
+torchrun --nproc_per_node=4 -m main.evaluation.eval_needle \
   --model_name_or_path ${SLIMKV_OUTPUT_DIR}/slimkv-llama31-8b-finetune-dense/checkpoint-2000 \
   --enable_beacon \
   --beacon_window 1024 \

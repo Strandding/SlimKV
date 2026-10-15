@@ -59,7 +59,7 @@ sample_args=()
 if [[ -n "${MAX_SAMPLES_PER_TASK:-}" ]]; then
   sample_args+=(--max_samples_per_task "${MAX_SAMPLES_PER_TASK}")
 fi
-"${PYTHON:-python3}" -m main.eval_longbench \
+"${PYTHON:-python3}" -m main.evaluation.eval_longbench \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --eval_data "${EVAL_DATA}" \
   --output_dir "${OUTPUT_DIR:-data/results/longbench}" \

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import torch
 from transformers.cache_utils import DynamicCache
-from tools.benchmark_context_decode import (AppendCache, full_backbone, extend_rope_tables,
+from tools.benchmark.benchmark_context_decode import (AppendCache, full_backbone, extend_rope_tables,
     cloned_memory, scope_times, synthetic_ids, ATTENTION, RECONSTRUCTION, ROPE)
 from test_llama_reconstruction_cache import make_model
 

@@ -9,7 +9,7 @@ Llama3 预设评测 14 个英文及代码子集。训练语料只有中文，因
 下载官方 [LongBench-v1 压缩包](https://huggingface.co/datasets/zai-org/LongBench/tree/main)，提取所选子集：
 
 ```bash
-python -m tools.download_longbench --output_dir data/datasets/longbench
+python -m tools.data.download_longbench --output_dir data/datasets/longbench
 ```
 
 工具固定数据 revision `5e628be450b7e67fb7ae6e201bd6d8f7056f7672`，将压缩包和各任务文件的 SHA256 保存到 `dataset_manifest.json`。已有 `data.zip` 时，添加 `--archive /path/to/data.zip`，无需下载。不会覆盖内容不同的已有任务文件。使用 v1 JSONL，不混用 LongBench-E 或 LongBench-v2。
@@ -42,7 +42,7 @@ bash scripts/evaluation/eval_longbench_slimkv.sh
 
 旧的 `DECODE_BACKEND=fa2` 保留为显式 latent FA2 decode，不受 prefill 选择影响，兼容原有命令。`DECODE_GRAPH=False` 可单独关闭 Graph，`DECODE_COMPILE=False` 关闭可选编译，`PREFILL_FAST=False` 关闭 prefill 优化。Latent FA2 默认开启编译选项，仅在 Torch 2.11、B1 BF16 且启用 Graph 时实际编译，更大 batch 保留原 decode 路径。
 
-默认结果目录包含两项后端名称，各路径分别保存。直接使用 `python -m main.eval_longbench` 时，应显式选择 `--attn_impl` 和 `--beacon_decode_backend`；脚本自动配对只作用于其环境变量。
+默认结果目录包含两项后端名称，各路径分别保存。直接使用 `python -m main.evaluation.eval_longbench` 时，应显式选择 `--attn_impl` 和 `--beacon_decode_backend`；脚本自动配对只作用于其环境变量。
 
 选择任一 FlashAttention 路径都需安装 FA2。全局 latent rank 不超过 256 时使用标准 FA2；257–320 需 BF16 SM90 扩展，并设置 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，详见[英文构建说明](../benchmark.md#building-the-width-320-extension)。Latent eager 没有320维上限。两条直接 latent 路径都要求 global Linear up 投影及[对应缓存/RoPE 配置](implementation_status.md)。其他投影结构使用重建路径。当前直接 latent decode 支持 Llama3，尚不支持 Qwen2。
 
@@ -90,7 +90,7 @@ t8f4 可设置 `BEACON_RATIO=8`，并使用独立结果目录。脚本名之后�
 
 | 评测 | 入口 | 输入 |
 | --- | --- | --- |
-| NIAH | `python -m main.eval_needle --help` | 本地 haystack、可选 judge |
-| Synthetic passkey retrieval | `python -m main.eval_passkey --help` | Seed、长度和深度 |
-| LM perplexity | `python -m main.eval_lm --help` | 本地数据及对应 tokenization/stride |
-| 诊断 | `main.eval_longbench_beacon_probe`、`main.eval_longbench_chunk2_heatmap` | Probe 和注意力分析 |
+| NIAH | `python -m main.evaluation.eval_needle --help` | 本地 haystack、可选 judge |
+| Synthetic passkey retrieval | `python -m main.evaluation.eval_passkey --help` | Seed、长度和深度 |
+| LM perplexity | `python -m main.evaluation.eval_lm --help` | 本地数据及对应 tokenization/stride |
+| 诊断 | `main.analysis.eval_longbench_beacon_probe`、`main.analysis.eval_longbench_chunk2_heatmap` | Probe 和注意力分析 |

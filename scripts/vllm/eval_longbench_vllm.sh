@@ -172,7 +172,7 @@ fi
 echo "  TASKS        : ${TASKS[*]}"
 echo "=========================================="
 
-python -m main.eval_longbench \
+python -m main.evaluation.eval_longbench \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --eval_data "${EVAL_DATA}" \
   --output_dir "${RESULT_ROOT}" \

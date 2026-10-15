@@ -45,7 +45,7 @@ echo "  WARMUP_ROUNDS        : ${WARMUP_ROUNDS}"
 echo "=========================================="
 
 torchrun --standalone --nproc_per_node "${NPROC_PER_NODE}" \
-  "${PROJECT_ROOT}/tools/nccl_comm_test.py" \
+  "${PROJECT_ROOT}/tools/validation/nccl_comm_test.py" \
   --rounds "${ROUNDS}" \
   --tensor-mb "${TENSOR_MB}" \
   --warmup-rounds "${WARMUP_ROUNDS}"

@@ -50,7 +50,7 @@ class RepositoryToolsTest(unittest.TestCase):
                     for n in [10, 3000, 6100, 5000]]
             (directory / 'qasper.jsonl').write_text(''.join(json.dumps(row) + '\n' for row in rows))
             output = directory / 'samples.jsonl'
-            cmd = [sys.executable, '-m', 'tools.prepare_longbench', '--dataset_dir', tmp,
+            cmd = [sys.executable, '-m', 'tools.data.prepare_longbench', '--dataset_dir', tmp,
                    '--output', str(output), '--tasks', 'qasper']
             subprocess.run(cmd, cwd=ROOT, check=True, capture_output=True)
             selected = [json.loads(line) for line in output.read_text().splitlines()]
@@ -85,7 +85,7 @@ class RepositoryToolsTest(unittest.TestCase):
             tokenizer.save_pretrained(tmp)
             config_before = (Path(tmp) / 'config.json').read_bytes()
             env = dict(os.environ, HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', OMP_NUM_THREADS='1')
-            run = subprocess.run([sys.executable, '-m', 'main.infer', '--model_name_or_path', tmp,
+            run = subprocess.run([sys.executable, '-m', 'main.inference.infer', '--model_name_or_path', tmp,
                                   '--device', 'cpu', '--dtype', 'fp32', '--prompt', 'w4 w5 w6',
                                   '--max_new_tokens', '3'], cwd=ROOT, env=env, text=True,
                                  capture_output=True, timeout=60)

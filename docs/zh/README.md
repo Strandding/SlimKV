@@ -189,7 +189,7 @@ python -m pip install -e .
 从 [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv) 下载 checkpoint，或按[训练说明](training.md)自行训练。Checkpoint 需包含权重、配置和 tokenizer。
 
 ```bash
-python -m main.infer \
+python -m main.inference.infer \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --prompt 'Explain why a KV cache helps language model inference.' \
   --max_new_tokens 32
@@ -209,12 +209,12 @@ CUDA 上的 CLI 默认使用原始维度 FA2 prefill、免重建 latent decode�
 
 | 阶段 | 入口 | 说明 |
 | :---: | :---: | :---: |
-| 低秩初始化 | `python -m main.convert_kv_lowrank --help` | [训练](training.md) |
+| 低秩初始化 | `python -m main.conversion.convert_kv_lowrank --help` | [训练](training.md) |
 | 预训练 | `bash scripts/training/train_llama_8B.sh` | [训练](training.md) |
 | 微调 | `bash scripts/training/finetune_llama_8B.sh` | [训练](training.md) |
 | LongBench-v1 | `bash scripts/evaluation/eval_longbench_slimkv.sh` | [评测](evaluation.md) |
-| NIAH | `python -m main.eval_needle --help` | [评测](evaluation.md) |
-| 耗时与显存 | `python -m tools.benchmark_fa2_decode --help` | [性能评测](benchmark.md) |
+| NIAH | `python -m main.evaluation.eval_needle --help` | [评测](evaluation.md) |
+| 32K–128K decode 测速 | `bash scripts/benchmark/benchmark_context_decode.sh` | [性能评测](benchmark.md) |
 
 </div>
 

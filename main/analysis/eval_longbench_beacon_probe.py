@@ -13,7 +13,7 @@ from transformers.utils import logging
 from torch.utils.data import DataLoader
 
 from slimkv import ModelArgs, DefaultDataCollator, get_model_and_tokenizer, makedirs, apply_chat_template
-from .longbench_utils import DATASET2PROMPT, DATASET2MAXNEWTOKENS, DATASET2CATEGORY
+from ..evaluation.longbench_utils import DATASET2PROMPT, DATASET2MAXNEWTOKENS, DATASET2CATEGORY
 
 
 logger = logging.get_logger(__name__)

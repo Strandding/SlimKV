@@ -8,7 +8,7 @@ Use the tools below with the current model implementation. Run commands from the
 Supply official local task JSONL files, then:
 
 ```bash
-python -m tools.prepare_longbench \
+python -m tools.data.prepare_longbench \
   --dataset_dir /path/to/longbench \
   --output data/results/fixtures/samples.jsonl \
   --tasks qasper hotpotqa multifieldqa_en lcc \
@@ -22,7 +22,7 @@ Performance tools expect a local Llama3 checkpoint and long prompts: the current
 ## Reconstruction control
 
 ```bash
-python -m tools.benchmark_reconstruction \
+python -m tools.benchmark.benchmark_reconstruction \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --samples_jsonl data/results/fixtures/samples.jsonl \
   --output_dir data/results/reconstruction-benchmark \
@@ -44,7 +44,7 @@ python -m tools.build_fa2_decode \
   --fa2_source .cache/flash-attention-v2.8.3 \
   --output_dir .cache/fa2_decode_320 --jobs 2
 export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
-python -m tools.validate_fa2_decode \
+python -m tools.validation.validate_fa2_decode \
   --extension_dir "$SLIMKV_FA2_DECODE_EXTENSION_DIR" \
   --output data/results/fa2-kernel-validation.json
 ```
@@ -55,7 +55,7 @@ The build manifest includes Torch/CUDA, upstream FA2/CUTLASS commits and source/
 
 `--beacon_prefill_fast True` is the default for Llama. During inference, unpadded interleaved FA2 windows with a latent cache share token indices across layers and skip raw-cache copies at completed windows. BF16 Q/K rotary operations use one Triton kernel while leaving Beacon K unrotated. Multiplications still round to BF16 before addition, matching the original operations. Projection shapes, weights, ranks, attention scale and masks stay the same. Attention itself runs in the original feature dimensions.
 
-Training, padded inputs and unsupported configurations use the existing path. Unsupported rotary kernels also fall back to the existing rotary operations. For a direct comparison, pass `--beacon_prefill_fast False` to `main.eval_longbench`, or set `model.config.beacon_prefill_fast = False`. The first eligible call compiles the Triton kernel.
+Training, padded inputs and unsupported configurations use the existing path. Unsupported rotary kernels also fall back to the existing rotary operations. For a direct comparison, pass `--beacon_prefill_fast False` to `main.evaluation.eval_longbench`, or set `model.config.beacon_prefill_fast = False`. The first eligible call compiles the Triton kernel.
 
 On H20, with the BF16 Llama-3.1-8B f4 checkpoint and t4f4, one warmup followed by four alternating measurements gives these prefill medians. These are synchronized forward times, including all prompt windows and final-token logits, without decode.
 
@@ -86,14 +86,14 @@ Peak allocation includes the model, cache, FA workspaces and retained graphs. In
 
 `--beacon_decode_compile True` enables the validated Torch 2.11 decoder-tail compiler for B1 BF16 FA2 Graph decode. It retains the original FP32 variance reduction and BF16 rounding boundaries, and reuses the existing CUDA Graphs. Other Torch versions and unsupported shapes retain the original path. The first eligible call compiles the tail before Graph capture.
 
-The CUDA inference CLI and `eval_longbench_slimkv.sh` enable this option by default. Disable it with `--no-beacon_decode_compile` in `main.infer`, `DECODE_COMPILE=False` in the shell preset, or `--beacon_decode_compile False` in `main.eval_longbench`. The Python API and comparison tools preserve their original defaults. Training is unchanged.
+The CUDA inference CLI and `eval_longbench_slimkv.sh` enable this option by default. Disable it with `--no-beacon_decode_compile` in `main.inference.infer`, `DECODE_COMPILE=False` in the shell preset, or `--beacon_decode_compile False` in `main.evaluation.eval_longbench`. The Python API and comparison tools preserve their original defaults. Training is unchanged.
 
 On H20 with the same f4 checkpoint, t8f4, B1 and 63 fixed decode steps, four alternating measurements after warmup give 87.76 → 89.48 tokens/s for a 4,009-token prompt and 87.62 → 89.39 tokens/s for a 6,194-token prompt. Compilation is outside the timing interval. All 64 logit steps and final persistent KV tensors match bitwise, and greedy tokens and official scores match on eight fixed LongBench-v1 samples. These controls use the current source; the historical 82 tokens/s result is a separate baseline.
 
 ## Current FA2 and Graph comparison
 
 ```bash
-python -m tools.benchmark_fa2_decode \
+python -m tools.benchmark.benchmark_fa2_decode \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --samples_jsonl data/results/fixtures/samples.jsonl \
   --output_dir data/results/fa2-benchmark \
@@ -111,7 +111,7 @@ Results include `results.json`, predictions and logit tensors, checkpoint config
 ## Aligned dense batch scaling
 
 ```bash
-python -m tools.benchmark_batch_decode \
+python -m tools.benchmark.benchmark_batch_decode \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --samples_jsonl data/results/fixtures/samples.jsonl \
   --forced_tokens_json /path/to/fixed-tokens.json \
@@ -132,17 +132,17 @@ nsys profile --sample=none --cpuctxsw=none --trace=cuda,nvtx \
   --trace-fork-before-exec=true --cuda-graph-trace=node \
   --capture-range=cudaProfilerApi --capture-range-end=stop \
   --force-overwrite=false -o data/results/nsys-decode \
-  python -m tools.profile_fa2 --mode model --phase decode \
+  python -m tools.benchmark.profile_fa2 --mode model --phase decode \
     --model_name_or_path /path/to/slimkv-checkpoint \
     --samples_jsonl data/results/fixtures/samples.jsonl \
     --output_dir data/results/nsys-inputs --decode_variant graph --batch_size 1
 ```
 
-Inspect `python -m tools.profile_fa2 --help` for sample and step settings. Add `--gpu-metrics-devices=0 --gpu-metrics-frequency=10000` only on supported devices with permission to collect metrics. Percentages are interpreted in the actual kernel span, not over setup/teardown. Graph node tracing exposes GPU work; missing Python MLP ranges does not mean MLP computation disappeared.
+Inspect `python -m tools.benchmark.profile_fa2 --help` for sample and step settings. Add `--gpu-metrics-devices=0 --gpu-metrics-frequency=10000` only on supported devices with permission to collect metrics. Percentages are interpreted in the actual kernel span, not over setup/teardown. Graph node tracing exposes GPU work; missing Python MLP ranges does not mean MLP computation disappeared.
 
 The profiler can save actual per-layer Q/K/V cases. `--mode kernel --case_file ...` replays them for NCU; inspect `ncu --help` for your installed version and collect the real main/combined kernel. Profiling durations are diagnostics and must not replace unprofiled benchmark medians. Inspect register spilling, memory traffic, small operations and host launch gaps alongside kernel occupancy.
 
-Independent GPU entries are `tools.validate_decode_ops`, `tools.validate_b1_decode`, and `tools.validate_fa2_decode` (`--batch_sizes` for aligned batches). Record GPU model, dtype, shapes, extension SHA and memcheck logs; CPU tests mock FA2 algebra and do not validate CUDA binaries. No long training or full evaluation is started by CPU CI.
+Independent GPU entries are `tools.validation.validate_decode_ops`, `tools.validation.validate_b1_decode`, and `tools.validation.validate_fa2_decode` (`--batch_sizes` for aligned batches). Record GPU model, dtype, shapes, extension SHA and memcheck logs; CPU tests mock FA2 algebra and do not validate CUDA binaries. No long training or full evaluation is started by CPU CI.
 
 ## Fixed-context decode comparison
 
@@ -186,4 +186,4 @@ accuracy evaluation.
 It contains `results.json`, `summary.csv`, exact input IDs, continuation IDs, source
 and configuration hashes, and individual timings. Override `CONTEXT_LENGTHS`,
 `BEACON_RATIOS`, `REPETITIONS` or `PROMPT_FILE` as needed. The implementation is
-`tools/benchmark_context_decode.py`; it requires the Transformers 4.40 environment.
+`tools/benchmark/benchmark_context_decode.py`; it requires the Transformers 4.40 environment.

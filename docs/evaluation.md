@@ -9,7 +9,7 @@ The Llama3 preset evaluates 14 English and code subsets. The training corpus is 
 Download the official [LongBench-v1 archive](https://huggingface.co/datasets/zai-org/LongBench/tree/main) and extract the selected task files:
 
 ```bash
-python -m tools.download_longbench --output_dir data/datasets/longbench
+python -m tools.data.download_longbench --output_dir data/datasets/longbench
 ```
 
 The downloader pins revision `5e628be450b7e67fb7ae6e201bd6d8f7056f7672` and records archive and task-file SHA256 hashes in `dataset_manifest.json`. If `data.zip` is already available locally, add `--archive /path/to/data.zip`. Existing task files with different contents are never overwritten. This uses v1 JSONL files, excluding LongBench-E and LongBench-v2.
@@ -42,7 +42,7 @@ The preset uses BF16 greedy inference, token ratio 4, latent KV storage, origina
 
 The legacy `DECODE_BACKEND=fa2` explicitly selects latent FA2 decode regardless of prefill choice, preserving older commands. `DECODE_GRAPH=False` disables the optional Graphs independently.
 
-Result directories include both attention choices, keeping different paths separate by default. When using `python -m main.eval_longbench` directly, select both `--attn_impl` and `--beacon_decode_backend` explicitly; the script's automatic pairing applies to its environment variables.
+Result directories include both attention choices, keeping different paths separate by default. When using `python -m main.evaluation.eval_longbench` directly, select both `--attn_impl` and `--beacon_decode_backend` explicitly; the script's automatic pairing applies to its environment variables.
 
 FA2 must be installed for either FlashAttention path. Global latent ranks up to 256 use standard FA2. Ranks from 257 to 320 require the BF16 SM90 extension and `SLIMKV_FA2_DECODE_EXTENSION_DIR`; see [build instructions](benchmark.md#building-the-width-320-extension). Latent eager has no width-320 limit. Both direct latent paths require globally coupled Linear up projections and the [supported cache/RoPE configuration](implementation_status.md#latent-cache-and-direct-decode-requirements). Other projection structures should use reconstruction decode. Direct latent decode currently supports Llama3, not Qwen2.
 
@@ -90,7 +90,7 @@ The older `eval_longbench_llama31_8B.sh` and Qwen presets remain available with 
 
 | Evaluation | Entry point | Inputs |
 | --- | --- | --- |
-| Needle-in-a-Haystack | `python -m main.eval_needle --help` | Local haystack and optional judge |
-| Synthetic passkey retrieval | `python -m main.eval_passkey --help` | Seed, lengths and depths |
-| LM perplexity | `python -m main.eval_lm --help` | Local data and matching tokenization/stride |
-| Diagnostics | `main.eval_longbench_beacon_probe`, `main.eval_longbench_chunk2_heatmap` | Probe and attention analysis |
+| Needle-in-a-Haystack | `python -m main.evaluation.eval_needle --help` | Local haystack and optional judge |
+| Synthetic passkey retrieval | `python -m main.evaluation.eval_passkey --help` | Seed, lengths and depths |
+| LM perplexity | `python -m main.evaluation.eval_lm --help` | Local data and matching tokenization/stride |
+| Diagnostics | `main.analysis.eval_longbench_beacon_probe`, `main.analysis.eval_longbench_chunk2_heatmap` | Probe and attention analysis |

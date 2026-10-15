@@ -3,7 +3,7 @@
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 if [[ "${1:-}" == "--help" ]]; then
-  "${PYTHON:-python3}" -m tools.benchmark_context_decode --help
+  "${PYTHON:-python3}" -m tools.benchmark.benchmark_context_decode --help
   exit 0
 fi
 : "${MODEL_NAME_OR_PATH:?Set MODEL_NAME_OR_PATH to a trained Llama SlimKV checkpoint.}"
@@ -15,7 +15,7 @@ optional=()
 if [[ -n "${PROMPT_FILE:-}" ]]; then
   optional+=(--prompt_file "${PROMPT_FILE}")
 fi
-"${PYTHON:-python3}" -m tools.benchmark_context_decode \
+"${PYTHON:-python3}" -m tools.benchmark.benchmark_context_decode \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --output_dir "${OUTPUT_DIR:-data/results/context_decode}" \
   --context_lengths "${lengths[@]}" --beacon_ratios "${ratios[@]}" \

@@ -1,7 +1,7 @@
 """Merge separate beacon_k_down_proj and beacon_v_down_proj into shared beacon_kv_down_proj.
 
 Usage:
-    python -m main.merge_kv_down_proj --input_dir <existing_lowrank_checkpoint> --output_dir <new_checkpoint>
+    python -m main.conversion.merge_kv_down_proj --input_dir <existing_lowrank_checkpoint> --output_dir <new_checkpoint>
 """
 import argparse
 import json

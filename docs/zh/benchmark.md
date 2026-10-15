@@ -7,7 +7,7 @@
 ## 样本和运行
 
 ```bash
-python -m tools.prepare_longbench \
+python -m tools.data.prepare_longbench \
   --dataset_dir /path/to/longbench --output data/results/fixtures/samples.jsonl \
   --tasks qasper hotpotqa multifieldqa_en lcc \
   --max_samples_per_task 2 --min_length 2500 --max_length 6000
@@ -15,7 +15,7 @@ python -m tools.prepare_longbench \
 
 按原始顺序选择符合 dataset.length 的前两行，保留官方字段并增加 task/source_index，保存 SHA manifest；不截断。工具当前需要 Llama3 checkpoint、prompt 超过两个窗口且不超过31550 token，不是任意短 prompt 测试。
 
-`tools.benchmark_reconstruction` 比较 full/full_compact/latent，用 eager、beacon_ratio8、decode_tokens64、warmup1、rounds2、perf_sample_indices0 2。Full_compact 仅在 harness 克隆首次 sink view 释放多余 backing storage，不改注意力数学。
+`tools.benchmark.benchmark_reconstruction` 比较 full/full_compact/latent，用 eager、beacon_ratio8、decode_tokens64、warmup1、rounds2、perf_sample_indices0 2。Full_compact 仅在 harness 克隆首次 sink view 释放多余 backing storage，不改注意力数学。
 
 [扩展构建命令](../benchmark.md#building-the-width-320-extension) 基于 FA2 v2.8.3/CUTLASS，只编 BF16 SM90 forward。静态解码支持 raw KV 的128维和 latent KV 的200–256/320维；普通解码在≤256维使用标准 FA2。较大 rank 临时补到320，持久缓存保留真实 rank。
 
@@ -23,7 +23,7 @@ python -m tools.prepare_longbench \
 
 Llama 默认开启 `--beacon_prefill_fast True`。推理时，对使用 latent 缓存、无 padding 的 interleave FA2 窗口，在层间共享 token 索引，并跳过完整窗口结束时不再保留的 raw KV 拷贝。BF16 Q/K 的 RoPE 操作合并到一个 Triton kernel，Beacon K 保持不旋转。每次乘法仍先舍入为 BF16 再做加法，与原操作一致。投影矩阵形状、权重、秩、注意力 scale 和 mask 保持不变，prefill 注意力仍在原始特征维度计算。
 
-训练、带 padding 的输入和不支持的配置使用原路径。不支持的 RoPE kernel 也回退到原 RoPE 操作。在 `main.eval_longbench` 中传入 `--beacon_prefill_fast False`，或设置 `model.config.beacon_prefill_fast = False`，可关闭上述优化进行对照。首次符合条件的调用会编译 Triton kernel。
+训练、带 padding 的输入和不支持的配置使用原路径。不支持的 RoPE kernel 也回退到原 RoPE 操作。在 `main.evaluation.eval_longbench` 中传入 `--beacon_prefill_fast False`，或设置 `model.config.beacon_prefill_fast = False`，可关闭上述优化进行对照。首次符合条件的调用会编译 Triton kernel。
 
 H20 上使用 BF16 Llama-3.1-8B f4 权重和 t4f4，预热一次后交替测量四次，得到以下 prefill 中位数。计时使用同步 forward 耗时，包含全部 prompt 窗口和最后一个 token 的 logits，不含 decode。
 
@@ -51,7 +51,7 @@ H20 上使用 BF16 Llama-3.1-8B f4 权重和 t8f4，同样的两条输入及63�
 显存峰值包含模型、缓存、FA 工作区和保留的 Graph。这组对照的64步 logits 与原实现逐位一致。来自 Qasper、HotpotQA、MultiFieldQA-en 和 LCC 的八条固定 LongBench-v1 样本，贪心生成内容和官方评分也完全一致。
 
 ```bash
-python -m tools.benchmark_fa2_decode \
+python -m tools.benchmark.benchmark_fa2_decode \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --samples_jsonl data/results/fixtures/samples.jsonl \
   --output_dir data/results/fa2-benchmark \
@@ -70,13 +70,13 @@ KV物理字节、live/peak CUDA allocated、allocator reserved 是不同概念�
 
 `--beacon_decode_compile True` 在 Torch 2.11 下为 B1 BF16 FA2 Graph decode 启用已验证的编译路径，保留原始 FP32 方差计算和 BF16 舍入边界，继续复用现有 CUDA Graph。其他 Torch 版本和不支持的形状使用原路径。首次符合条件的调用会在 Graph capture 前编译。
 
-CUDA 推理 CLI 和 `eval_longbench_slimkv.sh` 默认打开此选项。`main.infer` 使用 `--no-beacon_decode_compile` 关闭，shell 预设使用 `DECODE_COMPILE=False`，`main.eval_longbench` 使用 `--beacon_decode_compile False`。Python API 和对照测试工具保留原默认设置，训练不变。
+CUDA 推理 CLI 和 `eval_longbench_slimkv.sh` 默认打开此选项。`main.inference.infer` 使用 `--no-beacon_decode_compile` 关闭，shell 预设使用 `DECODE_COMPILE=False`，`main.evaluation.eval_longbench` 使用 `--beacon_decode_compile False`。Python API 和对照测试工具保留原默认设置，训练不变。
 
 H20 上同一 f4 权重、t8f4、B1 和63步固定 decode，预热后交替测量四次：4,009-token 输入从87.76提升到89.48 tokens/s，6,194-token 输入从87.62提升到89.39 tokens/s。编译不计入耗时。全部64步 logits 和最终持久 KV 逐位一致，八条固定 LongBench-v1 样本的 greedy token 和官方评分一致。这里采用当前源码的同期对照，历史82 tokens/s 是另一组基线。
 
 ## 多 batch
 
-`tools.benchmark_batch_decode` 需要 checkpoint、samples_jsonl、forced_tokens_json、output_dir。固定输入 JSON 为样本索引到 token ID 列表（默认每条至少63个）；从reference/warmup保存的`logits_<index>.pt`中提取`forced_token_ids`，不能拿任意token冒充same-input对照。
+`tools.benchmark.benchmark_batch_decode` 需要 checkpoint、samples_jsonl、forced_tokens_json、output_dir。固定输入 JSON 为样本索引到 token ID 列表（默认每条至少63个）；从reference/warmup保存的`logits_<index>.pt`中提取`forced_token_ids`，不能拿任意token冒充same-input对照。
 
 复制同一 prompt 来测量等长 dense batch 的吞吐量，每行维护独立 KV。通过 `--rounds` 指定每组测量轮数。工具预热并保留各 batch 的 Graph 工作区，比较时分别记录每步耗时、总 tokens/s 和显存；这组负载不代表不同长度独立请求的服务吞吐量。
 
@@ -106,4 +106,4 @@ Full KV 使用 checkpoint 的原始模型分支，不插入 Beacon、不丢弃 t
 
 Kernel 使用独立 profiler pass 采集，检查插桩前后预测一致，各方法重复测试的预测也必须一致。此实验衡量性能，精度仍通过 LongBench 单独评估。
 
-`OUTPUT_DIR` 默认 `data/results/context_decode`，必须使用新目录。输出包含 `results.json`、`summary.csv`、实际输入和后续 token、源码及配置哈希、逐次耗时。可以通过 `CONTEXT_LENGTHS`、`BEACON_RATIOS`、`REPETITIONS`、`PROMPT_FILE` 调整。实现位于 `tools/benchmark_context_decode.py`，使用 Transformers 4.40 环境。
+`OUTPUT_DIR` 默认 `data/results/context_decode`，必须使用新目录。输出包含 `results.json`、`summary.csv`、实际输入和后续 token、源码及配置哈希、逐次耗时。可以通过 `CONTEXT_LENGTHS`、`BEACON_RATIOS`、`REPETITIONS`、`PROMPT_FILE` 调整。实现位于 `tools/benchmark/benchmark_context_decode.py`，使用 Transformers 4.40 环境。

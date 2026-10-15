@@ -14,7 +14,7 @@ def main():
     parser.add_argument('--quick', action='store_true')
     parser.add_argument('--batch_sizes', type=int, nargs='+', default=[1])
     args = parser.parse_args()
-    root = Path(args.source_dir or Path(__file__).resolve().parents[1])
+    root = Path(args.source_dir or Path(__file__).resolve().parents[2])
     sys.path.insert(0, str(root))
     sys.path.insert(0, str(root / 'tests'))
     import torch

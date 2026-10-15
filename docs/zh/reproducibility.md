@@ -8,11 +8,11 @@
 
 | 阶段 | 现有入口 | 缺口 |
 |---|---|---|
-| SVD/rank |main.convert_kv_lowrank|精确 rank 列表和初始化 revision；自动等能量、秩下限与预算分配已实现|
-| 预训练 |main.train及presets|0.5B处理后数据manifest、schedule/seed/environment|
+| SVD/rank |main.conversion.convert_kv_lowrank|精确 rank 列表和初始化 revision；自动等能量、秩下限与预算分配已实现|
+| 预训练 |main.training.train及presets|0.5B处理后数据manifest、schedule/seed/environment|
 | 微调 |同Trainer|0.2B混合/GPT/needle数据、恢复状态策略|
-| LongBench |main.eval_longbench|各模型比例最终权重和全量结果/config/task set|
-| NIAH |main.eval_needle|论文三seed/judge/aggregation协议|
+| LongBench |main.evaluation.eval_longbench|各模型比例最终权重和全量结果/config/task set|
+| NIAH |main.evaluation.eval_needle|论文三seed/judge/aggregation协议|
 | 效率 |prototype和tools|A100 eager synthetic Full KV/Recon/LSA统一harness、attention-only计时|
 | 多请求/ablation/MoE |probes/archives|最终protocol；Qwen3 MoE代码|
 

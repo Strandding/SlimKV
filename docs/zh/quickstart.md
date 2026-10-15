@@ -5,7 +5,7 @@
 需要本地训练后的 SlimKV checkpoint：`config.json`、完整 safetensors/PyTorch shards 和 index、tokenizer。`beacon_*` 字段与权重键保留；已有目录名不用改。本仓库不提供模型权重，请使用已有 SlimKV checkpoint 或按[训练说明](training.md)自行训练。
 
 ```bash
-python -m main.infer \
+python -m main.inference.infer \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --prompt 'Explain why a KV cache helps language model inference.' \
   --max_new_tokens 32
@@ -18,7 +18,7 @@ CUDA 默认使用 BF16、FA2 prefill、latent 缓存和免重建 decode、prefil
 免重建 eager 直接使用压缩后的 Beacon K/V，不需要安装 FlashAttention：
 
 ```bash
-python -m main.infer \
+python -m main.inference.infer \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --attn_impl eager --beacon_cache_mode latent --beacon_decode_backend latent \
   --prompt_file /path/to/context.txt
@@ -28,7 +28,7 @@ python -m main.infer \
 
 ```bash
 export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
-python -m main.infer \
+python -m main.inference.infer \
   --model_name_or_path /path/to/slimkv-checkpoint \
   --attn_impl flash_attention_2 \
   --beacon_cache_mode latent --beacon_decode_backend latent \

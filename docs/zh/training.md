@@ -28,14 +28,14 @@ bash scripts/conversion/convert_llama31_8B_layerwise_lowrank.sh
 
 此预设的默认 rank 列表是显式配置。逐层实验必须显式传 `BEACON_K_LATENT_HEAD_DIM_LIST` 和 `BEACON_V_LATENT_HEAD_DIM_LIST`；每层各一个正整数，列表长度匹配层数。元素为平均每个 KV head 的维度参数，全局 rank 为 KV head 数乘该值，K/V 可不同。初始化、预训练、微调都必须用同一列表。
 
-通用入口 `python -m main.convert_kv_lowrank --help` 支持 Llama3/Qwen2 global SVD，Llama3 还有 per-head 选项。转换保存模型、配置、tokenizer，可选 spectra 图和奇异值 tensor。
+通用入口 `python -m main.conversion.convert_kv_lowrank --help` 支持 Llama3/Qwen2 global SVD，Llama3 还有 per-head 选项。转换保存模型、配置、tokenizer，可选 spectra 图和奇异值 tensor。
 
 ### 自动等能量秩分配
 
 `--rank_allocation equal_energy` 根据预训练 raw-token K/V 投影的奇异值谱，按论文 Eq. 5–9 分别分配 K 和 V 的秩预算。`--feature_compression_ratio` 控制特征压缩，与 token 压缩独立。论文的秩下限系数为 `--rank_floor_ratio 0.5`。以下为 f4 初始化，将 `4` 改为 `2` 或 `8` 即可选择其他特征预算。
 
 ```bash
-python -m main.convert_kv_lowrank \
+python -m main.conversion.convert_kv_lowrank \
   --model_name_or_path /path/to/Llama-3.1-8B-Instruct \
   --output_dir /path/to/initialized-lowrank-f4 \
   --beacon_param q k v \
@@ -76,8 +76,8 @@ Qwen2.5 使用 `train_qwen25_14B.sh` / `finetune_qwen25_14B.sh`；通用名字 `
 
 ## 输出与恢复
 
-输出默认 `data/outputs/`，日志有时间戳。`main.train` 的 rank 0 写 `run_manifest.json`，记录配置/seed、checkpoint config SHA、源码 commit 与实际 SHA、包和 GPU 信息，凭据字段脱敏。不会自动 hash 大权重或全部数据；要保留精确输入。恢复进同输出目录前归档旧 manifest。
+输出默认 `data/outputs/`，日志有时间戳。`main.training.train` 的 rank 0 写 `run_manifest.json`，记录配置/seed、checkpoint config SHA、源码 commit 与实际 SHA、包和 GPU 信息，凭据字段脱敏。不会自动 hash 大权重或全部数据；要保留精确输入。恢复进同输出目录前归档旧 manifest。
 
-`RESUME_FROM_CHECKPOINT` 支持显式路径，部分脚本有 auto/latest。**多数预设传 save_only_model**，不保存 optimizer/scheduler，不能保证精确训练续跑；需精确恢复时直接调用 `main.train --save_only_model False` 并保存分布式状态。
+`RESUME_FROM_CHECKPOINT` 支持显式路径，部分脚本有 auto/latest。**多数预设传 save_only_model**，不保存 optimizer/scheduler，不能保证精确训练续跑；需精确恢复时直接调用 `main.training.train --save_only_model False` 并保存分布式状态。
 
 论文的 0.5B RedPajama + 0.2B 指令 token、global batch 8、5e-5/1e-5、linear/no warmup，不等于脚本 sample budget。完整数据、最终配置/seed/rank 仍需作者提供。

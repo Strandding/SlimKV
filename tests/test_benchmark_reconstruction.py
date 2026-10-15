@@ -4,7 +4,7 @@ import unittest
 
 import torch
 
-from tools.benchmark_reconstruction import install_compact_sink_control
+from tools.benchmark.benchmark_reconstruction import install_compact_sink_control
 from test_llama_reconstruction_cache import make_model
 
 

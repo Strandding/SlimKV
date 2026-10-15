@@ -13,7 +13,7 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
 python -m pip check
-python -m main.infer --help
+python -m main.inference.infer --help
 ```
 
 上述命令假定已在环境中安装匹配硬件的 Torch。CPU CI 使用：

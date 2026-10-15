@@ -28,7 +28,7 @@ def main():
         sys.path.insert(0, a.source_dir)
     import torch
     from slimkv import ModelArgs, get_model_and_tokenizer
-    from main.eval_longbench import process_longbench
+    from main.evaluation.eval_longbench import process_longbench
     torch.manual_seed(42)
     torch.set_num_threads(8)
     out = Path(a.output_dir)

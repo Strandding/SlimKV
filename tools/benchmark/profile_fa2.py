@@ -69,7 +69,7 @@ def main():
         return
 
     from slimkv import ModelArgs, get_model_and_tokenizer
-    from main.eval_longbench import process_longbench
+    from main.evaluation.eval_longbench import process_longbench
     model, tokenizer = get_model_and_tokenizer(ModelArgs(
         model_name_or_path=a.model_name_or_path, enable_beacon=True,
         dtype='bf16', attn_impl=a.attn_impl, chat_template='llama-3',

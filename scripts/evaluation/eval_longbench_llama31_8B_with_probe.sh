@@ -126,7 +126,7 @@ if [[ "${ENABLE_BEACON}" == "True" && -n "${BEACON_V_LATENT_HEAD_DIM}" ]]; then
 fi
 
 torchrun --nproc_per_node=1 --master_port "${MASTER_PORT}" \
-  -m main.eval_longbench_chunk2_heatmap \
+  -m main.analysis.eval_longbench_chunk2_heatmap \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --eval_data "${EVAL_DATA}" \
   --output_dir "${OUTPUT_DIR}" \

@@ -393,7 +393,7 @@ fi
 echo "  TASKS      : ${TASKS[*]}"
 echo "=========================================="
 
-torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" $DDP -m main.eval_longbench \
+torchrun --nproc_per_node "${NPROC_PER_NODE}" --master_port "${MASTER_PORT}" $DDP -m main.evaluation.eval_longbench \
   --model_name_or_path "${MODEL_NAME_OR_PATH}" \
   --eval_data "${EVAL_DATA}" \
   --output_dir "${RESULT_ROOT}" \
