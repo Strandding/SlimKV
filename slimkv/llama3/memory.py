@@ -23,7 +23,7 @@ class ReconstructionCache:
         length = sum(_length(x) for x in (sink, history, raw, window))
         self.shape = (batch, num_heads, length, head_dim)
 
-    def materialize(self, attention):
+    def materialize(self, attention, current=None):
         up = attention.beacon_k_up_proj if self.kind == 'k' else attention.beacon_v_up_proj
 
         def reconstruct(latent):
@@ -45,7 +45,7 @@ class ReconstructionCache:
             recent[:, :, self.window_roles] = window
             if self.raw is not None:
                 recent[:, :, ~self.window_roles] = self.raw
-        return cat_tensor([self.sink, history, recent], dim=2)
+        return cat_tensor([self.sink, history, recent, current], dim=2)
 
 
 class ReconstructionCacheUpdate(tuple):

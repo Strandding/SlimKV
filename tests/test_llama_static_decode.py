@@ -45,6 +45,15 @@ class StaticDecodeTest(unittest.TestCase):
                         forward=lambda q, k, v, scale, causal, splits, pack, lengths:
                         cache_attention(q, k, v, lengths, scale, causal))):
                 engine = StaticDecode(model, 32)
+                for state, layer in zip(engine.layers, model.model.layers):
+                    for kind in ('k', 'v'):
+                        latent, padded = state['latent_' + kind], state['padded_' + kind]
+                        self.assertEqual(latent.untyped_storage().data_ptr(),
+                                         padded.untyped_storage().data_ptr())
+                        rank = getattr(layer.self_attn, 'beacon_' + kind + '_up_proj').in_features
+                        self.assertEqual(latent.shape[-1], rank)
+                        self.assertTrue(torch.equal(padded[..., rank:],
+                                                    torch.zeros_like(padded[..., rank:])))
                 for prefix in [17, 3]:
                     model.memory.reset()
                     reference.memory.reset()

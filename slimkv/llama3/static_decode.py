@@ -74,11 +74,13 @@ class StaticDecode:
             raw_v = torch.empty_like(raw_k)
             self.layers.append(dict(
                 raw_k=raw_k, raw_v=raw_v, rotated_k=torch.empty_like(raw_k),
-                latent_k=template.new_empty(1, 1, capacity, rk),
-                latent_v=template.new_empty(1, 1, capacity, rv),
                 padded_k=template.new_zeros(1, capacity, 1, width),
                 padded_v=template.new_zeros(1, capacity, 1, width),
                 width=width))
+            # Export real-rank views of the FA2 storage; appends need one write.
+            state = self.layers[-1]
+            state['latent_k'] = state['padded_k'].transpose(1, 2)[..., :rk]
+            state['latent_v'] = state['padded_v'].transpose(1, 2)[..., :rv]
         self.extension = cache_extension()
 
     def attention(self, q, k, v, lengths, cumulative, scale, causal):
@@ -124,10 +126,6 @@ class StaticDecode:
                 for offset, tensor in [(0, cache.history), (history, cache.window)]:
                     if tensor is not None:
                         latent_buffer[:, :, offset:offset + _length(tensor)].copy_(tensor)
-                count = history + _length(cache.window)
-                if count:
-                    state['padded_' + kind][:, :count, :, :latent_buffer.shape[-1]].copy_(
-                        latent_buffer[:, :, :count].transpose(1, 2))
             positions = torch.cat([
                 torch.arange(sink, device=state['raw_k'].device),
                 pk.window_raw_indices + sink + history if raw else
@@ -171,8 +169,6 @@ class StaticDecode:
                 kl, vl = kd(normalized[:, 1:]).unsqueeze(1), vd(normalized[:, 1:]).unsqueeze(1)
                 state['latent_k'].index_copy_(2, self.latent_index, kl)
                 state['latent_v'].index_copy_(2, self.latent_index, vl)
-                state['padded_k'][..., :uk.in_features].index_copy_(1, self.latent_index, kl.transpose(1, 2))
-                state['padded_v'][..., :uv.in_features].index_copy_(1, self.latent_index, vl.transpose(1, 2))
             scale = 1.0 / math.sqrt(attn.head_dim)
             raw_out, raw_lse = self.attention(
                 q.transpose(1, 2), state['rotated_k'][:, :, :self.raw_bucket].transpose(1, 2),

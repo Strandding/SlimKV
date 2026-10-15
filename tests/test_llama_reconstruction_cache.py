@@ -102,6 +102,20 @@ class ReconstructionCacheTest(unittest.TestCase):
                     self.assertLess(sum(latent.memory.cache_bytes().values()),
                                     sum(full.memory.cache_bytes().values()))
 
+    def test_materialization_appends_current_tokens_without_changing_order(self):
+        model = make_model(beacon_decode_backend='latent').to(torch.bfloat16)
+        with torch.inference_mode():
+            for ids in [torch.arange(19)[None], torch.tensor([[20, 21]])]:
+                output = model(input_ids=ids)
+                for layer, pair in zip(model.model.layers, output.past_key_values):
+                    for cache in pair[:2]:
+                        current = torch.randn(1, 2, 3, 8).to(torch.bfloat16)
+                        prefix = cache.materialize(layer.self_attn)
+                        expected = torch.cat([prefix, current], dim=2)
+                        actual = cache.materialize(layer.self_attn, current)
+                        self.assertTrue(torch.equal(actual, expected))
+                        self.assertEqual(actual.stride(), expected.stride())
+
     def test_batch_and_rope_enabled(self):
         latent, full = self.paired_models(beacon_skip_rope_for_beacon_k=False)
         with torch.no_grad():

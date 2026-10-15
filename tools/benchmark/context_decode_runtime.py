@@ -135,12 +135,15 @@ class OptimizedDecodeRuntime:
                 state = {'raw_k': template.new_zeros(1, heads, raw_cap, dim),
                          'raw_v': template.new_zeros(1, heads, raw_cap, dim),
                          'rotated_k': template.new_zeros(1, heads, raw_cap, dim),
-                         'latent_k': template.new_zeros(1, 1, latent_cap, rk),
-                         'latent_v': template.new_zeros(1, 1, latent_cap, rv),
                          'padded_k': template.new_zeros(1, latent_cap, 1, width),
                          'padded_v': template.new_zeros(1, latent_cap, 1, width),
                          'width': width}
+                if mode == 'latent':
+                    state['latent_k'] = state['padded_k'].transpose(1, 2)[..., :rk]
+                    state['latent_v'] = state['padded_v'].transpose(1, 2)[..., :rv]
                 if mode == 'reconstruct':
+                    state['latent_k'] = template.new_zeros(1, 1, latent_cap, rk)
+                    state['latent_v'] = template.new_zeros(1, 1, latent_cap, rv)
                     state.update(k=template.new_empty(1, heads, capacity, dim),
                                  v=template.new_empty(1, heads, capacity, dim))
                 self.layers.append(state)
@@ -180,7 +183,8 @@ class OptimizedDecodeRuntime:
                         state['raw_'+name][:, :, :self.sink].copy_(sink[j])
                     flat = history[j].transpose(1, 2).reshape(1, self.history, -1).unsqueeze(1)
                     state['latent_'+name][:, :, :self.history].copy_(flat)
-                    state['padded_'+name][:, :self.history, :, :flat.shape[-1]].copy_(flat.transpose(1, 2))
+                    if self.mode != 'latent':
+                        state['padded_'+name][:, :self.history, :, :flat.shape[-1]].copy_(flat.transpose(1, 2))
             if self.sink:
                 self.raw_positions[:self.sink].copy_(torch.arange(self.sink, device=self.token.device))
 
@@ -255,8 +259,6 @@ class OptimizedDecodeRuntime:
             for name, down in [('k', kd), ('v', vd)]:
                 latent = down(hidden[:, 1:]).unsqueeze(1)
                 state['latent_'+name].index_copy_(2, self.latent_index, latent)
-                rank = latent.shape[-1]
-                state['padded_'+name][..., :rank].index_copy_(1, self.latent_index, latent.transpose(1, 2))
         with self.marked(ROPE):
             q, rotated = apply_rope(q, k, attn.rotary_emb, self.positions[length],
                                     self.positions[length][:, :1], profile=self.scope)

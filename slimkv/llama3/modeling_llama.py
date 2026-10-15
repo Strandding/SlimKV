@@ -1647,7 +1647,9 @@ class LlamaFlashAttention2(LlamaAttention):
         latent_cache = isinstance(past_key, ReconstructionCache)
         if fa2_eligible(self, hidden_states, past_key_value, output_attentions):
             return fa2_decode(self, hidden_states, position_ids, past_key_value)
-        if latent_cache:
+        join_prefill = (latent_cache and getattr(self, '_prefill_metadata', None) is not None
+                        and uses_latent_decode(self.config))
+        if latent_cache and not join_prefill:
             past_key, past_value = past_key.materialize(self), past_value.materialize(self)
         if past_key is not None:
             past_seq_len = past_key.shape[2]
@@ -1672,7 +1674,12 @@ class LlamaFlashAttention2(LlamaAttention):
             current_key_states, value_states, beacon_size, beacon_indices, cache_latents
         )
 
-        if past_key is not None:
+        if join_prefill:
+            # Build the final full-dimensional workspace once, including current
+            # tokens, instead of copying the reconstructed prefix a second time.
+            key_states = past_key.materialize(self, current_key_states)
+            value_states = past_value.materialize(self, value_states)
+        elif past_key is not None:
             # reuse k, v, self_attention
             key_states = torch.cat([past_key, current_key_states], dim=2)
             value_states = torch.cat([past_value, value_states], dim=2)
