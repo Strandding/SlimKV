@@ -17,7 +17,7 @@ Latent条件：interleave、window=stride、单窗口编码、正ratio、K/V低�
 
 符合条件decode每序列一个新raw token；插Beacon时多一个query。支持等长无padding、同步插入计划的dense batch，各行KV独立。多raw token调用回重建；直接latent decode明确拒绝padding，不是连续批处理。
 
-Global coupled rank缓存形状[B,1,N,R]。FA2在rank超过256时使用BF16 SM90扩展，使用320维 FA2 缓冲区，导出的缓存视图保留真实 rank。静态解码的缓存视图与补齐后的 FA2 缓冲区共用存储，padding 和预留容量计入实际显存。Eager直接按真实K/V rank计算，不补齐维度，也没有320维上限。Raw attention保留原始head维度和缩放系数，Llama-3.1-8B为128和1/sqrt128。K/V列表独立。
+Global coupled rank缓存形状[B,1,N,R]。FA2在rank超过256时使用BF16 SM90/SM120扩展，使用320维 FA2 缓冲区，导出的缓存视图保留真实 rank。静态解码的缓存视图与补齐后的 FA2 缓冲区共用存储，padding 和预留容量计入实际显存。Eager直接按真实K/V rank计算，不补齐维度，也没有320维上限。Raw attention保留原始head维度和缩放系数，Llama-3.1-8B为128和1/sqrt128。K/V列表独立。
 
 Fast 默认 True，在符合条件的 FA2 解码中使用 GPU token bookkeeping。Python API 的 Graph 默认 False，CUDA 推理和 LongBench 预设则开启整模型 B1 Graph，支持原位追加 KV 和插入 Beacon 的步骤。真实 rank 的 Beacon 视图与补齐后的 FA2 缓冲区共用存储。设置 `beacon_decode_graph_full=False` 可保留局部 Norm/MLP Graph。不支持的调用使用普通路径，dtype/device 变化时清除 Graph 缓存。
 

@@ -6,7 +6,7 @@
 
 ## 开始前
 
-先按 [README 的完整流程](README.md#-快速开始)安装 FA2、构建 SM90 扩展并下载 `Zihant0513/SlimKV-Llama3.1-8B-r4`。在同一环境中导出 `MODEL_NAME_OR_PATH` 和 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，再运行下列命令。固定上下文测速会生成合成输入，仅基于 fixture 的工具需要 LongBench 文件。
+先按 [README 的完整流程](README.md#-快速开始)安装 FA2、构建当前 GPU 对应的扩展并下载 `Zihant0513/SlimKV-Llama3.1-8B-r4`。在同一环境中导出 `MODEL_NAME_OR_PATH` 和 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，再运行下列命令。固定上下文测速会生成合成输入，仅基于 fixture 的工具需要 LongBench 文件。
 
 首次可先运行一组32K输入：
 
@@ -31,7 +31,7 @@ python -m tools.data.prepare_longbench \
 
 `tools.benchmark.benchmark_reconstruction` 比较 full/full_compact/latent，用 eager、beacon_ratio8、decode_tokens64、warmup1、rounds2、perf_sample_indices0 2。Full_compact 仅在 harness 克隆首次 sink view 释放多余 backing storage，不改注意力数学。
 
-[扩展构建命令](../benchmark.md#building-the-width-320-extension) 基于 FA2 v2.8.3/CUTLASS，只编 BF16 SM90 forward。静态解码支持 raw KV 的128维和 latent KV 的200–256/320维；普通解码在≤256维使用标准 FA2。较大 rank 补到320进行计算，导出的 Beacon 缓存视图保留真实 K/V rank。静态解码让这些视图直接复用补齐后的 FA2 缓冲区，padding 和预留容量均计入实际 GPU 显存。
+[扩展构建命令](../benchmark.md#building-the-width-320-extension) 基于 FA2 v2.8.3/CUTLASS，只编 BF16 SM90/SM120 forward，默认自动检测 GPU，也可用 `--cuda_arch 9.0` 或 `--cuda_arch 12.0` 指定。PRO5000 环境见 [SM120 安装](installation.md#rtx-pro-5000sm120)。静态解码支持 raw KV 的128维和 latent KV 的200–256/320维；普通解码在≤256维使用标准 FA2。较大 rank 补到320进行计算，导出的 Beacon 缓存视图保留真实 K/V rank。静态解码让这些视图直接复用补齐后的 FA2 缓冲区，padding 和预留容量均计入实际 GPU 显存。
 
 ## Prefill 索引与 RoPE 融合
 
@@ -80,6 +80,8 @@ CUDA 推理 CLI 和 `eval_longbench_slimkv.sh` 默认打开此选项。`main.inf
 独立GPU验证入口：validate_decode_ops、validate_b1_decode、validate_fa2_decode，部分支持batch_sizes；记录dtype/shape/GPU/extension SHA/memcheck。CPU CI不证明CUDA二进制正确，也不会启动长训练。
 
 ## 固定上下文 decode 对照
+
+Prefill 单独记录 `prefill_seconds` 和 `prefill_input_tokens_per_second`。各路径先完成一次不计时的完整 prefill 预热，再同步测量一次，排除首次编译开销；`PREFILL_WARMUP` 可增加预热次数。Full KV 使用增量分块，SlimKV 使用 Beacon window，均计入末 token 的 LM head；这些数据独立于128步 decode 计时。
 
 使用同一 checkpoint，统一 BF16、B1 和 FlashAttention 2，对比 Full KV、重建和直接 latent attention：
 

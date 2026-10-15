@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import torch
 from transformers.cache_utils import DynamicCache
 from tools.benchmark.benchmark_context_decode import (AppendCache, full_backbone, extend_rope_tables,
-    cloned_memory, scope_times, synthetic_ids, kernel_profiler, ATTENTION, RECONSTRUCTION, ROPE)
+    cloned_memory, scope_times, synthetic_ids, kernel_profiler, measure_prefill, ATTENTION, RECONSTRUCTION, ROPE)
 from test_llama_reconstruction_cache import make_model
 
 
@@ -101,6 +101,22 @@ class ContextDecodeTest(unittest.TestCase):
         result = scope_times(events, 1)
         self.assertAlmostEqual(result[ATTENTION], .01)
         self.assertAlmostEqual(result['fa2_core'], .01)
+
+    def test_prefill_warmup_finishes_before_the_measurement_clock(self):
+        from unittest.mock import patch
+        calls = []
+        def forward():
+            calls.append('forward')
+            return len(calls)
+        def clock():
+            calls.append('clock')
+            return 10.0 if calls.count('clock') == 1 else 12.5
+        with patch('torch.cuda.synchronize', side_effect=lambda: calls.append('sync')), \
+             patch('time.perf_counter', side_effect=clock):
+            output, seconds = measure_prefill(forward, warmup=2)
+        self.assertEqual(calls, ['forward', 'forward', 'sync', 'clock', 'forward', 'sync', 'clock'])
+        self.assertEqual(output, 5)
+        self.assertEqual(seconds, 2.5)
 
     def test_launch_coverage_rejects_a_missing_projection_and_accepts_nested_apis(self):
         cpu, cuda = torch.autograd.DeviceType.CPU, torch.autograd.DeviceType.CUDA

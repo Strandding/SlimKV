@@ -325,6 +325,18 @@ def atomic_json(path, value):
     temporary.replace(path)
 
 
+def measure_prefill(forward, warmup):
+    """Return one warmed prefill's output and synchronized wall time."""
+    for _ in range(warmup):
+        output = forward()
+        del output
+    torch.cuda.synchronize()
+    start = time.perf_counter()
+    output = forward()
+    torch.cuda.synchronize()
+    return output, time.perf_counter() - start
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--model_name_or_path', required=True)
@@ -335,6 +347,8 @@ def main():
     parser.add_argument('--repetitions', type=int, default=4)
     parser.add_argument('--warmup', type=int, default=1)
     parser.add_argument('--prefill_chunk_size', type=int, default=1024)
+    parser.add_argument('--prefill_warmup', type=int, default=1,
+                        help='Untimed full-prefill passes per route before its prefill measurement.')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--prompt_file')
     parser.add_argument('--save_trace', action='store_true')
@@ -346,6 +360,8 @@ def main():
     args = parser.parse_args()
     if min(args.context_lengths + args.beacon_ratios + [args.decode_steps, args.repetitions, args.warmup, args.prefill_chunk_size]) < 1:
         parser.error('All lengths, ratios and repetition counts must be positive.')
+    if args.prefill_warmup < 1:
+        parser.error('--prefill_warmup must be at least 1 to exclude first-call compilation.')
     import transformers
     import flash_attn
     from slimkv import ModelArgs, get_model_and_tokenizer
@@ -397,6 +413,7 @@ def main():
         'full_kv': 'Uncompressed raw backbone from the supplied checkpoint, shared weights, native HF Llama, incremental K RoPE and preallocated append cache; no Beacons.',
         'protocol': 'B1 BF16 FA2 for all routes; Graph and compile disabled; exact 128 by default single-token forwards after prefill; identical teacher inputs from Full KV warmup; EOS ignored.',
         'attention_kernel_scope': 'Sum of GPU kernel durations inside all attention modules, including QKV/O, reconstruction, RoPE, cache operations and latent mapping/merge; excludes norm, MLP and LM head.',
+        'prefill_scope': 'One synchronized full-prefill wall-time measurement per route after untimed full-prefill warmup; excludes model loading, tokenization, first-call compilation and decode. Full KV processes fixed-size chunks; SlimKV uses its Beacon windows.',
         'end_to_end_scope': 'Synchronized host wall time for all decode forwards and argmax; excludes prefill, first prefill prediction, cache restore, profiler, tokenization and file IO.',
         'context_unit': 'Exact prompt token count; K=1024. At 128K, append 128 canonical RoPE entries without changing existing frequencies/tables.',
         'prefill': 'Original-dimensional FA2 for all methods; Full KV uses chunked causal prefill and retains all raw tokens.',
@@ -414,11 +431,17 @@ def main():
             ids = ids_cpu[:, :length].cuda()
             positions = torch.arange(length + args.decode_steps, device='cuda')[None]
             cache = AppendCache(len(raw.layers), length + args.decode_steps)
-            for start in range(0, length, args.prefill_chunk_size):
-                end = min(start + args.prefill_chunk_size, length)
-                output = raw(input_ids=ids[:, start:end], past_key_values=cache,
-                             position_ids=positions[:, start:end], cache_position=positions[0, start:end], use_cache=True)
-            first = model.lm_head(output.last_hidden_state[:, -1:]).float().argmax(-1)
+            def raw_prefill():
+                cache.rewind(0)
+                for start in range(0, length, args.prefill_chunk_size):
+                    end = min(start + args.prefill_chunk_size, length)
+                    output = raw(input_ids=ids[:, start:end], past_key_values=cache,
+                                 position_ids=positions[:, start:end], cache_position=positions[0, start:end], use_cache=True)
+                return model.lm_head(output.last_hidden_state[:, -1:]).float()
+
+            output, elapsed = measure_prefill(raw_prefill, args.prefill_warmup)
+            prefill_timings = {'full_kv': {'seconds': elapsed, 'input_tokens_per_second': length / elapsed}}
+            first = output.argmax(-1)
             del output
             snapshots = {}
             modes = ['full_kv'] + [f'{backend}_t{ratio}' for ratio in args.beacon_ratios for backend in ['reconstruct', 'latent']]
@@ -426,13 +449,18 @@ def main():
                 for backend in ['reconstruct', 'latent']:
                     model.config.beacon_ratio = [ratio]
                     model.config.beacon_decode_backend = backend
-                    model.memory.reset()
-                    output = model(input_ids=ids, num_logits_to_keep=1)
+                    def compressed_prefill():
+                        model.memory.reset()
+                        return model(input_ids=ids, num_logits_to_keep=1)
+
+                    output, elapsed = measure_prefill(compressed_prefill, args.prefill_warmup)
                     del output
+                    prefill_timings[f'{backend}_t{ratio}'] = {
+                        'seconds': elapsed, 'input_tokens_per_second': length / elapsed}
                     snapshots[f'{backend}_t{ratio}'] = cloned_memory(model.memory)
                     print('PREFILL_READY', length, backend, ratio, flush=True)
             context = {'input_tokens': length, 'input_sha256': hashlib.sha256(ids_cpu[:, :length].numpy().tobytes()).hexdigest(),
-                       'runs': [], 'kernel_profiles': {}, 'summaries': {}}
+                       'prefill': prefill_timings, 'runs': [], 'kernel_profiles': {}, 'summaries': {}}
             result['contexts'].append(context)
             save()
 
@@ -620,7 +648,9 @@ def main():
                     'attention_kernel_ms_per_token': metrics[ATTENTION]/args.decode_steps,
                     'reconstruction_ms_per_token': metrics[RECONSTRUCTION]/args.decode_steps,
                     'rope_ms_per_token': metrics[ROPE]/args.decode_steps,
-                    'fa2_core_ms_per_token': metrics['fa2_core']/args.decode_steps}
+                    'fa2_core_ms_per_token': metrics['fa2_core']/args.decode_steps,
+                    'prefill_seconds': context['prefill'][mode]['seconds'],
+                    'prefill_input_tokens_per_second': context['prefill'][mode]['input_tokens_per_second']}
                 print('KERNEL_TIMING', length, mode, context['summaries'][mode], flush=True)
                 save()
             baseline = context['summaries']['full_kv']

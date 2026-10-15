@@ -36,9 +36,11 @@ def save_task_timings(result_dir, rows):
             'task', 'score', 'num_samples', 'time_sec', 'sec_per_sample',
             'input_tokens', 'output_tokens', 'output_tokens_per_sec',
             'peak_gpu_memory_mb', 'preprocess_sec', 'model_load_sec',
+            'batch_size_counts', 'performance_preset', 'decode_graph', 'decode_compile',
         ], extrasaction='ignore')
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows({**row, 'batch_size_counts': json.dumps(row.get('batch_size_counts', {}), sort_keys=True)}
+                         for row in rows)
     os.replace(path + '.tmp', path)
 
 
@@ -154,6 +156,10 @@ class EqualLengthBatchSampler:
 
 @dataclass
 class Args(ModelArgs):
+    performance_preset: str = field(
+        default='manual',
+        metadata={'help': 'Runtime policy: auto, manual, sm90 or sm120. Explicit flags take precedence.'}
+    )
     eval_data: str = field(
         default="long-llm:longbench/",
         metadata={'help': 'The evaluation json data path.'}
@@ -288,6 +294,15 @@ def main():
         raise ValueError('Specify unique, supported LongBench-v1 tasks.')
 
     result_dir = os.path.join(args.output_dir, args.result_dir)
+    from tools.performance_presets import resolve_preset, configure_longbench
+    accelerator = Accelerator(cpu=args.cpu)
+    resolved_preset = resolve_preset(args.performance_preset, device=accelerator.device)
+    explicit_options = {option.split('=', 1)[0].lstrip('-')
+                        for option in sys.argv[1:] if option.startswith('--')}
+    preset_enabled = (args.beacon_decode_backend == 'fa2' or
+                      (args.beacon_decode_backend == 'latent' and args.attn_impl == 'flash_attention_2'))
+    if preset_enabled:
+        configure_longbench(args, resolved_preset, explicit_options=explicit_options)
     configuration = asdict(args)
     config_path = os.path.join(result_dir, 'config.json')
     if args.load_result and os.path.exists(config_path):
@@ -298,7 +313,6 @@ def main():
         if changed:
             raise ValueError(f'Saved result configuration differs: {", ".join(changed)}. Use a new result_dir.')
 
-    accelerator = Accelerator(cpu=args.cpu)
     load_start = time.monotonic()
     model, tokenizer = get_model_and_tokenizer(args, device=accelerator.device)
     if accelerator.device.type == 'cuda':
@@ -401,6 +415,15 @@ def main():
 
     for i, task in enumerate(all_datasets.keys()):
         task_number = i
+        if preset_enabled:
+            configure_longbench(model.config, resolved_preset, task, explicit_options)
+        runtime_settings = {
+            'performance_preset': resolved_preset,
+            'decode_graph': bool(getattr(model.config, 'beacon_decode_graph', False)),
+            'decode_compile': bool(getattr(model.config, 'beacon_decode_compile', False)),
+        }
+        if accelerator.process_index == 0:
+            print(f'[runtime] {task}: {json.dumps(runtime_settings)}', flush=True)
         # Release captured shapes from earlier tasks while keeping the loaded model.
         for layer in getattr(getattr(model, 'model', None), 'layers', []):
             if hasattr(layer, '_decode_graphs'):
@@ -575,6 +598,7 @@ def main():
                     'batch_size_counts': dict(batch_size_counts),
                     'timing_scope': 'Generation wall time includes prefill, decode, data transfer, text decoding and progress writes; excludes model loading and dataset preprocessing.',
                     'world_size': accelerator.num_processes,
+                    **runtime_settings,
                 }
                 metrics[f"{task}_efficiency"] = eff
                 print(f"[efficiency] {task}: {json.dumps(eff)}", flush=True)

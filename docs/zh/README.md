@@ -78,7 +78,7 @@ Prefill 在原始特征维度计算 attention，将完成的窗口存为压缩 B
 
 ## 🚀 快速开始
 
-以下命令在同一个已激活环境的终端中，从仓库根目录执行。FA2 安装示例面向单张 **H20/H100 类 SM90 GPU**，使用 Python 3.11 或3.12、兼容的 NVIDIA 驱动及 **CUDA 12.9 开发工具链（`nvcc`）**。r4 的 latent FA2 路径需要仓库中的320维扩展。其他硬件及 eager 用法见[安装指南](installation.md)。
+以下命令在同一个已激活环境的终端中，从仓库根目录执行。FA2 安装示例面向单张 **H20/H100 类 SM90 GPU**，使用 Python 3.11 或3.12、兼容的 NVIDIA 驱动及 **CUDA 12.9 开发工具链（`nvcc`）**。r4 的 latent FA2 路径需要仓库中的320维扩展。**RTX PRO 5000 Blackwell（SM120）** 请先完成 [SM120 安装](installation.md#rtx-pro-5000sm120)，再从下方下载权重继续。Eager 用法见[安装指南](installation.md)。
 
 <a id="1-安装"></a>
 
@@ -239,7 +239,7 @@ BEACON_RATIO=8 RESULT_DIR=longbench-t8f4 \
   bash scripts/evaluation/eval_longbench_slimkv.sh
 ```
 
-默认评测14个英文/代码子集，使用 BF16 greedy decode，**最终聊天模板处理后的输入上限为31,500 token**，超长输入保留首尾。训练语料只有中文，因此过滤中文子集；另行排除 `passage_count` 和 `passage_retrieval_en`。Batch 上限32，仅将等长输入组成 batch，不做 padding，可根据显存调整 `BATCH_SIZE` 和 `MAX_BATCH_TOKENS`。
+默认评测14个英文/代码子集，使用 BF16 greedy decode，**最终聊天模板处理后的输入上限为31,500 token**，超长输入保留首尾。训练语料只有中文，因此过滤中文子集；另行排除 `passage_count` 和 `passage_retrieval_en`。Batch 上限32，仅将等长输入组成 batch，不做 padding，可根据显存调整 `BATCH_SIZE` 和 `MAX_BATCH_TOKENS`。`PERFORMANCE_PRESET=auto` 选择硬件预设：PRO5000 的短问答关闭 Graph capture，较长生成任务保留 Graph；`DECODE_GRAPH` 和 `DECODE_COMPILE` 可覆盖默认选择。
 
 输出位于 `data/results/longbench/<RESULT_DIR>/`：`scores.json` 保存得分，`task_timings.csv` 保存每个子集的耗时，`progress.json` 保存进度。保持配置一致并设置 `LOAD_RESULT=True` 可以复用已完成子集。任务选择、输出定义和后端选项见[评测指南](evaluation.md)。
 

@@ -7,11 +7,11 @@ Usage: MODEL_NAME_OR_PATH=/path/to/checkpoint EVAL_DATA=/path/to/longbench \
        bash scripts/evaluation/eval_longbench_slimkv.sh [evaluator arguments]
 
 Defaults: 14 English/code tasks, token ratio 4, BF16, final input limit 31500,
-head/tail truncation, latent FA2 decode, CUDA Graphs, optional B1 compilation, batch limit 32.
+head/tail truncation, latent FA2 decode, hardware/task Graph policy, optional B1 compilation, batch limit 32.
 Feature ranks are read from the checkpoint; use an f4 checkpoint for t4f4.
 Environment: PYTHON, CUDA_VISIBLE_DEVICES, OUTPUT_DIR, RESULT_DIR, TASKS,
 BEACON_RATIO, BATCH_SIZE, MAX_BATCH_TOKENS, MAX_LENGTH, MAX_SAMPLES_PER_TASK,
-DECODE_BACKEND, ATTN_IMPL, DECODE_GRAPH, DECODE_COMPILE, DECODE_COMPRESS, PREFILL_FAST,
+DECODE_BACKEND, ATTN_IMPL, PERFORMANCE_PRESET, DECODE_GRAPH, DECODE_COMPILE, DECODE_COMPRESS, PREFILL_FAST,
 LOAD_RESULT, MAP_NUM_PROC.
 TASKS is a space-separated task list or 'english'/'all'.
 ATTN_IMPL=eager defaults to reconstruction decode with Graphs disabled.
@@ -19,6 +19,9 @@ ATTN_IMPL=flash_attention_2 defaults to latent decode with Graphs enabled.
 Set DECODE_BACKEND explicitly to select a different prefill/decode combination.
 DECODE_BACKEND=reconstruct or latent selects reconstruction or direct latent attention.
 The legacy value fa2 explicitly selects latent FA2, independent of ATTN_IMPL.
+PERFORMANCE_PRESET=auto selects SM90 or SM120 defaults; manual keeps fixed settings.
+SM120 skips per-prompt Graph setup for the six short-answer QA tasks.
+Explicit DECODE_GRAPH and DECODE_COMPILE always override the preset.
 DECODE_COMPILE defaults to True for latent FA2; False disables compilation.
 Compilation only runs for eligible B1 BF16 decode with Torch 2.11 and Graphs.
 DECODE_COMPRESS defaults to True. False compresses prefill only and retains new raw KV.
@@ -60,6 +63,13 @@ esac
 # The training corpus is Chinese-only, so the English preset excludes Chinese tasks.
 # Passage counting and retrieval are excluded separately; code tasks remain.
 read -r -a tasks <<< "${TASKS:-english}"
+runtime_args=(--performance_preset "${PERFORMANCE_PRESET:-auto}")
+if [[ -n "${DECODE_GRAPH+x}" || "${PERFORMANCE_PRESET:-auto}" == "manual" ]]; then
+  runtime_args+=(--beacon_decode_graph "${DECODE_GRAPH:-${graph_default}}")
+fi
+if [[ -n "${DECODE_COMPILE+x}" || "${PERFORMANCE_PRESET:-auto}" == "manual" ]]; then
+  runtime_args+=(--beacon_decode_compile "${DECODE_COMPILE:-${graph_default}}")
+fi
 sample_args=()
 if [[ -n "${MAX_SAMPLES_PER_TASK:-}" ]]; then
   sample_args+=(--max_samples_per_task "${MAX_SAMPLES_PER_TASK}")
@@ -77,14 +87,12 @@ fi
   --beacon_cache_mode latent --beacon_decode_backend "${DECODE_BACKEND}" \
   --beacon_decode_fast "${decode_fast}" \
   --beacon_decode_compress "${DECODE_COMPRESS:-True}" \
-  --beacon_decode_graph "${DECODE_GRAPH:-${graph_default}}" \
   --beacon_decode_graph_full True \
   --beacon_prefill_fast "${PREFILL_FAST:-True}" \
-  --beacon_decode_compile "${DECODE_COMPILE:-${graph_default}}" \
   --attn_impl "${ATTN_IMPL}" \
   --max_length "${MAX_LENGTH}" --truncate_from_middle True --truncate_after_chat True \
   --batch_size "${BATCH_SIZE}" --group_by_input_length True \
   --max_batch_tokens "${MAX_BATCH_TOKENS:-$((BATCH_SIZE * MAX_LENGTH))}" \
   --num_logits_to_keep 1 --do_sample False --sample_shuffle False \
   --load_result "${LOAD_RESULT:-False}" \
-  "${sample_args[@]}" "$@"
+  "${runtime_args[@]}" "${sample_args[@]}" "$@"

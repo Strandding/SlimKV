@@ -42,12 +42,13 @@ class CompileDecodeTest(unittest.TestCase):
         finally:
             compile_decode.compiled_tail.cache_clear()
 
-    def test_longbench_fast_defaults_and_explicit_controls(self):
+    def test_longbench_manual_defaults_and_explicit_controls(self):
         with tempfile.TemporaryDirectory() as tmp:
             python = Path(tmp) / 'python'
             python.write_text(f'#!{sys.executable}\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n')
             python.chmod(0o755)
-            base = dict(PATH=os.environ['PATH'], PYTHON=str(python), MODEL_NAME_OR_PATH=tmp)
+            base = dict(PATH=os.environ['PATH'], PYTHON=str(python), MODEL_NAME_OR_PATH=tmp,
+                        PERFORMANCE_PRESET='manual')
             for overrides, expected in [
                 ({}, ('flash_attention_2', 'latent', 'True', 'True')),
                 ({'ATTN_IMPL': 'eager'}, ('eager', 'reconstruct', 'False', 'False')),

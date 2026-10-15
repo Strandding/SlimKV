@@ -32,6 +32,7 @@ fi
   --output_dir "${OUTPUT_DIR:-data/results/context_decode_${execution_mode}${decode_suffix}}" \
   --execution_mode "${execution_mode}" \
   --context_lengths "${lengths[@]}" --beacon_ratios "${ratios[@]}" \
+  --prefill_warmup "${PREFILL_WARMUP:-1}" \
   --decode_steps "${DECODE_STEPS:-128}" --warmup "${WARMUP:-1}" \
   --repetitions "${REPETITIONS:-4}" --seed "${SEED:-42}" \
   "${optional[@]}" "$@"

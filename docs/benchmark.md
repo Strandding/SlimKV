@@ -5,7 +5,7 @@ Use the tools below with the current model implementation. Run commands from the
 
 ## Before you start
 
-Follow the [README walkthrough](../README.md#-quick-start) to install FA2, build the SM90 extension and download `Zihant0513/SlimKV-Llama3.1-8B-r4`. Run the commands below in that environment, with `MODEL_NAME_OR_PATH` and `SLIMKV_FA2_DECODE_EXTENSION_DIR` exported. The fixed-context runner generates synthetic tokens; LongBench files are needed only for fixture-based tools.
+Follow the [README walkthrough](../README.md#-quick-start) to install FA2, build the extension for your GPU and download `Zihant0513/SlimKV-Llama3.1-8B-r4`. Run the commands below in that environment, with `MODEL_NAME_OR_PATH` and `SLIMKV_FA2_DECODE_EXTENSION_DIR` exported. The fixed-context runner generates synthetic tokens; LongBench files are needed only for fixture-based tools.
 
 For a smaller first check:
 
@@ -15,7 +15,7 @@ OUTPUT_DIR=data/results/speed-smoke \
   bash scripts/benchmark/benchmark_context_decode.sh
 ```
 
-For the full matrix, use `OUTPUT_DIR=data/results/speed-32k-128k bash scripts/benchmark/benchmark_context_decode.sh`. Each invocation requires a fresh output directory. Both attention GPU kernel time and end-to-end decode time are written locally to `results.json` and `summary.csv`; generated files under `data/results/` are ignored by Git. For experiments and results, see the [paper](https://arxiv.org/abs/2610.02953).
+For the full matrix, use `OUTPUT_DIR=data/results/speed-32k-128k bash scripts/benchmark/benchmark_context_decode.sh`. Each invocation requires a fresh output directory. Warmed prefill time, attention GPU kernel time and end-to-end decode time are written locally to `results.json` and `summary.csv`; generated files under `data/results/` are ignored by Git. For experiments and results, see the [paper](https://arxiv.org/abs/2610.02953).
 
 ## Preparing small LongBench-v1 fixtures
 
@@ -48,7 +48,7 @@ The same model alternates full, compact full and latent-reconstruction cache mod
 
 ## Building the width-320 extension
 
-Install FA2 2.8.3 and a compatible development toolchain first. This build compiles BF16 SM90 **forward only**; no backward or A100/other-architecture support is claimed.
+Install FA2 2.8.3 and a compatible development toolchain first. This build compiles BF16 **forward only** for SM90 or SM120. It selects the current GPU automatically; `--cuda_arch 9.0` or `--cuda_arch 12.0` selects a target explicitly. See [SM120 installation](installation.md#rtx-pro-5000-sm120) for the PRO5000 environment. Backward and A100 builds are not provided.
 
 ```bash
 git clone --depth 1 --branch v2.8.3 \
@@ -152,6 +152,8 @@ preallocated caches, complete-model CUDA Graphs and the same optional exact
 Torch 2.11 decoder-tail compilation. Set `DECODE_COMPILE=False` to disable
 compilation for every method. Warmup and graph construction are excluded from
 timing. Graph capture inside a measured interval is treated as an error.
+
+Prefill is reported separately as `prefill_seconds` and `prefill_input_tokens_per_second`. Each route completes an untimed full-prefill warmup before one synchronized measurement, excluding first-call compilation. Set `PREFILL_WARMUP` to increase the warmup count. Full KV uses incremental chunks and SlimKV uses its Beacon windows; both include the final-token LM head. These prefill measurements are separate from the 128-step decode timer.
 
 The default matrix covers 32K, 64K, 96K and 128K input tokens, both t4f4 and
 t8f4, and exactly 128 single-token decode forwards after prefill. K = 1024.

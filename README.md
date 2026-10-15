@@ -78,7 +78,7 @@ The walkthrough below uses **Llama-3.1-8B-r4**. It includes the backbone, traine
 
 ## 🚀 Quick start
 
-Run all commands from the repository root in the same activated shell. The FA2 setup below targets a single **H20/H100-class SM90 GPU**, Python 3.11 or 3.12, a compatible NVIDIA driver and the **CUDA 12.9 development toolkit (`nvcc`)**. The r4 latent FA2 path needs the included width-320 extension. For other hardware or eager attention, see [installation](docs/installation.md).
+Run all commands from the repository root in the same activated shell. The FA2 setup below targets a single **H20/H100-class SM90 GPU**, Python 3.11 or 3.12, a compatible NVIDIA driver and the **CUDA 12.9 development toolkit (`nvcc`)**. The r4 latent FA2 path needs the included width-320 extension. For **RTX PRO 5000 Blackwell (SM120)**, follow the [SM120 installation](docs/installation.md#rtx-pro-5000-sm120), then continue at checkpoint download below. For eager attention, see [installation](docs/installation.md).
 
 <a id="1-install"></a>
 
@@ -239,7 +239,7 @@ BEACON_RATIO=8 RESULT_DIR=longbench-t8f4 \
   bash scripts/evaluation/eval_longbench_slimkv.sh
 ```
 
-The preset uses 14 English/code tasks, BF16 greedy decoding, a final chat-formatted input limit of **31,500 tokens**, and head/tail truncation. The training corpus is Chinese-only, so Chinese subsets are filtered; `passage_count` and `passage_retrieval_en` are excluded separately. Batch size is capped at 32, with equal-length grouping and no padding. Adjust `BATCH_SIZE` and `MAX_BATCH_TOKENS` for your GPU.
+The preset uses 14 English/code tasks, BF16 greedy decoding, a final chat-formatted input limit of **31,500 tokens**, and head/tail truncation. The training corpus is Chinese-only, so Chinese subsets are filtered; `passage_count` and `passage_retrieval_en` are excluded separately. Batch size is capped at 32, with equal-length grouping and no padding. Adjust `BATCH_SIZE` and `MAX_BATCH_TOKENS` for your GPU. `PERFORMANCE_PRESET=auto` selects the hardware policy. On PRO5000, short-answer QA skips Graph capture while longer-generation tasks retain it; `DECODE_GRAPH` and `DECODE_COMPILE` override the defaults.
 
 Files are written under `data/results/longbench/<RESULT_DIR>/`: `scores.json` contains scores, `task_timings.csv` contains each subset's elapsed time, and `progress.json` tracks progress. Set `LOAD_RESULT=True` with the same configuration to resume completed subsets. See [evaluation](docs/evaluation.md) for task selection, output definitions and all backend options.
 

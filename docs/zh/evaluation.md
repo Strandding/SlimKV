@@ -38,6 +38,8 @@ bash scripts/evaluation/eval_longbench_slimkv.sh
 
 默认采用 BF16 greedy 推理、token ratio 4、latent KV 存储、原始维度 FA2 prefill、latent-space FA2 Beacon decode、CUDA Graph、可选的 B1 decoder-tail 编译和 `num_logits_to_keep=1`。Beacon K 不加 RoPE，各层 rank 和投影结构从 checkpoint 读取。
 
+`PERFORMANCE_PRESET=auto` 自动选择 SM90 或 SM120 运行策略。RTX PRO 5000 的六个短问答任务关闭逐输入 Graph capture，摘要、few-shot 和代码任务在符合条件的 B1 decode 上保留 Graph；SM90 保持原有 Graph 策略。可选的 tail 编译仍默认开启。`DECODE_GRAPH=True` 或 `False`、`DECODE_COMPILE=True` 或 `False` 可分别覆盖，`PERFORMANCE_PRESET=manual` 使用固定策略。各任务的计时 JSON 和 CSV 记录实际设置及 batch 分布。
+
 ### 选择 attention 和 decode 路径
 
 `ATTN_IMPL` 选择原始维度 attention 的实现，`DECODE_BACKEND` 选择 decode 时如何使用压缩后的 Beacon。下列组合都保留 latent KV 存储。
@@ -47,7 +49,7 @@ bash scripts/evaluation/eval_longbench_slimkv.sh
 | `ATTN_IMPL=eager` | Eager | 重建后使用 eager attention | 关闭 |
 | `ATTN_IMPL=eager DECODE_BACKEND=latent` | Eager | 免重建 latent eager | 关闭 |
 | `ATTN_IMPL=flash_attention_2 DECODE_BACKEND=reconstruct` | FA2 | 重建后使用 FA2 | 关闭 |
-| `ATTN_IMPL=flash_attention_2` | FA2 | 免重建 latent FA2 | 开启 |
+| `ATTN_IMPL=flash_attention_2` | FA2 | 免重建 latent FA2 | 硬件/任务预设 |
 
 `DECODE_BACKEND=reconstruct` 在 attention 前重建 Beacon K/V；`DECODE_BACKEND=latent` 直接在压缩后的 Beacon K/V 上计算，使用所选 `ATTN_IMPL`。Eager 的两条路径都无需安装 FlashAttention 或构建320维扩展。Latent eager 使用 FP32 attention scores 和加权求和，支持 K/V rank 不同，并保留原始 head 的缩放系数。
 
@@ -55,7 +57,7 @@ bash scripts/evaluation/eval_longbench_slimkv.sh
 
 默认结果目录包含两项后端名称，各路径分别保存。直接使用 `python -m main.evaluation.eval_longbench` 时，应显式选择 `--attn_impl` 和 `--beacon_decode_backend`；脚本自动配对只作用于其环境变量。
 
-选择任一 FlashAttention 路径都需安装 FA2。全局 latent rank 不超过 256 时使用标准 FA2；257–320 需 BF16 SM90 扩展，并设置 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，详见[英文构建说明](../benchmark.md#building-the-width-320-extension)。Latent eager 没有320维上限。两条直接 latent 路径都要求 global Linear up 投影及[对应缓存/RoPE 配置](implementation_status.md)。其他投影结构使用重建路径。当前直接 latent decode 支持 Llama3，尚不支持 Qwen2。
+选择任一 FlashAttention 路径都需安装 FA2。全局 latent rank 不超过 256 时使用标准 FA2；257–320 需 BF16 SM90/SM120 扩展，并设置 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，详见[英文构建说明](../benchmark.md#building-the-width-320-extension)。Latent eager 没有320维上限。两条直接 latent 路径都要求 global Linear up 投影及[对应缓存/RoPE 配置](implementation_status.md)。其他投影结构使用重建路径。当前直接 latent decode 支持 Llama3，尚不支持 Qwen2。
 
 **最终包含 chat template 的输入**上限为 31500 tokens，超过时保留前 15750 和后 15750，不做 decode/re-encode。Few-shot 和代码任务沿用原有模板规则。直接使用 Python 入口时，默认保留历史的 chat template 之前截断规则，需显式增加 `--truncate_after_chat True` 才采用新协议。
 
