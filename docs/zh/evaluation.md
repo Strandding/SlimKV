@@ -25,7 +25,7 @@ CUDA_VISIBLE_DEVICES=0 \
 bash scripts/evaluation/eval_longbench_slimkv.sh
 ```
 
-默认采用 BF16 greedy 推理、token ratio 4、latent KV 存储、原始维度 FA2 prefill、latent-space FA2 Beacon decode、CUDA Graph 和 `num_logits_to_keep=1`。Beacon K 不加 RoPE，各层 rank 和投影结构从 checkpoint 读取。
+默认采用 BF16 greedy 推理、token ratio 4、latent KV 存储、原始维度 FA2 prefill、latent-space FA2 Beacon decode、CUDA Graph、可选的 B1 decoder-tail 编译和 `num_logits_to_keep=1`。Beacon K 不加 RoPE，各层 rank 和投影结构从 checkpoint 读取。
 
 ### 选择 attention 和 decode 路径
 
@@ -40,7 +40,7 @@ bash scripts/evaluation/eval_longbench_slimkv.sh
 
 `DECODE_BACKEND=reconstruct` 在 attention 前重建 Beacon K/V；`DECODE_BACKEND=latent` 直接在压缩后的 Beacon K/V 上计算，使用所选 `ATTN_IMPL`。Eager 的两条路径都无需安装 FlashAttention 或构建320维扩展。Latent eager 使用 FP32 attention scores 和加权求和，支持 K/V rank 不同，并保留原始 head 的缩放系数。
 
-旧的 `DECODE_BACKEND=fa2` 保留为显式 latent FA2 decode，不受 prefill 选择影响，兼容原有命令。`DECODE_GRAPH=False` 可单独关闭 Graph。
+旧的 `DECODE_BACKEND=fa2` 保留为显式 latent FA2 decode，不受 prefill 选择影响，兼容原有命令。`DECODE_GRAPH=False` 可单独关闭 Graph，`DECODE_COMPILE=False` 关闭可选编译，`PREFILL_FAST=False` 关闭 prefill 优化。Latent FA2 默认开启编译选项，仅在 Torch 2.11、B1 BF16 且启用 Graph 时实际编译，更大 batch 保留原 decode 路径。
 
 默认结果目录包含两项后端名称，各路径分别保存。直接使用 `python -m main.eval_longbench` 时，应显式选择 `--attn_impl` 和 `--beacon_decode_backend`；脚本自动配对只作用于其环境变量。
 

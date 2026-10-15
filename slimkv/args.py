@@ -168,6 +168,10 @@ class ModelArgs:
         default=None,
         metadata={'help': 'Use inference CUDA Graphs for fixed-shape decode layer operations.'},
     )
+    beacon_decode_compile: Optional[bool] = field(
+        default=None,
+        metadata={'help': 'Optionally compile eligible B1 BF16 FA2 decoder tails with Torch 2.11.'},
+    )
     beacon_decode_graph_full: Optional[bool] = field(
         default=None,
         metadata={'help': 'Use whole-model B1 FA2 decode graphs when supported; False retains layer graphs.'},

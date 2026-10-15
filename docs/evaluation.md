@@ -25,7 +25,7 @@ CUDA_VISIBLE_DEVICES=0 \
 bash scripts/evaluation/eval_longbench_slimkv.sh
 ```
 
-The preset uses BF16 greedy inference, token ratio 4, latent KV storage, original-dimension FA2 prefill, latent-space FA2 Beacon decode, CUDA Graphs and `num_logits_to_keep=1`. Beacon Keys skip RoPE. It reads layer ranks and projection structure from the checkpoint.
+The preset uses BF16 greedy inference, token ratio 4, latent KV storage, original-dimension FA2 prefill, latent-space FA2 Beacon decode, CUDA Graphs, optional B1 decoder-tail compilation and `num_logits_to_keep=1`. Beacon Keys skip RoPE. It reads layer ranks and projection structure from the checkpoint.
 
 ### Select attention and decode paths
 

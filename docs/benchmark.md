@@ -82,6 +82,14 @@ On H20 with the BF16 Llama-3.1-8B f4 checkpoint and t8f4, the same two prompts a
 
 Peak allocation includes the model, cache, FA workspaces and retained graphs. In this comparison, all 64 logit steps match the original implementation bitwise. Greedy outputs and official scores also match on eight fixed LongBench-v1 samples from Qasper, HotpotQA, MultiFieldQA-en and LCC.
 
+## Optional decoder-tail compilation
+
+`--beacon_decode_compile True` enables the validated Torch 2.11 decoder-tail compiler for B1 BF16 FA2 Graph decode. It retains the original FP32 variance reduction and BF16 rounding boundaries, and reuses the existing CUDA Graphs. Other Torch versions and unsupported shapes retain the original path. The first eligible call compiles the tail before Graph capture.
+
+The CUDA inference CLI and `eval_longbench_slimkv.sh` enable this option by default. Disable it with `--no-beacon_decode_compile` in `main.infer`, `DECODE_COMPILE=False` in the shell preset, or `--beacon_decode_compile False` in `main.eval_longbench`. The Python API and comparison tools preserve their original defaults. Training is unchanged.
+
+On H20 with the same f4 checkpoint, t8f4, B1 and 63 fixed decode steps, four alternating measurements after warmup give 87.76 → 89.48 tokens/s for a 4,009-token prompt and 87.62 → 89.39 tokens/s for a 6,194-token prompt. Compilation is outside the timing interval. All 64 logit steps and final persistent KV tensors match bitwise, and greedy tokens and official scores match on eight fixed LongBench-v1 samples. These controls use the current source; the historical 82 tokens/s result is a separate baseline.
+
 ## Current FA2 and Graph comparison
 
 ```bash

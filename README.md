@@ -193,7 +193,7 @@ python -m main.infer \
 
 Use `--prompt_file /path/to/context.txt` for a long context. The example reads ranks and Beacon settings from the checkpoint and runs greedy BF16 inference on `cuda:0`.
 
-The default backend stores latent Beacon K/V and reconstructs them for attention. Llama3 also supports reconstruction-free eager and FA2 decode. Training and prefill use the original attention dimension. See [quick start](docs/quickstart.md) for the Python API and backend options.
+On CUDA, the CLI defaults to original-dimension FA2 prefill, reconstruction-free latent decode, CUDA Graphs and optional decoder-tail compilation. Use `--no-beacon_decode_compile` to disable compilation, or `--attn_impl eager` for reconstruction without FlashAttention. Training and prefill use the original attention dimension. See [quick start](docs/quickstart.md) for the Python API and backend options.
 
 An experimental [vLLM integration](docs/vllm.md) provides engine-owned paged KV storage and continuous request scheduling for single-GPU Llama inference.
 

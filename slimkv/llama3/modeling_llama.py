@@ -1863,6 +1863,12 @@ class LlamaDecoderLayer(nn.Module):
         return super()._apply(fn, recurse=recurse)
 
     def _decode_tail(self, attention_output, residual):
+        if getattr(self.self_attn.config, 'beacon_decode_compile', False):
+            from .compile_decode import eligible, compiled_tail
+            if eligible(self, attention_output):
+                function = compiled_tail()
+                if function is not None:
+                    return function(self, attention_output, residual)
         hidden = residual + attention_output
         return hidden + self.mlp(self.post_attention_layernorm(hidden))
 
@@ -1919,7 +1925,8 @@ class LlamaDecoderLayer(nn.Module):
             **kwargs,
         )
         if graph_step:
-            hidden_states = self._decode_graphs('tail', self._decode_tail, hidden_states, residual)
+            tail_key = 'tail_compile' if getattr(self.self_attn.config, 'beacon_decode_compile', False) else 'tail'
+            hidden_states = self._decode_graphs(tail_key, self._decode_tail, hidden_states, residual)
         else:
             hidden_states = residual + hidden_states
             residual = hidden_states

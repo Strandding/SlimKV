@@ -223,7 +223,8 @@ class StaticDecode:
             self.initialize(past)
         positions = positions[:, -ids.shape[1]:]
         refresh_sink = pk.history is None
-        graph_key = size, refresh_sink, self.raw_bucket, return_normalized_hidden
+        graph_key = (size, refresh_sink, self.raw_bucket, return_normalized_hidden,
+                     bool(getattr(self.model.config, 'beacon_decode_compile', False)))
         if graph_key not in self.graphs:
             buffers = (ids.clone(), positions.clone())
             sink_snapshot = [(state[name][:, :, :1], state[name][:, :, :1].clone())

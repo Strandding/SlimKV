@@ -66,6 +66,14 @@ python -m tools.benchmark_fa2_decode \
 
 KV物理字节、live/peak CUDA allocated、allocator reserved 是不同概念。所有对照保留预热 Graph，模式peak差不能证明Graph额外显存为0。
 
+## 可选 decoder-tail 编译
+
+`--beacon_decode_compile True` 在 Torch 2.11 下为 B1 BF16 FA2 Graph decode 启用已验证的编译路径，保留原始 FP32 方差计算和 BF16 舍入边界，继续复用现有 CUDA Graph。其他 Torch 版本和不支持的形状使用原路径。首次符合条件的调用会在 Graph capture 前编译。
+
+CUDA 推理 CLI 和 `eval_longbench_slimkv.sh` 默认打开此选项。`main.infer` 使用 `--no-beacon_decode_compile` 关闭，shell 预设使用 `DECODE_COMPILE=False`，`main.eval_longbench` 使用 `--beacon_decode_compile False`。Python API 和对照测试工具保留原默认设置，训练不变。
+
+H20 上同一 f4 权重、t8f4、B1 和63步固定 decode，预热后交替测量四次：4,009-token 输入从87.76提升到89.48 tokens/s，6,194-token 输入从87.62提升到89.39 tokens/s。编译不计入耗时。全部64步 logits 和最终持久 KV 逐位一致，八条固定 LongBench-v1 样本的 greedy token 和官方评分一致。这里采用当前源码的同期对照，历史82 tokens/s 是另一组基线。
+
 ## 多 batch
 
 `tools.benchmark_batch_decode` 需要 checkpoint、samples_jsonl、forced_tokens_json、output_dir。固定输入 JSON 为样本索引到 token ID 列表（默认每条至少63个）；从reference/warmup保存的`logits_<index>.pt`中提取`forced_token_ids`，不能拿任意token冒充same-input对照。
