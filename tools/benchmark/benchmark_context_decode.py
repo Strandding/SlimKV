@@ -173,6 +173,15 @@ def scope_times(events, expected_calls):
            and not event.name.startswith('slimkv_bench/')]
     annotation_names = {event.name for event in events if event.device_type == torch.autograd.DeviceType.CUDA
                         and getattr(event, 'is_user_annotation', False)}
+    # CUDA launch correlation gives exact ownership even when GPU annotation
+    # ranges overlap adjacent Norm/MLP work. Driver launches include Triton.
+    launches = {event.id: event for event in events
+                if event.device_type == torch.autograd.DeviceType.CPU
+                and event.name.startswith(('cuda', 'cu')) and hasattr(event, 'id')}
+    if launches:
+        missing = [event.name for event in gpu if event.id not in launches]
+        if missing:
+            raise RuntimeError(f'GPU operations lack CUDA launch correlation: {missing[:5]}')
     result = {}
     for label in (ATTENTION, RECONSTRUCTION, ROPE):
         selected = []
@@ -189,7 +198,22 @@ def scope_times(events, expected_calls):
         intervals = sorted((event.time_range.start, event.time_range.end) for event in events
                            if event.name == label and event.device_type == torch.autograd.DeviceType.CUDA
                            and getattr(event, 'is_user_annotation', False))
-        if intervals:
+        if launches:
+            per_thread = {}
+            for event in selected:
+                per_thread.setdefault(event.thread, []).append(
+                    (event.time_range.start, event.time_range.end))
+            per_thread = {thread: (sorted(ranges), sorted(start for start, _ in ranges))
+                          for thread, ranges in per_thread.items()}
+            duration = 0.0
+            for event in gpu:
+                launch = launches[event.id]
+                ranges, starts = per_thread.get(launch.thread, ([], []))
+                index = bisect_right(starts, launch.time_range.start)-1
+                if index >= 0 and launch.time_range.start <= ranges[index][1]:
+                    duration += event.device_time_total
+            result[label] = duration/1000
+        elif intervals:
             merged = []
             for start, end in intervals:
                 if merged and start <= merged[-1][1]:
@@ -339,7 +363,7 @@ def main():
     }, 'contexts': []}
     if args.execution_mode == 'optimized':
         result['metadata']['protocol'] = 'B1 BF16 FA2; preallocated cache and complete-model CUDA Graphs for every route; identical optional exact decoder-tail compilation; 128 single-token forwards after prefill.'
-        result['metadata']['kernel_execution'] = 'Same optimized operations in an independent uncaptured profiler pass; Graph replay is used for end-to-end timing. Real GPU kernels are summed inside GPU annotation ranges when available.'
+        result['metadata']['kernel_execution'] = 'Same optimized operations in an independent uncaptured profiler pass; Graph replay is used for end-to-end timing. Real GPU operations are attributed by their CUDA launch correlations; GPU ranges are a fallback for older profilers.'
         result['metadata']['optimized_scope'] = 'Completed Beacon window, fixed continuation no longer than one window; benchmark runtime, not a serving scheduler.'
     save = lambda: atomic_json(outdir/'results.json', result)
     save()

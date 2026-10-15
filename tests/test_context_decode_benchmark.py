@@ -84,6 +84,24 @@ class ContextDecodeTest(unittest.TestCase):
         self.assertAlmostEqual(result[ROPE], .01)
         self.assertAlmostEqual(result['fa2_core'], .05)
 
+    def test_launch_correlation_excludes_norm_inside_an_overlapping_gpu_range(self):
+        cpu, cuda = torch.autograd.DeviceType.CPU, torch.autograd.DeviceType.CUDA
+        def event(name, start, end, device, identifier=0, annotation=False):
+            return SimpleNamespace(name=name, id=identifier, thread=1, cpu_parent=None,
+                                   cpu_children=[], kernels=[], device_type=device,
+                                   is_user_annotation=annotation,
+                                   time_range=SimpleNamespace(start=start, end=end),
+                                   device_time_total=end-start)
+        events = [event(ATTENTION, 0, 50, cpu),
+                  event('cuLaunchKernel', 20, 21, cpu, 7),
+                  event('cudaLaunchKernel', 60, 61, cpu, 8),
+                  event(ATTENTION, 100, 200, cuda, annotation=True),
+                  event('flash::flash_fwd_kernel', 110, 120, cuda, 7),
+                  event('norm_kernel', 140, 150, cuda, 8)]
+        result = scope_times(events, 1)
+        self.assertAlmostEqual(result[ATTENTION], .01)
+        self.assertAlmostEqual(result['fa2_core'], .01)
+
     def test_rope_extension_and_synthetic_input_preserve_existing_prefixes(self):
         model = make_model()
         rope = model.model.layers[0].self_attn.rotary_emb

@@ -180,8 +180,9 @@ Two measurements are saved separately:
   operations and latent mappings. Reconstruction and RoPE are also reported
   separately and already included in the total. Norm, MLP and LM head are excluded.
   A separate uncaptured profiler pass executes the same optimized operations and
-  verifies predictions. GPU annotation spans locate kernels but are not counted
-  as kernel execution time. FA2 time must not exceed the enclosing attention total.
+  verifies predictions. CUDA launch correlations attribute each GPU operation
+  to its CPU scope. GPU annotation ranges are a fallback for older profilers
+  and are never counted as execution time. FA2 time must not exceed the enclosing attention total.
 - **End-to-end decode time:** synchronized wall time for all 128 model forwards
   and argmax operations. Cache restoration, tokenization, prefill, graph capture,
   compilation and profiler overhead are excluded. Four repetitions follow one
