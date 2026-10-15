@@ -93,9 +93,11 @@ def main():
             if not dest.exists() or not dest.is_relative_to(ROOT) or dest not in visible:
                 errors.append(f'{path.relative_to(ROOT)}: broken local link {target}')
             elif anchor and dest.suffix == '.md':
-                headings = re.findall(r'^#+\s+(.+)$', dest.read_text(), flags=re.M)
-                slugs = [re.sub(r'[^\w\- ]', '', h.lower().replace('`', '')).replace(' ', '-') for h in headings]
-                if anchor not in slugs:
+                destination = dest.read_text()
+                headings = re.findall(r'^#+\s+(.+)$', destination, flags=re.M)
+                slugs = {re.sub(r'[^\w\- ]', '', h.lower().replace('`', '')).replace(' ', '-') for h in headings}
+                explicit_ids = set(re.findall(r'<[^>]+\bid=["\']([^"\']+)["\']', destination))
+                if anchor not in slugs | explicit_ids:
                     errors.append(f'{path.relative_to(ROOT)}: missing heading {target}')
     secret = re.compile(r'\b(?:hf_[A-Za-z0-9]{24,}|github_pat_[A-Za-z0-9_]{24,}|sk-[A-Za-z0-9_-]{24,}|AKIA[0-9A-Z]{16})\b')
     for path in sources + scripts:

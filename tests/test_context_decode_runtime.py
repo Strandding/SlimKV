@@ -1,6 +1,8 @@
 """Check shared optimized decode against independent model/cache implementations."""
 import copy
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
@@ -36,6 +38,22 @@ class OptimizedRuntimeTest(unittest.TestCase):
                         torch.testing.assert_close(runtime.run(torch.tensor([[token]])), target,
                                                    rtol=2e-5, atol=2e-6)
                     self.assertEqual(pointers, [state['raw_k'].data_ptr() for state in runtime.layers])
+
+    def test_profile_launch_count_accounts_for_gqa_packing_and_split_combining(self):
+        runtime = SimpleNamespace(scope=True, sm_count=78, profile_expected_fa2_kernels=0,
+            extension=SimpleNamespace(forward=lambda *args: (None, None)), paired_lengths=None,
+            model=SimpleNamespace(config=SimpleNamespace(hidden_size=4096, num_attention_heads=32)))
+        cases = [(128, 128, 1, 8, False, 1), (128, 256, 1, 8, False, 2),
+                 (320, 32832, 1, 1, False, 2), (320, 32832, 2, 1, True, 2),
+                 (128, 128, 2, 8, False, 1), (128, 32768, 1, 8, False, 2)]
+        with patch('tools.benchmark.context_decode_runtime.profile_ops', return_value=(None, lambda *args: (None, None))), \
+                patch('tools.benchmark.context_decode_runtime.paired_attention', return_value=(None, None)):
+            for width, length, queries, kv_heads, causal, expected in cases:
+                runtime.profile_expected_fa2_kernels = 0
+                q = SimpleNamespace(shape=(1, queries, 32, width))
+                k = SimpleNamespace(shape=(1, length, kv_heads, width))
+                OptimizedDecodeRuntime.attention(runtime, q, k, k, None, causal)
+                self.assertEqual(runtime.profile_expected_fa2_kernels, expected)
 
     def test_raw_path_matches_native_full_kv_with_shared_raw_weights(self):
         torch.manual_seed(42)

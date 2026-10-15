@@ -180,7 +180,11 @@ Two measurements are saved separately:
   operations and latent mappings. Reconstruction and RoPE are also reported
   separately and already included in the total. Norm, MLP and LM head are excluded.
   A separate uncaptured profiler pass executes the same optimized operations and
-  verifies predictions. CUDA launch correlations attribute each GPU operation
+  verifies predictions. Scheduled CUPTI warmup covers raw and Beacon steps,
+  then restores the prefix before capturing exactly 128 decode steps. Only user
+  ranges and CUDA activities are recorded. Expected FA2 kernel counts are checked,
+  and incomplete captures fail instead of producing a timing result.
+  CUDA launch correlations attribute each GPU operation
   to its CPU scope. GPU annotation ranges are a fallback for older profilers
   and are never counted as execution time. FA2 time must not exceed the enclosing attention total.
 - **End-to-end decode time:** synchronized wall time for all 128 model forwards

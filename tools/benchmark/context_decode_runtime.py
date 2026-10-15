@@ -13,7 +13,7 @@ import torch
 
 from slimkv.llama3.static_decode import _rotate, cache_extension
 from slimkv.llama3.fa2_decode import project_query, project_value, merge_attention
-from slimkv.llama3.paired_decode import paired_attention
+from slimkv.llama3.paired_decode import paired_attention, original_splits
 
 ATTENTION = 'slimkv_bench/attention'
 RECONSTRUCTION = 'slimkv_bench/kv_reconstruction'
@@ -167,6 +167,7 @@ class OptimizedDecodeRuntime:
 
     def reset(self):
         self.step_index = 0
+        self.profile_expected_fa2_kernels = 0
         if self.mode == 'full_kv':
             for state, k, v in zip(self.layers, self.raw_cache.key_cache, self.raw_cache.value_cache):
                 state['k'][:, :, :self.prefix].copy_(k[:, :, :self.prefix])
@@ -190,6 +191,11 @@ class OptimizedDecodeRuntime:
 
     def attention(self, q, k, v, lengths, causal=False):
         if self.extension is not None:
+            if self.scope:
+                # Count physical launches, including the split-KV combiner.
+                grid_heads = q.shape[0] * (k.shape[2] if q.shape[1] == 1 else q.shape[2])
+                splits = original_splits(q.shape[-1], k.shape[1], grid_heads, self.sm_count)
+                self.profile_expected_fa2_kernels += 1 + int(splits > 1)
             scale = 1/math.sqrt(self.model.config.hidden_size//self.model.config.num_attention_heads)
             if causal and q.shape[1] == 2:
                 forward = self.extension.forward

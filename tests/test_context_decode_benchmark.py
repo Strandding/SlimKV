@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import torch
 from transformers.cache_utils import DynamicCache
 from tools.benchmark.benchmark_context_decode import (AppendCache, full_backbone, extend_rope_tables,
-    cloned_memory, scope_times, synthetic_ids, ATTENTION, RECONSTRUCTION, ROPE)
+    cloned_memory, scope_times, synthetic_ids, kernel_profiler, ATTENTION, RECONSTRUCTION, ROPE)
 from test_llama_reconstruction_cache import make_model
 
 
@@ -101,6 +101,39 @@ class ContextDecodeTest(unittest.TestCase):
         result = scope_times(events, 1)
         self.assertAlmostEqual(result[ATTENTION], .01)
         self.assertAlmostEqual(result['fa2_core'], .01)
+
+    def test_launch_coverage_rejects_a_missing_projection_and_accepts_nested_apis(self):
+        cpu, cuda = torch.autograd.DeviceType.CPU, torch.autograd.DeviceType.CUDA
+        def event(name, start, end, device, identifier):
+            return SimpleNamespace(name=name, id=identifier, thread=1, cpu_parent=None,
+                cpu_children=[], kernels=[], device_type=device, is_user_annotation=False,
+                time_range=SimpleNamespace(start=start,end=end), device_time_total=end-start)
+        attention = event(ATTENTION, 0, 100, cpu, 1)
+        flash = event('flash::flash_fwd_kernel', 200, 210, cuda, 7)
+        launch = event('cuLaunchKernel', 30, 31, cpu, 7)
+        missing = event('cuLaunchKernelEx', 20, 21, cpu, 9)
+        with self.assertRaisesRegex(RuntimeError, 'Missing GPU activities'):
+            scope_times([attention, missing, launch, flash], 1)
+        outer = event('cudaLaunchKernel', 29, 32, cpu, 9)
+        result = scope_times([attention, outer, launch, flash], 1)
+        self.assertEqual(result['cuda_kernel_launch_groups'], 1)
+        self.assertAlmostEqual(result[ATTENTION], .01)
+
+    def test_profile_excludes_warmup_and_keeps_user_ranges_without_aten_events(self):
+        import torch.autograd.profiler as autograd_profiler
+        original_enable = autograd_profiler._enable_profiler
+        with kernel_profiler([torch.profiler.ProfilerActivity.CPU]) as profiler:
+            with torch.profiler.record_function('warmup_only'):
+                torch.ones(4).add_(1)
+            profiler.step()
+            with torch.profiler.record_function(ATTENTION):
+                torch.ones(4).add_(2)
+            profiler.step()
+        names = [event.name for event in profiler.events()]
+        self.assertIn(ATTENTION, names)
+        self.assertNotIn('warmup_only', names)
+        self.assertFalse(any(name.startswith('aten::') for name in names))
+        self.assertIs(autograd_profiler._enable_profiler, original_enable)
 
     def test_rope_extension_and_synthetic_input_preserve_existing_prefixes(self):
         model = make_model()

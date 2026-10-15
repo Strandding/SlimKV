@@ -166,6 +166,23 @@ def attention_scopes(model, raw):
         yield
 
 
+@contextmanager
+def kernel_profiler(activities=None):
+    """Warm up CUPTI, retaining user ranges and real CUDA launch activities."""
+    import torch.autograd.profiler as autograd_profiler
+    enable = autograd_profiler._enable_profiler
+
+    def enable_user_scopes(config, selected):
+        return enable(config, selected, {torch._C._profiler.RecordScope.USER_SCOPE})
+
+    if activities is None:
+        activities = [torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA]
+    with patch.object(autograd_profiler, '_enable_profiler', side_effect=enable_user_scopes):
+        with torch.profiler.profile(activities=activities,
+                schedule=torch.profiler.schedule(wait=0, warmup=1, active=1, repeat=1)) as profiler:
+            yield profiler
+
+
 def scope_times(events, expected_calls):
     from bisect import bisect_right
     gpu = [event for event in events if event.device_type == torch.autograd.DeviceType.CUDA
@@ -213,6 +230,29 @@ def scope_times(events, expected_calls):
                 if index >= 0 and launch.time_range.start <= ranges[index][1]:
                     duration += event.device_time_total
             result[label] = duration/1000
+            if label == ATTENTION:
+                # Runtime/driver API records can nest for one physical launch.
+                # Every such launch group must have a real GPU activity record.
+                launch_names = {'cudaLaunchKernel', 'cudaLaunchKernelEx', 'cudaLaunchKernelExC',
+                                'cuLaunchKernel', 'cuLaunchKernelEx'}
+                groups = []
+                for launch in sorted((e for e in events if e.device_type == torch.autograd.DeviceType.CPU
+                                      and e.name in launch_names),
+                                     key=lambda e: (e.thread, e.time_range.start, -e.time_range.end)):
+                    ranges, starts = per_thread.get(launch.thread, ([], []))
+                    index = bisect_right(starts, launch.time_range.start)-1
+                    if index < 0 or launch.time_range.start > ranges[index][1]:
+                        continue
+                    if (groups and groups[-1][0] == launch.thread
+                            and launch.time_range.end <= groups[-1][1] + 0.001):
+                        groups[-1][2].add(launch.id)
+                    else:
+                        groups.append((launch.thread, launch.time_range.end, {launch.id}))
+                observed = {event.id for event in gpu}
+                missing_groups = [ids for _, _, ids in groups if not ids.intersection(observed)]
+                if missing_groups:
+                    raise RuntimeError(f'Missing GPU activities for {len(missing_groups)} CUDA kernel launch groups.')
+                result['cuda_kernel_launch_groups'] = len(groups)
         elif intervals:
             merged = []
             for start, end in intervals:
@@ -363,6 +403,7 @@ def main():
     }, 'contexts': []}
     if args.execution_mode == 'optimized':
         result['metadata']['protocol'] = 'B1 BF16 FA2; preallocated cache and complete-model CUDA Graphs for every route; identical optional exact decoder-tail compilation; 128 single-token forwards after prefill.'
+        result['metadata']['kernel_profile_capture'] = 'Scheduled CUPTI warmup followed by exactly the requested decode steps; user scopes and CUDA launches only; expected FA2 kernel count checked.'
         result['metadata']['kernel_execution'] = 'Same optimized operations in an independent uncaptured profiler pass; Graph replay is used for end-to-end timing. Real GPU operations are attributed by their CUDA launch correlations; GPU ranges are a fallback for older profilers.'
         result['metadata']['optimized_scope'] = 'Completed Beacon window, fixed continuation no longer than one window; benchmark runtime, not a serving scheduler.'
     save = lambda: atomic_json(outdir/'results.json', result)
@@ -522,12 +563,24 @@ def main():
             for mode in modes:
                 restore(mode)
                 profiling_mode = bool(runtimes)
-                if mode in runtimes:
-                    runtimes[mode].scope = True
-                with (nullcontext() if runtimes else attention_scopes(model, raw)), torch.profiler.profile(
-                        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA]) as profiler:
+                with (nullcontext() if runtimes else attention_scopes(model, raw)), kernel_profiler() as profiler:
+                    # Warm both raw-only and Beacon-insertion launches while CUPTI
+                    # is preparing, then restore the exact prefix before capture.
+                    warm_steps = min(args.decode_steps, max(args.beacon_ratios))
+                    if mode in runtimes:
+                        runtimes[mode].scope = False
+                        for index in range(warm_steps):
+                            runtimes[mode].run(forced[:, index:index+1], graph=False)
+                    else:
+                        for index in range(warm_steps):
+                            reference_logits(mode, forced[:, index:index+1], index)
+                    restore(mode)
+                    if mode in runtimes:
+                        runtimes[mode].scope = True
+                    profiler.step()
                     predictions = decode(mode)
                     torch.cuda.synchronize()
+                    profiler.step()
                 profiling_mode = False
                 if mode in runtimes:
                     runtimes[mode].scope = False
@@ -545,6 +598,12 @@ def main():
                         row['total_us'] += event.device_time_total
                     atomic_json(outdir/f'kernel_event_audit_{mode}.json', list(audit.values()))
                 metrics = scope_times(events, len(raw.layers)*args.decode_steps)
+                if runtimes:
+                    expected_kernels = runtimes[mode].profile_expected_fa2_kernels
+                    metrics['expected_fa2_kernel_calls'] = expected_kernels
+                    if metrics['fa2_kernel_calls'] != expected_kernels:
+                        raise RuntimeError(f'Incomplete FA2 capture: expected {expected_kernels} '
+                                           f'kernels, recorded {metrics["fa2_kernel_calls"]}.')
                 if runtimes and metrics[ROPE] <= 0:
                     raise RuntimeError('Optimized RoPE kernels were not attributed to their scope.')
                 if runtimes and mode.startswith('reconstruct') and metrics[RECONSTRUCTION] <= 0:

@@ -98,7 +98,7 @@ Full KV 不插入 Beacon、不丢弃原始 token，每个新 Key 仅做一次原
 
 分别报告两个指标：
 
-- **Attention GPU kernel 耗时**：attention 内实际 GPU kernel 耗时之和，包含 QKV/输出投影、KV 重建、RoPE、缓存操作和 latent 映射。重建与 RoPE 单列明细，已包含在总值内，排除 Norm、MLP 和 LM head。独立 profiler pass 在未捕获模式执行相同的优化操作并检查预测一致。通过 CUDA launch correlation 将各 GPU 操作归属到对应 CPU 范围。较旧 profiler 才回退到 GPU annotation 定位，不把 annotation 跨度当成执行时间，并检查 FA2 分项不超过 attention 总值。
+- **Attention GPU kernel 耗时**：attention 内实际 GPU kernel 耗时之和，包含 QKV/输出投影、KV 重建、RoPE、缓存操作和 latent 映射。重建与 RoPE 单列明细，已包含在总值内，排除 Norm、MLP 和 LM head。独立 profiler pass 在未捕获模式执行相同的优化操作并检查预测一致。使用正式的 CUPTI warmup 阶段预热 raw 和 Beacon 步骤，恢复前缀后完整采集128步 decode。只记录用户范围和 CUDA 活动，并核对预期 FA2 kernel 数量，漏记时直接报错。通过 CUDA launch correlation 将各 GPU 操作归属到对应 CPU 范围。较旧 profiler 才回退到 GPU annotation 定位，不把 annotation 跨度当成执行时间，并检查 FA2 分项不超过 attention 总值。
 - **端到端 decode 耗时**：128 次模型 forward 与 argmax 的同步墙钟时间，排除缓存恢复、分词、prefill、编译、Graph 构建和 profiler 开销。预热一次后交替测试顺序，重复四次，使用中位数。
 
 ```bash
