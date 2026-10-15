@@ -47,7 +47,7 @@ On LongBench, SlimKV outperforms the evaluated baselines at 16× and 32× compre
 Conventional feature compression often reconstructs full-dimensional Keys before applying RoPE. We find that Beacon Keys are much less sensitive to removing key-side RoPE than raw-token Keys. SlimKV therefore trains low-rank Beacon projections without Beacon K-RoPE, while retaining RoPE for raw-token Keys and all Queries. This **positional asymmetry** enables reconstruction-free latent-space attention during decoding.
 
 <p align="center">
-  <img src="docs/assets/positional_asymmetry.svg" width="650" alt="LongBench comparison under Key RoPE ablations">
+  <img src="docs/assets/positional_asymmetry.svg" width="550" alt="LongBench comparison under Key RoPE ablations">
 </p>
 
 <p align="center"><em>Removing K-RoPE from raw-token Keys causes substantial degradation. Beacon Keys are less sensitive, and SlimKV learns low-rank memories without Beacon K-RoPE (Figure 2).</em></p>

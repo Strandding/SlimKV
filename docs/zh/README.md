@@ -47,7 +47,7 @@ SlimKV 同时压缩 KV Cache 的 token 数量和特征维度，用于长上下�
 传统特征压缩通常需要先重建完整维度的 Key，再应用 RoPE。我们发现，去掉 key-side RoPE 对 Beacon Keys 的影响显著小于对 raw-token Keys 的影响。SlimKV 利用这种**位置不对称性**，在关闭 Beacon K-RoPE 的约束下训练低秩投影，同时保留 raw K 和所有 Q 的 RoPE，从而在 decode 中直接计算 latent-space attention，避免历史 Beacon K/V 的完整维度重建。
 
 <p align="center">
-  <img src="../assets/positional_asymmetry.svg" width="650" alt="K-RoPE 消融下的 LongBench 比较">
+  <img src="../assets/positional_asymmetry.svg" width="550" alt="K-RoPE 消融下的 LongBench 比较">
 </p>
 
 <p align="center"><em>去掉 raw-token K-RoPE 会造成显著退化，Beacon Keys 对此更不敏感。SlimKV 在无 Beacon K-RoPE 的约束下学习低秩记忆（Figure 2）。</em></p>
