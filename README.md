@@ -15,6 +15,7 @@
   <a href="#news">News</a> ·
   <a href="#overview">Overview</a> ·
   <a href="#method">Method</a> ·
+  <a href="#results">Results</a> ·
   <a href="#models">Models</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#longbench-v1">LongBench-v1</a> ·
@@ -25,22 +26,30 @@
 <p align="center">
   <a href="https://arxiv.org/abs/2610.02953">Paper</a> ·
   <a href="https://github.com/Strandding/SlimKV">Code</a> ·
-  <a href="https://huggingface.co/collections/Zihant0513/slimkv">Models</a> ·
+  <a href="https://huggingface.co/collections/Zihant0513/slimkv">🤗 Models</a> ·
   <a href="docs/zh/README.md">Chinese</a>
 </p>
 
 ## News
 
-- **2026-10-15:** Llama-3.1-8B and Qwen2.5-14B checkpoints with 2×, 4× and 8× feature compression are available in the [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv).
+- **2026-10-15:** Llama-3.1-8B and Qwen2.5-14B checkpoints with 2×, 4× and 8× feature compression are available in the [🤗 Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv).
 - **2026-10-02:** The paper is available on [arXiv](https://arxiv.org/abs/2610.02953).
 
 ## Overview
 
-SlimKV compresses both the number of cached tokens and their feature dimensions for long-context LLM inference. It learns compact Beacon memories with layer-adaptive low-rank K/V representations.
+SlimKV compresses both the number of cached tokens and their feature dimensions for long-context LLM inference. It learns compact Beacon memories with layer-adaptive low-rank K/V representations, improving the accuracy–memory trade-off under a fixed cache budget.
+
+On LongBench, SlimKV outperforms the evaluated baselines at 16× and 32× compression and retains over 96% of the full-cache score at 4× and 8×.
 
 ## Method
 
 Conventional feature compression reconstructs full-dimensional Keys before applying RoPE. Beacon Keys are less sensitive to removing key-side RoPE than raw-token Keys. SlimKV uses this positional asymmetry to train low-rank Beacon projections without Beacon K-RoPE, while retaining RoPE for raw-token Keys and all Queries.
+
+<p align="center">
+  <img src="docs/assets/positional_asymmetry.svg" width="450" alt="LongBench comparison under Key RoPE ablations">
+</p>
+
+<p align="center"><em>Removing K-RoPE from raw-token Keys causes substantial degradation. Beacon Keys are less sensitive, and SlimKV learns low-rank memories without Beacon K-RoPE (Figure 2).</em></p>
 
 <p align="center">
   <img src="docs/assets/method.svg" width="1000" alt="SlimKV method overview">
@@ -48,12 +57,130 @@ Conventional feature compression reconstructs full-dimensional Keys before apply
 
 Prefill computes attention in the original feature dimensions and stores completed windows as compressed Beacon K/V. Decode can use either reconstruction followed by attention, or direct latent-space attention without reconstructing historical Beacon K/V. Raw-token tails and sinks retain full-dimensional K/V. See the [paper](https://arxiv.org/abs/2610.02953) for experiments and results.
 
+## Results
+
+LongBench accuracy is reported from the paper. Decoding measurements below use NVIDIA H20 and this repository's FA2 implementation.
+
+### LongBench average scores
+
+`f2`, `f4` and `f8` denote 2×, 4× and 8× feature compression. Their token compression ratios are 8×, 4× and 2× at 16× total compression, and 16×, 8× and 4× at 32×.
+
+#### 16× compression
+
+<div align="center">
+
+| Method | Llama-3.1-8B | Qwen2.5-14B |
+| :---: | :---: | :---: |
+| **Full KV (1×)** | **49.50** | **51.52** |
+| KVZip | 28.96 | 13.18 |
+| PALU | 18.92 | 27.70 |
+| SnapKV | 45.60 | 45.81 |
+| Activation Beacon | 45.30 | 44.15 |
+| SlimKV-f2 | 46.19 | **46.48** |
+| SlimKV-f4 | **46.36** | 46.23 |
+| SlimKV-f8 | 45.05 | 44.33 |
+
+</div>
+
+#### 32× compression
+
+<div align="center">
+
+| Method | Llama-3.1-8B | Qwen2.5-14B |
+| :---: | :---: | :---: |
+| **Full KV (1×)** | **49.50** | **51.52** |
+| KVZip | 9.40 | 5.12 |
+| PALU | 4.79 | 9.25 |
+| SnapKV | 43.24 | 42.28 |
+| Activation Beacon | 43.67 | 42.76 |
+| SlimKV-f2 | 42.91 | 44.66 |
+| SlimKV-f4 | **44.75** | **45.09** |
+| SlimKV-f8 | 43.93 | 44.69 |
+
+</div>
+
+Averages from Table 2. Full KV is the uncompressed reference. Bold compressed scores mark the best result for each backbone and ratio.
+
+<details>
+<summary>Additional results at 4× / 8× compression</summary>
+
+At lower compression ratios, SlimKV-f2 retains over 96% of the Full KV LongBench score. Averages from Table 4:
+
+<div align="center">
+
+| Backbone | Compression | KVZip | PALU | Activation Beacon | SlimKV-f2 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
+| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
+| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
+| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
+
+</div>
+
+</details>
+
+### H20 decoding with Flash Attention 2
+
+Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA2)**. Every method uses the same preallocation policy, whole-model CUDA Graphs and `torch.compile` decoder-tail compilation, with PyTorch 2.11.0+cu129 and FlashAttention 2.8.3. Full KV uses the same checkpoint's raw backbone, Recon rebuilds Beacon K/V at every step, and SlimKV uses direct latent attention.
+
+**End-to-end decode time (ms/token, lower is better)**
+
+<div align="center">
+
+| Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
+| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
+| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
+| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
+
+</div>
+
+<p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2 · whole-model CUDA Graphs · torch.compile (decoder tail). Each run measures 128 decode steps after prefill; values are medians of four runs after one warmup. Prefill, compilation and Graph capture are excluded.</em></p>
+
+**Attention GPU kernel time (ms/token, lower is better)**
+
+<div align="center">
+
+| Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| 32K | 5.83 | 10.38 | 4.84 | 6.95 | 3.61 |
+| 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
+| 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
+| 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
+
+</div>
+
+<p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2. Kernel times come from a separate uncaptured profiling pass, including QKV/output projections, cache operations, per-step KV reconstruction and RoPE, and excluding Norm, MLP and the LM head.</em></p>
+
+<details>
+<summary>End-to-end throughput (tokens/s, higher is better)</summary>
+
+<div align="center">
+
+| Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| 32K | 92.50 | 65.28 | 101.38 | 82.60 | 115.89 |
+| 64K | 69.43 | 45.57 | 86.35 | 66.55 | 108.89 |
+| 96K | 55.64 | 34.96 | 75.94 | 54.89 | 101.89 |
+| 128K | 46.45 | 28.13 | 67.97 | 46.42 | 96.62 |
+
+</div>
+
+</details>
+
+All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [Decode speed](#decode-speed) for run commands, [installation](#1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
+
 ## Models
 
+<div align="center">
+
 | Backbone | 2× features | 4× features | 8× features |
-| --- | --- | --- | --- |
+| :---: | :---: | :---: | :---: |
 | Llama-3.1-8B | [r2](https://huggingface.co/Zihant0513/SlimKV-Llama3.1-8B-r2) | [r4](https://huggingface.co/Zihant0513/SlimKV-Llama3.1-8B-r4) | [r8](https://huggingface.co/Zihant0513/SlimKV-Llama3.1-8B-r8) |
 | Qwen2.5-14B | [r2](https://huggingface.co/Zihant0513/SlimKV-Qwen2.5-14B-r2) | [r4](https://huggingface.co/Zihant0513/SlimKV-Qwen2.5-14B-r4) | [r8](https://huggingface.co/Zihant0513/SlimKV-Qwen2.5-14B-r8) |
+
+</div>
 
 `r2`, `r4` and `r8` denote feature compression, not token compression. Token compression is chosen at inference: the r4 checkpoint with token ratio 4 is t4f4, nominally 16× joint compression; token ratio 8 gives t8f4, nominally 32×. These ratios describe KV compression, not total GPU memory reduction.
 
@@ -84,7 +211,7 @@ python -m tools.build_fa2_decode \
 export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
 ```
 
-The extension is compiled for SM90 BF16 inference. The standalone scripts use Transformers 4.40.2; keep vLLM in a separate environment.
+The `tools.build_fa2_decode` command above compiles the SM90 BF16 CUDA extension. The benchmark command uses `DECODE_COMPILE=True` to enable `torch.compile`; the decoder tail compiles automatically on its first call, with no separate compilation script. Set `DECODE_COMPILE=False` to disable it. Standalone scripts use Transformers 4.40.2; keep vLLM in a separate environment.
 
 ### 2. Download the checkpoint
 
@@ -157,7 +284,7 @@ OUTPUT_DIR=data/results/speed-smoke \
 Then run the default comparison at **32K, 64K, 96K and 128K**, with both **t4f4 and t8f4**:
 
 ```bash
-OUTPUT_DIR=data/results/speed-32k-128k \
+DECODE_COMPILE=True OUTPUT_DIR=data/results/speed-32k-128k \
   bash scripts/benchmark/benchmark_context_decode.sh
 ```
 
@@ -165,17 +292,21 @@ Each context compares Full KV, reconstruction and direct latent attention at **B
 
 Two metrics are saved: **attention GPU kernel time**, including per-step KV reconstruction and RoPE for the reconstruction path, and **end-to-end decode time**. `results.json` contains timings, tokens/s and numerical checks; `summary.csv` contains per-mode medians. Use a new `OUTPUT_DIR` for each benchmark invocation. Full KV, reference snapshots and Graph workspaces need additional memory; reduce `CONTEXT_LENGTHS` if needed. See [benchmarking](docs/benchmark.md) for metric boundaries, runtime switches and profiling.
 
-Generated outputs stay under ignored `data/results/` directories. This repository publishes experiment code and instructions; experiment results are in the [paper](https://arxiv.org/abs/2610.02953).
+Raw generated outputs stay under ignored `data/results/` directories. Paper accuracy and H20 timing summaries appear above; see the [paper](https://arxiv.org/abs/2610.02953) for its full experiments.
 
 ## Training and other tools
 
+<div align="center">
+
 | Task | Entry point | Guide |
-| --- | --- | --- |
+| :---: | :---: | :---: |
 | Low-rank initialization | `python -m main.conversion.convert_kv_lowrank --help` | [Training](docs/training.md) |
 | Pretraining | `bash scripts/training/train_llama_8B.sh` | [Training](docs/training.md) |
 | Finetuning | `bash scripts/training/finetune_llama_8B.sh` | [Training](docs/training.md) |
 | Needle-in-a-Haystack | `python -m main.evaluation.eval_needle --help` | [Evaluation](docs/evaluation.md) |
 | vLLM inference | `python -m main.inference.infer_vllm --help` | [vLLM](docs/vllm.md) |
+
+</div>
 
 See [reproduction](docs/reproducibility.md), the [source map](docs/structure.md) and [backend support](docs/implementation_status.md) for further details.
 
