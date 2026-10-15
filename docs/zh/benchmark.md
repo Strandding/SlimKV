@@ -2,7 +2,7 @@
 
 [English](../benchmark.md)
 
-正式对照使用 tools 中的当前模型工具。`main.benchmark_latency` 是独立历史原型，warmup/repeat 不 reset Memory，且所谓 reconstruct 的缓存语义不是论文 latent-cache Recon，不能用作论文复现结论。
+正式对照使用下列 tools 工具和当前模型实现，从仓库根目录运行命令。
 
 ## 样本和运行
 

@@ -1,7 +1,7 @@
 # Latency and memory benchmarking
 
 [中文](zh/benchmark.md)
-Use tools-based controls for the current model; `main.benchmark_latency` is an independent historical prototype with known repeat/reset and baseline-semantic issues. Do not use its numbers as paper reproduction evidence. All paths and flags below are invoked from the repository root.
+Use the tools below with the current model implementation. Run commands from the repository root.
 
 ## Preparing small LongBench-v1 fixtures
 

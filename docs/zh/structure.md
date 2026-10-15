@@ -8,7 +8,8 @@
 - `slimkv/args.py/data.py/trainer.py`：参数、数据、Trainer。
 - `slimkv/memory.py`：窗口与Beacon计划；`llama3/memory.py`：latent存储/重建视图/eligibility/bookkeeping。
 - `llama3/modeling_llama.py`：投影、attention、forward；fa2_decode/decode_ops/decode_kernels/decode_graph提供可选backend。
-- `qwen2/llama/mistral`：其他既有路径，支持范围见状态文档。
+- `qwen2`：Qwen2/Qwen2.5 训练和全维缓存推理。
+- `vllm_plugin`：实验性 Llama 分页缓存与连续调度接入。
 - `latency`：独立注意力研究原型，使用单独的 loader 与缓存约定。
 - `main`：infer/train/conversion/eval命令；`scripts`按任务分组，共用common.sh。Qwen 和 Llama 的 LongBench 预设共用 `scripts/evaluation/longbench_common.sh`。
 - `config`：data/deepspeed；`config/environments`：CPU 验证依赖约束；`kernels/fa2_decode`：BF16 SM90 width320 forward。

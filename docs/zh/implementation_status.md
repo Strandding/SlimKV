@@ -10,7 +10,6 @@
 | Llama3 latent + fa2 |全局低秩|prefill原始维度，decode raw/sink+latent两支LSE合并|
 | Llama3 latent缓存 + latent decode策略 |全局低秩|prefill原始维度，直接Beacon decode按attn_impl选择eager或FA2|
 | Llama训练/full/不兼容auto；Qwen2 |完整维度|标准注意力|
-| slimkv/latency |原型自己的latent格式|独立eager hybrid|
 
 Auto仅在支持的推理配置启用latent，不支持时回full；显式latent报错。训练计算和梯度保持原路径。Raw tail和sink始终完整维度。
 

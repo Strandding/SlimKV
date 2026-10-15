@@ -152,8 +152,6 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
     extra_kwargs = {}
     if model_args_dict["max_position_embeddings"] is not None:
         extra_kwargs["max_position_embeddings"] = model_args_dict["max_position_embeddings"]
-    if architecture == "MistralForCausalLM" and model_args_dict["mistral_sliding_window"] is not None:
-        extra_kwargs["sliding_window"] = model_args_dict["mistral_sliding_window"]
     if model_args_dict["load_in_4_bit"]:
         extra_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -179,19 +177,14 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
     llama_config_class = None
     llama_model_class = None
     if architecture == "LlamaForCausalLM":
-        if is_llama3_model:
-            from .llama3 import LlamaForCausalLM as LlamaModelClass, LlamaConfig as LlamaConfigClass
-        else:
-            from .llama import LlamaForCausalLM as LlamaModelClass, LlamaConfig as LlamaConfigClass
+        from .llama3 import LlamaForCausalLM as LlamaModelClass, LlamaConfig as LlamaConfigClass
         llama_config_class = LlamaConfigClass
         llama_model_class = LlamaModelClass
 
     if model_args_dict["enable_beacon"]:
-        from .mistral import MistralForCausalLM, MistralConfig
         from .qwen2 import Qwen2ForCausalLM, Qwen2Config
         ARCHITECTURE_TO_CLASS = {
             'LlamaForCausalLM': (llama_config_class, llama_model_class),
-            'MistralForCausalLM': (MistralConfig, MistralForCausalLM),
             'Qwen2ForCausalLM': (Qwen2Config, Qwen2ForCausalLM),
         }
 

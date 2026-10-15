@@ -11,8 +11,8 @@ Model implementations live in `slimkv`, command modules in `main`, and launch pr
 | `slimkv/llama3/memory.py` | Low-rank storage, reconstruction views, cache eligibility and decode bookkeeping |
 | `slimkv/llama3/modeling_llama.py` | Llama attention/projections/model forward; original-dimension prefill and training |
 | `slimkv/llama3/fa2_decode.py`, `decode_ops.py`, `decode_kernels.py`, `decode_graph.py` | Optional global-latent decode, fused operators and partial Graph |
-| `slimkv/qwen2`, `slimkv/llama`, `slimkv/mistral` | Other existing model paths; see support restrictions |
-| `slimkv/latency` | Independent latency research prototype; separate loader and cache semantics |
+| `slimkv/qwen2` | Qwen2/Qwen2.5 training and full-cache inference |
+| `slimkv/vllm_plugin` | Experimental Llama paged cache and continuous scheduling integration |
 | `main` | Installation-visible command modules; `infer`, `train`, conversion and evaluation |
 | `scripts/conversion`, `training`, `evaluation`, `benchmark` | Environment-configurable launch presets; source `scripts/common.sh`. Qwen and Llama LongBench presets share `scripts/evaluation/longbench_common.sh` |
 | `scripts/slurm` | Cluster-specific scheduler templates; check partition/GPU/module settings |

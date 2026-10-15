@@ -62,10 +62,7 @@ class ModelArgs:
         default=None,
         metadata={'help': 'Maximum position.'},
     )
-    mistral_sliding_window: Optional[int] = field(
-        default=None,
-        metadata={'help': 'Sliding window size in Mistral models.'},
-    )
+
     rope_theta: Optional[float] = field(
         default=None,
         metadata={'help': 'RoPE base (theta).'},

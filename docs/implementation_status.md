@@ -11,7 +11,6 @@ The table below describes the available cache and attention paths. Existing `bea
 | Llama3, `latent` + `fa2` decode | Global low-rank features | Original-dimension prefill; raw/sink FA2 + latent Beacon FA2 with one merged softmax in decode | BF16; equal-length unpadded aligned batches |
 | Llama3, latent cache + `latent` decode strategy | Global low-rank features | Original-dimension prefill; direct Beacon decode uses eager or FA2 according to `attn_impl` | Eager works on CPU/GPU, including unequal K/V ranks; same aligned-batch requirements |
 | Llama3 training, `full`, incompatible `auto`; Qwen2 | Full-dimensional K/V | Standard attention | Low-rank training code and conversion available; no Qwen latent-cache backend |
-| `slimkv/latency` | Prototype-specific latent K/V | Independent eager hybrid attention | Separate loader; not the default production/model API |
 
 `auto` stores latent K/V only for supported inference configurations; `full` forces the full cache; explicit `latent` rejects incompatible configurations. Training retains the existing full-dimensional computation/cache and gradients. Raw-token tail and sink K/V stay full-dimensional in every latent path. Temporary width padding for FA2 is not persistent cache padding.
 
