@@ -277,7 +277,7 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 | 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
 | 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
 | 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
-| 256K | — | — | — | — | — |
+| 256K | 30.81 | 57.96 | 16.05 | 30.63 | 7.43 |
 
 </div>
 
@@ -300,7 +300,7 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 
 </details>
 
-**256K note:** End-to-end values come from a separate capacity probe with four sequential runs per mode; the 32K–128K matrix alternates method order. Kernel profiling was not collected at 256K, shown as “—”. The probe extends position tables with unchanged RoPE frequencies beyond the checkpoint's native 128K configuration; it checks execution and numerical equivalence, without a 256K task-quality evaluation.
+**256K note:** End-to-end values come from a separate capacity probe with four sequential runs per mode; the 32K–128K matrix alternates method order. The 256K kernel pass uses the same 128 continuation tokens and CUDA launch correlations to identify operations within each attention scope. The probe extends position tables with unchanged RoPE frequencies beyond the checkpoint's native 128K configuration; it checks execution and numerical equivalence, without a 256K task-quality evaluation.
 
 All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [benchmark command](#run-the-speed-benchmark) for run commands, [installation](#1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
 
