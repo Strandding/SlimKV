@@ -71,7 +71,9 @@ Two prompts followed by 128 fixed decode steps also retain bitwise logits and fi
 
 ## B1 decode graphs
 
-With the rebuilt extension, `--beacon_decode_graph True` also enables whole-model graphs for eligible B1 single-token latent FA2 decode. KV buffers use fixed addresses and append in place. Beacon insertion, larger batches and diagnostic calls use the ordinary path. Set `--beacon_decode_graph_full False` to retain only the layer graphs.
+With the rebuilt extension, `--beacon_decode_graph True` also enables whole-model graphs for eligible B1 single-token latent FA2 decode, including steps that insert a Beacon. KV buffers use fixed addresses and append in place. Larger batches and diagnostic calls use the ordinary path. Set `--beacon_decode_graph_full False` to retain only the layer graphs.
+
+On Beacon insertion steps, the raw-token and Beacon queries use two single-query sequences with shared KV storage. Their valid lengths differ by one, preserving the raw query's exclusion of the new Beacon. FA2 packs each query's GQA heads for better KV reuse. The split count stays the same as the original two-query call to preserve its softmax reduction order. Persistent ranks and cache contents are unchanged.
 
 On H20 with the BF16 Llama-3.1-8B f4 checkpoint and t8f4, the same two prompts and 63 teacher-forced decode steps give the following medians after one warmup and four measurements. Timing includes forward and argmax.
 
@@ -146,44 +148,96 @@ Independent GPU entries are `tools.validation.validate_decode_ops`, `tools.valid
 
 ## Fixed-context decode comparison
 
-Run Full KV, reconstruction and direct latent attention with the same checkpoint,
-BF16, B1 and FlashAttention 2:
+Compare Full KV, reconstruction and direct latent attention with the same
+checkpoint, BF16, B1 and FlashAttention 2:
 
 ```bash
 MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
   bash scripts/benchmark/benchmark_context_decode.sh
 ```
 
-The default matrix covers 32K, 64K, 96K and 128K input tokens, both t4f4 and
-t8f4, and exactly 128 single-token decode forwards after prefill. Here K = 1024.
-All methods use identical saved synthetic inputs and the same continuation inputs
-from Full KV. EOS does not shorten the run. CUDA Graphs and torch.compile are
-disabled for every method. This experiment compares decoding; prefill is excluded.
+The launcher defaults to `EXECUTION_MODE=optimized`: all three methods use
+preallocated caches, complete-model CUDA Graphs and the same optional exact
+Torch 2.11 decoder-tail compilation. Set `DECODE_COMPILE=False` to disable
+compilation for every method. Warmup and graph construction are excluded from
+timing. Graph capture inside a measured interval is treated as an error.
 
-Full KV uses the checkpoint's raw backbone without Beacons, keeps every token,
-and applies the checkpoint's RoPE to new keys once. Its weights are shared with
-the SlimKV model. All paths prefill with original-dimensional FA2 attention.
-The 128K case appends 128 canonical RoPE positions for decoding without changing
-existing tables or frequencies.
+The default matrix covers 32K, 64K, 96K and 128K input tokens, both t4f4 and
+t8f4, and exactly 128 single-token decode forwards after prefill. K = 1024.
+Every method receives identical saved synthetic inputs and the same continuation
+inputs from Full KV. EOS does not shorten the run. Prefill is excluded.
+
+The optimized runner specializes to a completed Beacon window followed by at
+most one window of continuation. It shares model weights and execution policies
+across methods. Each optimized method must match its original implementation's
+logits and final persistent KV bitwise, both without capture and under Graph
+replay, before timing. These numerical checks do not replace LongBench accuracy
+evaluation. The runner is a fixed-context performance tool, not a serving scheduler.
+
+Full KV uses the checkpoint's raw backbone without Beacons, retains every raw
+token and applies the checkpoint's RoPE to each new key once. Reconstruction
+rebuilds historical Beacon K/V at every decode step. Original-dimensional
+reconstruction workspaces are temporary attention storage, not additional
+compressed persistent KV. All paths prefill with original-dimensional FA2.
+The 128K case appends 128 canonical RoPE positions without changing existing
+tables or frequencies.
 
 Two measurements are saved separately:
 
-- **Attention GPU kernel time:** summed GPU kernel durations inside attention,
-  including QKV/output projections, KV reconstruction, RoPE, cache operations,
-  and latent mappings. Reconstruction and RoPE are also reported separately and
-  are already included in the total. Norm, MLP and LM head are excluded.
+- **Attention GPU kernel time:** summed real GPU kernel durations inside
+  attention, including QKV/output projections, reconstruction, RoPE, cache
+  operations and latent mappings. Reconstruction and RoPE are also reported
+  separately and already included in the total. Norm, MLP and LM head are excluded.
+  A separate uncaptured profiler pass executes the same optimized operations and
+  verifies predictions. GPU annotation spans locate kernels but are not counted
+  as kernel execution time. FA2 time must not exceed the enclosing attention total.
 - **End-to-end decode time:** synchronized wall time for all 128 model forwards
-  and argmax operations. Cache restoration, tokenization, prefill and profiler
-  overhead are excluded. Four repetitions follow one warmup, with alternating
-  method order. The table uses median times.
+  and argmax operations. Cache restoration, tokenization, prefill, graph capture,
+  compilation and profiler overhead are excluded. Four repetitions follow one
+  warmup, with alternating method order. Tables use median times.
 
-Kernel timing uses a separate profiler pass and checks that instrumentation does
-not change predictions. Repeated runs must produce identical predictions for
-each method. This is a performance experiment, not a substitute for LongBench
-accuracy evaluation.
+On H20 with the BF16 Llama-3.1-8B f4 checkpoint, the optimized runner gives the following results. Every method uses FA2, preallocated caches, whole-model Graphs and exact decoder-tail compilation. End-to-end values are medians of four measurements over 128 decode steps after warmup. Kernel times come from a separate uncaptured profiling pass.
 
-`OUTPUT_DIR` defaults to `data/results/context_decode` and must be a new directory.
-It contains `results.json`, `summary.csv`, exact input IDs, continuation IDs, source
-and configuration hashes, and individual timings. Override `CONTEXT_LENGTHS`,
-`BEACON_RATIOS`, `REPETITIONS` or `PROMPT_FILE` as needed. The implementation is
-`tools/benchmark/benchmark_context_decode.py`; it requires the Transformers 4.40 environment.
+**End-to-end decode time (ms/token)**
+
+| Input | Full KV | Recon t4f4 | Latent t4f4 | Recon t8f4 | Latent t8f4 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
+| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
+| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
+| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
+
+**Attention GPU kernel time (ms/token)**
+
+| Input | Full KV | Recon t4f4 | Latent t4f4 | Recon t8f4 | Latent t8f4 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32K | 5.83 | 10.38 | 4.84 | 6.95 | 3.61 |
+| 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
+| 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
+| 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
+
+Reconstruction times include rebuilding historical KV and applying RoPE at every step. All four context lengths pass bitwise logit and persistent-KV comparisons against their original model paths. The synthetic inputs measure performance; LongBench quality is evaluated separately.
+
+For the original non-Graph implementation comparison, use:
+
+```bash
+EXECUTION_MODE=matched MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
+  bash scripts/benchmark/benchmark_context_decode.sh
+```
+
+`matched` disables Graphs and compilation for every method. It compares the
+existing model paths: Full KV uses an append cache, while SlimKV uses its normal
+non-Graph cache implementation. These paths have different allocation and
+launch overheads, so this mode does not isolate algorithmic attention cost.
+
+Outputs default to `data/results/context_decode_<execution_mode>` and require
+a new directory. They include `results.json`, `summary.csv`, exact input and
+continuation IDs, numerical validation, source/configuration hashes and individual
+timings. Set `REFERENCE_DIR` to an earlier result directory to reuse and verify
+its exact inputs and continuation. Override `OUTPUT_DIR`, `CONTEXT_LENGTHS`,
+`BEACON_RATIOS`, `REPETITIONS` or `PROMPT_FILE` as needed.
+
+Implementation: `tools/benchmark/benchmark_context_decode.py` and
+`context_decode_runtime.py`. Use the Transformers 4.40 environment and the
+compatible FA2 decode extension. Direct Python invocation defaults to `matched`;
+pass `--execution_mode optimized` for the optimized runner.

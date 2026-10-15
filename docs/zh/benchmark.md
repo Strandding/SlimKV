@@ -39,7 +39,9 @@ H20 上使用 BF16 Llama-3.1-8B f4 权重和 t4f4，预热一次后交替测量�
 
 ## B1 解码 Graph
 
-重新构建扩展后，`--beacon_decode_graph True` 会对符合条件的 B1 单 token latent FA2 解码启用整模型 Graph。KV 使用固定地址的缓冲区原位追加。插入 Beacon、较大 batch 和诊断调用使用普通路径。设置 `--beacon_decode_graph_full False` 可保留原来的局部层 Graph。
+重新构建扩展后，`--beacon_decode_graph True` 会对符合条件的 B1 单 token latent FA2 解码启用整模型 Graph，包括插入 Beacon 的步骤。KV 使用固定地址的缓冲区原位追加。较大 batch 和诊断调用使用普通路径。设置 `--beacon_decode_graph_full False` 可保留原来的局部层 Graph。
+
+插入 Beacon 时，将 raw token 与 Beacon 的两个 query 表示为共享 KV 存储的两条单 query 序列。两者的有效 KV 长度相差一个位置，raw query 仍不可见新插入的 Beacon。FA2 可以分别打包 GQA heads，提高 KV 复用率。split 数与原双 query 调用一致，以保留 softmax 的归约顺序。持久缓存的秩和内容不变。
 
 H20 上使用 BF16 Llama-3.1-8B f4 权重和 t8f4，同样的两条输入及63步固定解码输入，预热一次后测量四次，得到以下中位数。计时包含 forward 和 argmax。
 
@@ -95,15 +97,50 @@ MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
   bash scripts/benchmark/benchmark_context_decode.sh
 ```
 
-默认测试 32K、64K、96K、128K 输入，包含 t4f4 和 t8f4，每项在 prefill 后执行完整的 128 次单 token decode forward。K = 1024。各方法使用保存的相同合成输入和 Full KV 生成的相同后续输入，EOS 不提前结束测试。所有方法关闭 CUDA Graph 和 torch.compile，prefill 不计入 decode 时间。
+启动脚本默认 `EXECUTION_MODE=optimized`：三种方法均使用预分配缓存、整模型 CUDA Graph 和相同的可选精确 decoder-tail 编译。编译需要 Torch 2.11，`DECODE_COMPILE=False` 对所有方法关闭编译。预热、编译和 Graph 构建不计入时间，计时区间出现 Graph 构建会报错。
 
-Full KV 使用 checkpoint 的原始模型分支，不插入 Beacon、不丢弃 token，沿用 checkpoint 的 RoPE，每个新 Key 仅旋转一次。原始权重与 SlimKV 共享。各路径 prefill 均在原始维度使用 FA2。128K 输入后的 decode 额外补充 128 个相同频率的 RoPE 位置，已有位置保持不变。
+默认覆盖 32K、64K、96K、128K 输入、t4f4 与 t8f4，每项在 prefill 后执行完整的 128 次单 token decode forward。K = 1024。各方法使用保存的相同合成输入和 Full KV 生成的相同后续输入，EOS 不提前结束测试，prefill 不计入 decode 时间。
+
+优化 runner 面向完整 Beacon 窗口结束后的固定上下文，后续长度不超过一个窗口。各方法共享原始模型权重和执行优化策略。测速前，各方法在未捕获执行和 Graph replay 下的逐步 logits、最终持久 KV 都必须与对应原实现逐位一致。数值检查不能替代 LongBench 精度评估。此 runner 用于固定上下文性能测试，不是服务调度器。
+
+Full KV 不插入 Beacon、不丢弃原始 token，每个新 Key 仅做一次原始 RoPE。重建路径每一步重新构造历史 Beacon K/V，原始维度 workspace 属于临时 attention 存储，不计作压缩后的持久 KV。各路径 prefill 均在原始维度使用 FA2。128K 输入后的 decode 额外补充 128 个相同频率的 RoPE 位置，已有表不变。
 
 分别报告两个指标：
 
-- **Attention GPU kernel 耗时**：attention 内 GPU kernel 耗时之和，包含 QKV/输出投影、每步 KV 重建、RoPE、缓存操作和 latent 映射。重建与 RoPE 另列明细，已包含在总值内。排除 Norm、MLP 和 LM head。
-- **端到端 decode 耗时**：128 次模型 forward 和 argmax 的同步墙钟时间，排除缓存恢复、分词、prefill 和 profiler 开销。预热一次后交替测试顺序，重复四次，使用中位数。
+- **Attention GPU kernel 耗时**：attention 内实际 GPU kernel 耗时之和，包含 QKV/输出投影、KV 重建、RoPE、缓存操作和 latent 映射。重建与 RoPE 单列明细，已包含在总值内，排除 Norm、MLP 和 LM head。独立 profiler pass 在未捕获模式执行相同的优化操作并检查预测一致。GPU annotation 只用于定位 kernel，不把 annotation 跨度当成 kernel 时间，并检查 FA2 分项不超过 attention 总值。
+- **端到端 decode 耗时**：128 次模型 forward 与 argmax 的同步墙钟时间，排除缓存恢复、分词、prefill、编译、Graph 构建和 profiler 开销。预热一次后交替测试顺序，重复四次，使用中位数。
 
-Kernel 使用独立 profiler pass 采集，检查插桩前后预测一致，各方法重复测试的预测也必须一致。此实验衡量性能，精度仍通过 LongBench 单独评估。
+H20 上使用 BF16 Llama-3.1-8B f4 权重，优化 runner 得到以下结果。各方法统一使用 FA2、预分配缓存、整模型 Graph 和精确 decoder-tail 编译。端到端耗时为预热后四次测量的中位数，每次执行 128 步 decode。kernel 耗时来自独立的未捕获 profiling pass。
 
-`OUTPUT_DIR` 默认 `data/results/context_decode`，必须使用新目录。输出包含 `results.json`、`summary.csv`、实际输入和后续 token、源码及配置哈希、逐次耗时。可以通过 `CONTEXT_LENGTHS`、`BEACON_RATIOS`、`REPETITIONS`、`PROMPT_FILE` 调整。实现位于 `tools/benchmark/benchmark_context_decode.py`，使用 Transformers 4.40 环境。
+**端到端 decode 耗时（ms/token）**
+
+| 输入 | Full KV | Recon t4f4 | Latent t4f4 | Recon t8f4 | Latent t8f4 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
+| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
+| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
+| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
+
+**Attention GPU kernel 耗时（ms/token）**
+
+| 输入 | Full KV | Recon t4f4 | Latent t4f4 | Recon t8f4 | Latent t8f4 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32K | 5.83 | 10.38 | 4.84 | 6.95 | 3.61 |
+| 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
+| 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
+| 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
+
+重建路径的 kernel 耗时包含每一步的历史 KV 重建及 RoPE。四个输入长度均通过与各自原模型路径的 logits 和持久 KV 逐位一致检查。这里使用合成输入测速，LongBench 精度评估单独进行。
+
+如需比较原先关闭 Graph 的实现路径，使用：
+
+```bash
+EXECUTION_MODE=matched MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
+  bash scripts/benchmark/benchmark_context_decode.sh
+```
+
+`matched` 对所有方法关闭 Graph 和编译。此时 Full KV 使用 append cache，SlimKV 使用原有非 Graph 缓存路径，两者分配和发射开销不同，因此这一模式不单独衡量 attention 算法差异。
+
+输出默认 `data/results/context_decode_<execution_mode>`，必须使用新目录。文件包含 `results.json`、`summary.csv`、实际输入与后续 token、数值验证、源码和配置哈希、逐次耗时。设置 `REFERENCE_DIR` 可以复用并核对上一轮的实际输入和后续 token。可以通过 `OUTPUT_DIR`、`CONTEXT_LENGTHS`、`BEACON_RATIOS`、`REPETITIONS`、`PROMPT_FILE` 调整实验。
+
+实现位于 `tools/benchmark/benchmark_context_decode.py` 和 `context_decode_runtime.py`，使用 Transformers 4.40 环境及兼容的 FA2 decode 扩展。直接运行 Python 模块默认 `matched`，优化模式需显式传入 `--execution_mode optimized`。

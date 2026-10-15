@@ -14,6 +14,7 @@ import torch
 from .fa2_decode import project_query, project_value, merge_attention
 from .decode_ops import fused_rope
 from .latent_decode import uses_fa2_decode
+from .paired_decode import paired_attention
 
 
 @lru_cache(None)
@@ -55,6 +56,9 @@ class StaticDecode:
         self.latent_cu = torch.zeros(2, dtype=torch.int32, device=device)
         self.raw_lengths = self.raw_cu[1:]
         self.latent_lengths = self.latent_cu[1:]
+        self.paired_lengths = torch.empty(2, dtype=torch.int32, device=device)
+        self.paired_enabled = False
+        self.sm_count = torch.cuda.get_device_properties(device).multi_processor_count if device.type == 'cuda' else 0
         self.query_cu = {q: torch.tensor([0, q], dtype=torch.int32, device=device) for q in (1, 2)}
         self.raw_capacity = model.config.beacon_window + model.config.beacon_sink_size + 1
         self.raw_bucket = self.raw_capacity
@@ -77,11 +81,14 @@ class StaticDecode:
         self.extension = cache_extension()
 
     def attention(self, q, k, v, lengths, cumulative, scale, causal):
+        if causal and self.paired_enabled:
+            return paired_attention(self.extension.forward, q, k, v, scale,
+                                    self.paired_lengths, self.sm_count)
         return self.extension.forward(q, k, v, scale, causal, 0, True, lengths)
 
     @staticmethod
     def eligible(model, ids, past, kwargs):
-        return (ids.is_cuda and ids.shape[0] == 1 and ids.shape[1] == 1
+        return (ids.is_cuda and ids.shape[0] == 1 and ids.shape[1] in (1, 2)
                 and not torch.is_grad_enabled() and uses_fa2_decode(model.config)
                 and getattr(model.config, 'beacon_decode_graph', False)
                 and getattr(model.config, 'beacon_decode_graph_full', True)
@@ -174,14 +181,9 @@ class StaticDecode:
             width = state['width']
             if latent_q.shape[-1] != width:
                 latent_q = torch.nn.functional.pad(latent_q, (0, width - latent_q.shape[-1]))
-            if width == 320:
-                latent_out, latent_lse = self.extension.forward(
-                    latent_q, state['padded_k'], state['padded_v'], scale, bool(size),
-                    0, True, self.latent_lengths)
-            else:
-                latent_out, latent_lse = self.attention(
-                    latent_q, state['padded_k'], state['padded_v'],
-                    self.latent_lengths, self.latent_cu, scale, bool(size))
+            latent_out, latent_lse = self.attention(
+                latent_q, state['padded_k'], state['padded_v'],
+                self.latent_lengths, self.latent_cu, scale, bool(size))
             latent_out = project_value(latent_out[..., :uv.in_features].transpose(1, 2),
                                        uv.weight, attn.num_key_value_heads)
             if uk.bias is not None:
@@ -219,12 +221,16 @@ class StaticDecode:
         self.raw_lengths.fill_(raw + 1)
         self.raw_bucket = min(self.raw_capacity, (raw + 128) // 128 * 128)
         self.latent_lengths.fill_(latent + size)
+        self.paired_enabled = self.sm_count > 0 and latent + size > 1
+        if size and self.paired_enabled:
+            self.paired_lengths.fill_(latent + size)
+            self.paired_lengths[:1].fill_(latent + size - 1)
         if self.epoch != self.model.memory._static_decode_epoch:
             self.initialize(past)
         positions = positions[:, -ids.shape[1]:]
         refresh_sink = pk.history is None
         graph_key = (size, refresh_sink, self.raw_bucket, return_normalized_hidden,
-                     bool(getattr(self.model.config, 'beacon_decode_compile', False)))
+                     bool(getattr(self.model.config, 'beacon_decode_compile', False)), self.paired_enabled)
         if graph_key not in self.graphs:
             buffers = (ids.clone(), positions.clone())
             sink_snapshot = [(state[name][:, :, :1], state[name][:, :, :1].clone())

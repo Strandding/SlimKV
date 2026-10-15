@@ -62,6 +62,28 @@ class ContextDecodeTest(unittest.TestCase):
         self.assertEqual(result[ROPE], 1.5)
         self.assertEqual(result['fa2_core'], 4.5)
 
+    def test_gpu_ranges_include_uncorrelated_kernels_and_exclude_annotation_spans(self):
+        def event(name, start, end, device, annotation=False):
+            return SimpleNamespace(name=name, cpu_parent=None, cpu_children=[], kernels=[],
+                                   device_type=device, is_user_annotation=annotation,
+                                   time_range=SimpleNamespace(start=start, end=end),
+                                   device_time_total=end-start)
+        cpu, cuda = torch.autograd.DeviceType.CPU, torch.autograd.DeviceType.CUDA
+        events = [event(ATTENTION, 0, 1000, cpu),
+                  event(ATTENTION, 100, 500, cuda, True),
+                  event(RECONSTRUCTION, 100, 300, cuda, True),
+                  event(RECONSTRUCTION, 110, 250, cuda, True),
+                  event(ROPE, 300, 350, cuda, True),
+                  event('gemm', 150, 180, cuda),
+                  event('rotary_kernel', 310, 320, cuda),
+                  event('flash::flash_fwd_kernel', 400, 450, cuda),
+                  event('flash::forward_annotation', 395, 460, cuda, True)]
+        result = scope_times(events, 1)
+        self.assertAlmostEqual(result[ATTENTION], .09)
+        self.assertAlmostEqual(result[RECONSTRUCTION], .03)
+        self.assertAlmostEqual(result[ROPE], .01)
+        self.assertAlmostEqual(result['fa2_core'], .05)
+
     def test_rope_extension_and_synthetic_input_preserve_existing_prefixes(self):
         model = make_model()
         rope = model.model.layers[0].self_attn.rotary_emb
