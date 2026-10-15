@@ -1,6 +1,6 @@
-<h1 align="center">SlimKV</h1>
+<h1 align="center"><img src="docs/assets/slimkv-logo.svg" width="370" alt="SlimKV"></h1>
 
-<p align="center"><strong>Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention</strong></p>
+<p align="center"><strong>SlimKV: Joint Token-Feature KV Cache Compression with Reconstruction-Free Beacon Attention</strong></p>
 <p align="center"><em>EMNLP 2026 Main Conference (Oral)</em></p>
 
 <p align="center">

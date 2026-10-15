@@ -1,6 +1,6 @@
-<h1 align="center">SlimKV</h1>
+<h1 align="center"><img src="../assets/slimkv-logo.svg" width="370" alt="SlimKV"></h1>
 
-<p align="center"><strong>联合 Token–Feature KV Cache 压缩与无需重建的 Beacon 注意力</strong></p>
+<p align="center"><strong>SlimKV：联合 Token–Feature KV Cache 压缩与无需重建的 Beacon 注意力</strong></p>
 <p align="center"><em>EMNLP 2026 Main Conference（Oral）</em></p>
 
 <p align="center">

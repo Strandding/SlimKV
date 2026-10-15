@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title"><title id="title">SlimKV beacon icon</title><g transform="translate(-4.25 0)"><g id="beacon">
+    <path fill="#e0e7ff" d="M46 19.5H77.5L116 64 77.5 108.5H46L84.5 64Z"/>
+    <path fill="#4f46e6" d="M20 19.5H52L90.5 64 52 108.5H20L58.5 64Z"/>
+    <rect x="93.5" y="13" width="22" height="102" rx="11" fill="#7c3bee"/>
+    <circle cx="104.5" cy="63.5" r="7" fill="#fff"/>
+  </g></g></svg>
