@@ -6,30 +6,18 @@
 <p align="center">
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/EMNLP%202026-Oral-8a2be2.svg" alt="EMNLP 2026 Oral"></a>
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/arXiv-2610.02953-b31b1b.svg" alt="arXiv:2610.02953"></a>
+  <a href="https://github.com/Strandding/SlimKV"><img src="https://img.shields.io/badge/GitHub-Code-181717?logo=github&amp;logoColor=white" alt="Code on GitHub"></a>
   <a href="https://huggingface.co/collections/Zihant0513/slimkv"><img src="https://img.shields.io/badge/Hugging%20Face-Models-FFD21E?logo=huggingface" alt="Model checkpoints on Hugging Face"></a>
   <a href="https://github.com/Strandding/SlimKV/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Strandding/SlimKV/ci.yml?branch=master&amp;label=CI" alt="GitHub Actions CI"></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="Apache License 2.0"></a>
 </p>
 
 <p align="center">
-  <a href="#-动态">📢 动态</a> ·
-  <a href="#-概览">🔎 概览</a> ·
   <a href="#-方法">🧠 方法</a> ·
-  <a href="#-结果">📈 结果</a> ·
-  <a href="#-模型">🤗 模型</a> ·
   <a href="#-快速开始">🚀 快速开始</a> ·
-  <a href="#-longbench-v1">📊 LongBench-v1</a> ·
-  <a href="#-decode-测速">⚡ 测速</a> ·
-  <a href="#-训练与其他工具">🔧 训练与工具</a> ·
-  <a href="#-引用">📝 引用</a> ·
-  <a href="#-致谢与许可">📜 许可</a>
-</p>
-
-<p align="center">
-  <a href="https://arxiv.org/abs/2610.02953">论文</a> ·
-  <a href="https://github.com/Strandding/SlimKV">代码</a> ·
-  <a href="https://huggingface.co/collections/Zihant0513/slimkv">模型</a> ·
-  <a href="../../README.md">English</a>
+  <a href="#-评测">📊 评测</a> ·
+  <a href="#-训练与其他工具">🔧 训练</a> ·
+  <a href="#-引用">📝 引用</a>
 </p>
 
 <a id="动态"></a>
@@ -64,135 +52,6 @@ SlimKV 同时压缩 KV Cache 的 token 数量和特征维度，用于长上下�
 </p>
 
 Prefill 在原始特征维度计算 attention，将完成的窗口存为压缩 Beacon K/V。Decode 可选择先重建再做 attention，或直接进行 latent-space attention，避免重建历史 Beacon K/V。Raw tail 和 sink 保留原始维度的 K/V。实验与结果见[论文](https://arxiv.org/abs/2610.02953)。
-
-<a id="结果"></a>
-
-## 📈 结果
-
-LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与本仓库的 FA2 实现。
-
-<a id="longbench-平均分"></a>
-
-### 🏆 LongBench 平均分
-
-`f2`、`f4`、`f8` 分别表示 2×、4×、8× 特征压缩。16× 总压缩下，对应的 token 压缩为 8×、4×、2×；32× 下则为 16×、8×、4×。
-
-<a id="16-压缩"></a>
-
-#### 🔹 16× 压缩
-
-<div align="center">
-
-| 方法 | Llama-3.1-8B | Qwen2.5-14B |
-| :---: | :---: | :---: |
-| **Full KV (1×)** | **49.50** | **51.52** |
-| KVZip | 28.96 | 13.18 |
-| PALU | 18.92 | 27.70 |
-| SnapKV | 45.60 | 45.81 |
-| Activation Beacon | 45.30 | 44.15 |
-| SlimKV-f2 | 46.19 | **46.48** |
-| SlimKV-f4 | **46.36** | 46.23 |
-| SlimKV-f8 | 45.05 | 44.33 |
-
-</div>
-
-<a id="32-压缩"></a>
-
-#### 🔹 32× 压缩
-
-<div align="center">
-
-| 方法 | Llama-3.1-8B | Qwen2.5-14B |
-| :---: | :---: | :---: |
-| **Full KV (1×)** | **49.50** | **51.52** |
-| KVZip | 9.40 | 5.12 |
-| PALU | 4.79 | 9.25 |
-| SnapKV | 43.24 | 42.28 |
-| Activation Beacon | 43.67 | 42.76 |
-| SlimKV-f2 | 42.91 | 44.66 |
-| SlimKV-f4 | **44.75** | **45.09** |
-| SlimKV-f8 | 43.93 | 44.69 |
-
-</div>
-
-平均分来自论文 Table 2，Full KV 为未压缩基线；压缩结果中的粗体标出各模型和压缩比下的最佳分数。
-
-<details>
-<summary>📚 4× / 8× 压缩的补充结果</summary>
-
-在较低压缩比下，SlimKV-f2 保留超过96%的 Full KV LongBench 得分。以下是 Table 4 的平均分。
-
-<div align="center">
-
-| 模型 | 压缩比 | KVZip | PALU | Activation Beacon | SlimKV-f2 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
-| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
-| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
-| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
-
-</div>
-
-</details>
-
-<a id="h20flash-attention-2-解码性能"></a>
-
-### ⚡ H20：Flash Attention 2 解码性能
-
-Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2）**。所有方法使用相同的预分配策略、整模型 CUDA Graph 和 `torch.compile` decoder-tail 编译；软件环境为 PyTorch 2.11.0+cu129、FlashAttention 2.8.3。Full KV 使用同一 checkpoint 的原始基座，Recon 每一步重建 Beacon K/V，SlimKV 直接进行 latent-space attention。
-
-**端到端 decode 耗时（ms/token，越低越好）**
-
-<div align="center">
-
-| 输入 | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
-| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
-| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
-| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
-| 256K | 35.85 | 61.63 | 21.05 | 35.06 | 12.44 |
-
-</div>
-
-<p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2 · 整模型 CUDA Graph · torch.compile（decoder tail）。Prefill 后测128步 decode，预热一次，四轮取中位数；计时不含 prefill、编译和 Graph 构建。</em></p>
-
-**Attention GPU kernel 耗时（ms/token，越低越好）**
-
-<div align="center">
-
-| 输入 | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| 32K | 5.83 | 10.38 | 4.84 | 6.95 | 3.61 |
-| 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
-| 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
-| 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
-| 256K | — | — | — | — | — |
-
-</div>
-
-<p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2。Kernel 数据来自独立的非 Graph profiling，包含 QKV/输出投影、缓存操作、每步 KV 重建及 RoPE，不含 Norm、MLP 和 LM head。</em></p>
-
-<details>
-<summary>📈 端到端吞吐量（tokens/s，越高越好）</summary>
-
-<div align="center">
-
-| 输入 | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| 32K | 92.50 | 65.28 | 101.38 | 82.60 | 115.89 |
-| 64K | 69.43 | 45.57 | 86.35 | 66.55 | 108.89 |
-| 96K | 55.64 | 34.96 | 75.94 | 54.89 | 101.89 |
-| 128K | 46.45 | 28.13 | 67.97 | 46.42 | 96.62 |
-| 256K | 27.89 | 16.23 | 47.51 | 28.52 | 80.41 |
-
-</div>
-
-</details>
-
-**256K 表注：** 端到端数据来自单独的容量测试，逐模式执行四轮测量；32K–128K 使用交替顺序对照。256K 未采集 kernel profiling，以“—”表示。256K 沿用既有 RoPE 频率扩展位置表，超过权重原生128K配置；本次验证运行和优化前后数值等价，未评估256K任务精度。
-
-各方法使用相同的合成输入和 Full KV 后续 token，并在计时前对照各自原路径验证完整 logits 和最终 KV 逐位一致。运行命令与编译选项见下方 [Decode 测速](#-decode-测速)和[安装步骤](#-1-安装)，指标定义见[测速指南](benchmark.md)。
 
 <a id="模型"></a>
 
@@ -267,13 +126,83 @@ python -m main.inference.infer \
 
 长上下文通过 `--prompt_file /path/to/context.txt` 传入 UTF-8 文件。CUDA 默认使用 BF16、原始维度 FA2 prefill、免重建 latent decode，并为满足条件的 B1 调用启用 Graph 和可选 decoder-tail 编译。Python API、eager 和重建路径见[推理指南](quickstart.md)。
 
+<a id="结果"></a>
+<a id="-结果"></a>
+<a id="评测"></a>
+
+## 📊 评测
+
+LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与本仓库的 FA2 实现。
+
 <a id="longbench-v1"></a>
 
-## 📊 LongBench-v1
+### 🏆 LongBench-v1
+
+<a id="longbench-平均分"></a>
+
+`f2`、`f4`、`f8` 分别表示 2×、4×、8× 特征压缩。16× 总压缩下，对应的 token 压缩为 8×、4×、2×；32× 下则为 16×、8×、4×。
+
+<a id="16-压缩"></a>
+
+#### 🔹 16× 压缩
+
+<div align="center">
+
+| 方法 | Llama-3.1-8B | Qwen2.5-14B |
+| :---: | :---: | :---: |
+| **Full KV (1×)** | **49.50** | **51.52** |
+| KVZip | 28.96 | 13.18 |
+| PALU | 18.92 | 27.70 |
+| SnapKV | 45.60 | 45.81 |
+| Activation Beacon | 45.30 | 44.15 |
+| SlimKV-f2 | 46.19 | **46.48** |
+| SlimKV-f4 | **46.36** | 46.23 |
+| SlimKV-f8 | 45.05 | 44.33 |
+
+</div>
+
+<a id="32-压缩"></a>
+
+#### 🔹 32× 压缩
+
+<div align="center">
+
+| 方法 | Llama-3.1-8B | Qwen2.5-14B |
+| :---: | :---: | :---: |
+| **Full KV (1×)** | **49.50** | **51.52** |
+| KVZip | 9.40 | 5.12 |
+| PALU | 4.79 | 9.25 |
+| SnapKV | 43.24 | 42.28 |
+| Activation Beacon | 43.67 | 42.76 |
+| SlimKV-f2 | 42.91 | 44.66 |
+| SlimKV-f4 | **44.75** | **45.09** |
+| SlimKV-f8 | 43.93 | 44.69 |
+
+</div>
+
+平均分来自论文 Table 2，Full KV 为未压缩基线；压缩结果中的粗体标出各模型和压缩比下的最佳分数。
+
+<details>
+<summary>📚 4× / 8× 压缩的补充结果</summary>
+
+在较低压缩比下，SlimKV-f2 保留超过96%的 Full KV LongBench 得分。以下是 Table 4 的平均分。
+
+<div align="center">
+
+| 模型 | 压缩比 | KVZip | PALU | Activation Beacon | SlimKV-f2 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
+| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
+| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
+| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
+
+</div>
+
+</details>
 
 <a id="下载数据"></a>
 
-### 📥 下载数据
+#### 📥 下载数据
 
 ```bash
 export EVAL_DATA="$PWD/data/datasets/longbench"
@@ -284,7 +213,7 @@ python -m tools.data.download_longbench --output_dir "$EVAL_DATA"
 
 <a id="先用四条样本检查流程"></a>
 
-### 🧪 先用四条样本检查流程
+#### 🧪 先用四条样本检查流程
 
 ```bash
 TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 BATCH_SIZE=1 \
@@ -296,7 +225,7 @@ RESULT_DIR=quickstart-t4f4 \
 
 <a id="运行-t4f4-或-t8f4"></a>
 
-### 🔬 运行 t4f4 或 t8f4
+#### 🔬 运行 t4f4 或 t8f4
 
 ```bash
 BEACON_RATIO=4 RESULT_DIR=longbench-t4f4 \
@@ -312,7 +241,66 @@ BEACON_RATIO=8 RESULT_DIR=longbench-t8f4 \
 
 <a id="decode-测速"></a>
 
-## ⚡ Decode 测速
+### ⚡ Decode 测速
+
+<a id="h20flash-attention-2-解码性能"></a>
+
+Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2）**。所有方法使用相同的预分配策略、整模型 CUDA Graph 和 `torch.compile` decoder-tail 编译；软件环境为 PyTorch 2.11.0+cu129、FlashAttention 2.8.3。Full KV 使用同一 checkpoint 的原始基座，Recon 每一步重建 Beacon K/V，SlimKV 直接进行 latent-space attention。
+
+**端到端 decode 耗时（ms/token，越低越好）**
+
+<div align="center">
+
+| 输入 | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
+| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
+| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
+| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
+| 256K | 35.85 | 61.63 | 21.05 | 35.06 | 12.44 |
+
+</div>
+
+<p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2 · 整模型 CUDA Graph · torch.compile（decoder tail）。Prefill 后测128步 decode，预热一次，四轮取中位数；计时不含 prefill、编译和 Graph 构建。</em></p>
+
+**Attention GPU kernel 耗时（ms/token，越低越好）**
+
+<div align="center">
+
+| 输入 | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| 32K | 5.83 | 10.38 | 4.84 | 6.95 | 3.61 |
+| 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
+| 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
+| 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
+| 256K | — | — | — | — | — |
+
+</div>
+
+<p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2。Kernel 数据来自独立的非 Graph profiling，包含 QKV/输出投影、缓存操作、每步 KV 重建及 RoPE，不含 Norm、MLP 和 LM head。</em></p>
+
+<details>
+<summary>📈 端到端吞吐量（tokens/s，越高越好）</summary>
+
+<div align="center">
+
+| 输入 | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| 32K | 92.50 | 65.28 | 101.38 | 82.60 | 115.89 |
+| 64K | 69.43 | 45.57 | 86.35 | 66.55 | 108.89 |
+| 96K | 55.64 | 34.96 | 75.94 | 54.89 | 101.89 |
+| 128K | 46.45 | 28.13 | 67.97 | 46.42 | 96.62 |
+| 256K | 27.89 | 16.23 | 47.51 | 28.52 | 80.41 |
+
+</div>
+
+</details>
+
+**256K 表注：** 端到端数据来自单独的容量测试，逐模式执行四轮测量；32K–128K 使用交替顺序对照。256K 未采集 kernel profiling，以“—”表示。256K 沿用既有 RoPE 频率扩展位置表，超过权重原生128K配置；本次验证运行和优化前后数值等价，未评估256K任务精度。
+
+各方法使用相同的合成输入和 Full KV 后续 token，并在计时前对照各自原路径验证完整 logits 和最终 KV 逐位一致。运行命令与编译选项见下方 [测速命令](#-运行测速)和[安装步骤](#-1-安装)，指标定义见[测速指南](benchmark.md)。
+
+#### 🚀 运行测速
 
 测速无需下载 LongBench，脚本会构造并保存合成输入。使用前面下载的权重和已导出的扩展路径。
 

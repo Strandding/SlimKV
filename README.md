@@ -6,30 +6,18 @@
 <p align="center">
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/EMNLP%202026-Oral-8a2be2.svg" alt="EMNLP 2026 Oral"></a>
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/arXiv-2610.02953-b31b1b.svg" alt="arXiv:2610.02953"></a>
+  <a href="https://github.com/Strandding/SlimKV"><img src="https://img.shields.io/badge/GitHub-Code-181717?logo=github&amp;logoColor=white" alt="Code on GitHub"></a>
   <a href="https://huggingface.co/collections/Zihant0513/slimkv"><img src="https://img.shields.io/badge/Hugging%20Face-Models-FFD21E?logo=huggingface" alt="Model checkpoints on Hugging Face"></a>
   <a href="https://github.com/Strandding/SlimKV/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Strandding/SlimKV/ci.yml?branch=master&amp;label=CI" alt="GitHub Actions CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="Apache License 2.0"></a>
 </p>
 
 <p align="center">
-  <a href="#-news">📢 News</a> ·
-  <a href="#-overview">🔎 Overview</a> ·
   <a href="#-method">🧠 Method</a> ·
-  <a href="#-results">📈 Results</a> ·
-  <a href="#-models">🤗 Models</a> ·
   <a href="#-quick-start">🚀 Quick start</a> ·
-  <a href="#-longbench-v1">📊 LongBench-v1</a> ·
-  <a href="#-decode-speed">⚡ Speed</a> ·
+  <a href="#-evaluation">📊 Evaluation</a> ·
   <a href="#-training-and-other-tools">🔧 Training</a> ·
-  <a href="#-citation">📝 Citation</a> ·
-  <a href="#-acknowledgements-and-license">📜 License</a>
-</p>
-
-<p align="center">
-  <a href="https://arxiv.org/abs/2610.02953">Paper</a> ·
-  <a href="https://github.com/Strandding/SlimKV">Code</a> ·
-  <a href="https://huggingface.co/collections/Zihant0513/slimkv">Models</a> ·
-  <a href="docs/zh/README.md">Chinese</a>
+  <a href="#-citation">📝 Citation</a>
 </p>
 
 <a id="news"></a>
@@ -64,135 +52,6 @@ Conventional feature compression reconstructs full-dimensional Keys before apply
 </p>
 
 Prefill computes attention in the original feature dimensions and stores completed windows as compressed Beacon K/V. Decode can use either reconstruction followed by attention, or direct latent-space attention without reconstructing historical Beacon K/V. Raw-token tails and sinks retain full-dimensional K/V. See the [paper](https://arxiv.org/abs/2610.02953) for experiments and results.
-
-<a id="results"></a>
-
-## 📈 Results
-
-LongBench accuracy is reported from the paper. Decoding measurements below use NVIDIA H20 and this repository's FA2 implementation.
-
-<a id="longbench-average-scores"></a>
-
-### 🏆 LongBench average scores
-
-`f2`, `f4` and `f8` denote 2×, 4× and 8× feature compression. Their token compression ratios are 8×, 4× and 2× at 16× total compression, and 16×, 8× and 4× at 32×.
-
-<a id="16-compression"></a>
-
-#### 🔹 16× compression
-
-<div align="center">
-
-| Method | Llama-3.1-8B | Qwen2.5-14B |
-| :---: | :---: | :---: |
-| **Full KV (1×)** | **49.50** | **51.52** |
-| KVZip | 28.96 | 13.18 |
-| PALU | 18.92 | 27.70 |
-| SnapKV | 45.60 | 45.81 |
-| Activation Beacon | 45.30 | 44.15 |
-| SlimKV-f2 | 46.19 | **46.48** |
-| SlimKV-f4 | **46.36** | 46.23 |
-| SlimKV-f8 | 45.05 | 44.33 |
-
-</div>
-
-<a id="32-compression"></a>
-
-#### 🔹 32× compression
-
-<div align="center">
-
-| Method | Llama-3.1-8B | Qwen2.5-14B |
-| :---: | :---: | :---: |
-| **Full KV (1×)** | **49.50** | **51.52** |
-| KVZip | 9.40 | 5.12 |
-| PALU | 4.79 | 9.25 |
-| SnapKV | 43.24 | 42.28 |
-| Activation Beacon | 43.67 | 42.76 |
-| SlimKV-f2 | 42.91 | 44.66 |
-| SlimKV-f4 | **44.75** | **45.09** |
-| SlimKV-f8 | 43.93 | 44.69 |
-
-</div>
-
-Averages from Table 2. Full KV is the uncompressed reference. Bold compressed scores mark the best result for each backbone and ratio.
-
-<details>
-<summary>📚 Additional results at 4× / 8× compression</summary>
-
-At lower compression ratios, SlimKV-f2 retains over 96% of the Full KV LongBench score. Averages from Table 4:
-
-<div align="center">
-
-| Backbone | Compression | KVZip | PALU | Activation Beacon | SlimKV-f2 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
-| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
-| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
-| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
-
-</div>
-
-</details>
-
-<a id="h20-decoding-with-flash-attention-2"></a>
-
-### ⚡ H20 decoding with Flash Attention 2
-
-Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA2)**. Every method uses the same preallocation policy, whole-model CUDA Graphs and `torch.compile` decoder-tail compilation, with PyTorch 2.11.0+cu129 and FlashAttention 2.8.3. Full KV uses the same checkpoint's raw backbone, Recon rebuilds Beacon K/V at every step, and SlimKV uses direct latent attention.
-
-**End-to-end decode time (ms/token, lower is better)**
-
-<div align="center">
-
-| Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
-| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
-| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
-| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
-| 256K | 35.85 | 61.63 | 21.05 | 35.06 | 12.44 |
-
-</div>
-
-<p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2 · whole-model CUDA Graphs · torch.compile (decoder tail). Each run measures 128 decode steps after prefill; values are medians of four runs after one warmup. Prefill, compilation and Graph capture are excluded.</em></p>
-
-**Attention GPU kernel time (ms/token, lower is better)**
-
-<div align="center">
-
-| Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| 32K | 5.83 | 10.38 | 4.84 | 6.95 | 3.61 |
-| 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
-| 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
-| 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
-| 256K | — | — | — | — | — |
-
-</div>
-
-<p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2. Kernel times come from a separate uncaptured profiling pass, including QKV/output projections, cache operations, per-step KV reconstruction and RoPE, and excluding Norm, MLP and the LM head.</em></p>
-
-<details>
-<summary>📈 End-to-end throughput (tokens/s, higher is better)</summary>
-
-<div align="center">
-
-| Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| 32K | 92.50 | 65.28 | 101.38 | 82.60 | 115.89 |
-| 64K | 69.43 | 45.57 | 86.35 | 66.55 | 108.89 |
-| 96K | 55.64 | 34.96 | 75.94 | 54.89 | 101.89 |
-| 128K | 46.45 | 28.13 | 67.97 | 46.42 | 96.62 |
-| 256K | 27.89 | 16.23 | 47.51 | 28.52 | 80.41 |
-
-</div>
-
-</details>
-
-**256K note:** End-to-end values come from a separate capacity probe with four sequential runs per mode; the 32K–128K matrix alternates method order. Kernel profiling was not collected at 256K, shown as “—”. The probe extends position tables with unchanged RoPE frequencies beyond the checkpoint's native 128K configuration; it checks execution and numerical equivalence, without a 256K task-quality evaluation.
-
-All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [Decode speed](#-decode-speed) for run commands, [installation](#-1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
 
 <a id="models"></a>
 
@@ -267,13 +126,83 @@ python -m main.inference.infer \
 
 Use `--prompt_file /path/to/context.txt` for a UTF-8 context. CUDA defaults to BF16, original-dimension FA2 prefill and direct latent decode, with Graphs and optional decoder-tail compilation for eligible B1 calls. See [quick start](docs/quickstart.md) for the Python API and eager/reconstruction options.
 
+<a id="results"></a>
+<a id="-results"></a>
+<a id="evaluation"></a>
+
+## 📊 Evaluation
+
+LongBench accuracy is reported from the paper. Decoding measurements below use NVIDIA H20 and this repository's FA2 implementation.
+
 <a id="longbench-v1"></a>
 
-## 📊 LongBench-v1
+### 🏆 LongBench-v1
+
+<a id="longbench-average-scores"></a>
+
+`f2`, `f4` and `f8` denote 2×, 4× and 8× feature compression. Their token compression ratios are 8×, 4× and 2× at 16× total compression, and 16×, 8× and 4× at 32×.
+
+<a id="16-compression"></a>
+
+#### 🔹 16× compression
+
+<div align="center">
+
+| Method | Llama-3.1-8B | Qwen2.5-14B |
+| :---: | :---: | :---: |
+| **Full KV (1×)** | **49.50** | **51.52** |
+| KVZip | 28.96 | 13.18 |
+| PALU | 18.92 | 27.70 |
+| SnapKV | 45.60 | 45.81 |
+| Activation Beacon | 45.30 | 44.15 |
+| SlimKV-f2 | 46.19 | **46.48** |
+| SlimKV-f4 | **46.36** | 46.23 |
+| SlimKV-f8 | 45.05 | 44.33 |
+
+</div>
+
+<a id="32-compression"></a>
+
+#### 🔹 32× compression
+
+<div align="center">
+
+| Method | Llama-3.1-8B | Qwen2.5-14B |
+| :---: | :---: | :---: |
+| **Full KV (1×)** | **49.50** | **51.52** |
+| KVZip | 9.40 | 5.12 |
+| PALU | 4.79 | 9.25 |
+| SnapKV | 43.24 | 42.28 |
+| Activation Beacon | 43.67 | 42.76 |
+| SlimKV-f2 | 42.91 | 44.66 |
+| SlimKV-f4 | **44.75** | **45.09** |
+| SlimKV-f8 | 43.93 | 44.69 |
+
+</div>
+
+Averages from Table 2. Full KV is the uncompressed reference. Bold compressed scores mark the best result for each backbone and ratio.
+
+<details>
+<summary>📚 Additional results at 4× / 8× compression</summary>
+
+At lower compression ratios, SlimKV-f2 retains over 96% of the Full KV LongBench score. Averages from Table 4:
+
+<div align="center">
+
+| Backbone | Compression | KVZip | PALU | Activation Beacon | SlimKV-f2 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| Llama-3.1-8B | 4× | 36.39 | 46.66 | 48.21 | 48.10 |
+| Llama-3.1-8B | 8× | 37.25 | 46.42 | 46.93 | 47.77 |
+| Qwen2.5-14B | 4× | 47.72 | 45.95 | 48.86 | 49.92 |
+| Qwen2.5-14B | 8× | 46.74 | 45.15 | 45.50 | 49.94 |
+
+</div>
+
+</details>
 
 <a id="download-the-data"></a>
 
-### 📥 Download the data
+#### 📥 Download the data
 
 ```bash
 export EVAL_DATA="$PWD/data/datasets/longbench"
@@ -284,7 +213,7 @@ The downloader fetches the official v1 archive and extracts the selected JSONL t
 
 <a id="check-the-workflow-with-four-samples"></a>
 
-### 🧪 Check the workflow with four samples
+#### 🧪 Check the workflow with four samples
 
 ```bash
 TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 BATCH_SIZE=1 \
@@ -296,7 +225,7 @@ This evaluates the first two samples of each selected task. It checks the full e
 
 <a id="run-t4f4-or-t8f4"></a>
 
-### 🔬 Run t4f4 or t8f4
+#### 🔬 Run t4f4 or t8f4
 
 ```bash
 BEACON_RATIO=4 RESULT_DIR=longbench-t4f4 \
@@ -312,7 +241,66 @@ Files are written under `data/results/longbench/<RESULT_DIR>/`: `scores.json` co
 
 <a id="decode-speed"></a>
 
-## ⚡ Decode speed
+### ⚡ Decode speed
+
+<a id="h20-decoding-with-flash-attention-2"></a>
+
+Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA2)**. Every method uses the same preallocation policy, whole-model CUDA Graphs and `torch.compile` decoder-tail compilation, with PyTorch 2.11.0+cu129 and FlashAttention 2.8.3. Full KV uses the same checkpoint's raw backbone, Recon rebuilds Beacon K/V at every step, and SlimKV uses direct latent attention.
+
+**End-to-end decode time (ms/token, lower is better)**
+
+<div align="center">
+
+| Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
+| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
+| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
+| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
+| 256K | 35.85 | 61.63 | 21.05 | 35.06 | 12.44 |
+
+</div>
+
+<p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2 · whole-model CUDA Graphs · torch.compile (decoder tail). Each run measures 128 decode steps after prefill; values are medians of four runs after one warmup. Prefill, compilation and Graph capture are excluded.</em></p>
+
+**Attention GPU kernel time (ms/token, lower is better)**
+
+<div align="center">
+
+| Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| 32K | 5.83 | 10.38 | 4.84 | 6.95 | 3.61 |
+| 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
+| 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
+| 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
+| 256K | — | — | — | — | — |
+
+</div>
+
+<p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2. Kernel times come from a separate uncaptured profiling pass, including QKV/output projections, cache operations, per-step KV reconstruction and RoPE, and excluding Norm, MLP and the LM head.</em></p>
+
+<details>
+<summary>📈 End-to-end throughput (tokens/s, higher is better)</summary>
+
+<div align="center">
+
+| Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| 32K | 92.50 | 65.28 | 101.38 | 82.60 | 115.89 |
+| 64K | 69.43 | 45.57 | 86.35 | 66.55 | 108.89 |
+| 96K | 55.64 | 34.96 | 75.94 | 54.89 | 101.89 |
+| 128K | 46.45 | 28.13 | 67.97 | 46.42 | 96.62 |
+| 256K | 27.89 | 16.23 | 47.51 | 28.52 | 80.41 |
+
+</div>
+
+</details>
+
+**256K note:** End-to-end values come from a separate capacity probe with four sequential runs per mode; the 32K–128K matrix alternates method order. Kernel profiling was not collected at 256K, shown as “—”. The probe extends position tables with unchanged RoPE frequencies beyond the checkpoint's native 128K configuration; it checks execution and numerical equivalence, without a 256K task-quality evaluation.
+
+All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [benchmark command](#-run-the-speed-benchmark) for run commands, [installation](#-1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
+
+#### 🚀 Run the speed benchmark
 
 No LongBench download is required: the runner constructs and saves synthetic input tokens. Use the checkpoint and extension exported above.
 
