@@ -19,9 +19,9 @@
   <a href="#models">🤗 Models</a> ·
   <a href="#quick-start">🚀 Quick start</a> ·
   <a href="#evaluation">📊 Evaluation</a> ·
-  <a href="#training-and-other-tools">🔧 Training and other tools</a> ·
+  <a href="#training-and-other-tools">🔧 Training</a> ·
   <a href="#citation">📝 Citation</a> ·
-  <a href="#acknowledgements-and-license">📜 Acknowledgements and license</a>
+  <a href="#acknowledgements-and-license">📜 License</a>
 </p>
 
 <a id="news"></a>
