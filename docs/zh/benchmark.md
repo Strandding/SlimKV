@@ -85,3 +85,25 @@ H20 上同一 f4 权重、t8f4、B1 和63步固定 decode，预热后交替测�
 [英文命令](../benchmark.md#profiling-and-gpu-validation) 用cuda,nvtx、sample=none、cpuctxsw=none、node Graph trace及ProfilerAPI capture。需要GPU支持和采样权限时再加metrics参数；均值限定真实kernel时间段。NCU用真实保存Q/K/V replay诊断spill/occupancy。Profiler duration不代替无profile正式median。
 
 独立GPU验证入口：validate_decode_ops、validate_b1_decode、validate_fa2_decode，部分支持batch_sizes；记录dtype/shape/GPU/extension SHA/memcheck。CPU CI不证明CUDA二进制正确，也不会启动长训练。
+
+## 固定上下文 decode 对照
+
+使用同一 checkpoint，统一 BF16、B1 和 FlashAttention 2，对比 Full KV、重建和直接 latent attention：
+
+```bash
+MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
+  bash scripts/benchmark/benchmark_context_decode.sh
+```
+
+默认测试 32K、64K、96K、128K 输入，包含 t4f4 和 t8f4，每项在 prefill 后执行完整的 128 次单 token decode forward。K = 1024。各方法使用保存的相同合成输入和 Full KV 生成的相同后续输入，EOS 不提前结束测试。所有方法关闭 CUDA Graph 和 torch.compile，prefill 不计入 decode 时间。
+
+Full KV 使用 checkpoint 的原始模型分支，不插入 Beacon、不丢弃 token，沿用 checkpoint 的 RoPE，每个新 Key 仅旋转一次。原始权重与 SlimKV 共享。各路径 prefill 均在原始维度使用 FA2。128K 输入后的 decode 额外补充 128 个相同频率的 RoPE 位置，已有位置保持不变。
+
+分别报告两个指标：
+
+- **Attention GPU kernel 耗时**：attention 内 GPU kernel 耗时之和，包含 QKV/输出投影、每步 KV 重建、RoPE、缓存操作和 latent 映射。重建与 RoPE 另列明细，已包含在总值内。排除 Norm、MLP 和 LM head。
+- **端到端 decode 耗时**：128 次模型 forward 和 argmax 的同步墙钟时间，排除缓存恢复、分词、prefill 和 profiler 开销。预热一次后交替测试顺序，重复四次，使用中位数。
+
+Kernel 使用独立 profiler pass 采集，检查插桩前后预测一致，各方法重复测试的预测也必须一致。此实验衡量性能，精度仍通过 LongBench 单独评估。
+
+`OUTPUT_DIR` 默认 `data/results/context_decode`，必须使用新目录。输出包含 `results.json`、`summary.csv`、实际输入和后续 token、源码及配置哈希、逐次耗时。可以通过 `CONTEXT_LENGTHS`、`BEACON_RATIOS`、`REPETITIONS`、`PROMPT_FILE` 调整。实现位于 `tools/benchmark_context_decode.py`，使用 Transformers 4.40 环境。

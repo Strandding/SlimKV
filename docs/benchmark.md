@@ -143,3 +143,47 @@ Inspect `python -m tools.profile_fa2 --help` for sample and step settings. Add `
 The profiler can save actual per-layer Q/K/V cases. `--mode kernel --case_file ...` replays them for NCU; inspect `ncu --help` for your installed version and collect the real main/combined kernel. Profiling durations are diagnostics and must not replace unprofiled benchmark medians. Inspect register spilling, memory traffic, small operations and host launch gaps alongside kernel occupancy.
 
 Independent GPU entries are `tools.validate_decode_ops`, `tools.validate_b1_decode`, and `tools.validate_fa2_decode` (`--batch_sizes` for aligned batches). Record GPU model, dtype, shapes, extension SHA and memcheck logs; CPU tests mock FA2 algebra and do not validate CUDA binaries. No long training or full evaluation is started by CPU CI.
+
+## Fixed-context decode comparison
+
+Run Full KV, reconstruction and direct latent attention with the same checkpoint,
+BF16, B1 and FlashAttention 2:
+
+```bash
+MODEL_NAME_OR_PATH=/path/to/slimkv-checkpoint \
+  bash scripts/benchmark/benchmark_context_decode.sh
+```
+
+The default matrix covers 32K, 64K, 96K and 128K input tokens, both t4f4 and
+t8f4, and exactly 128 single-token decode forwards after prefill. Here K = 1024.
+All methods use identical saved synthetic inputs and the same continuation inputs
+from Full KV. EOS does not shorten the run. CUDA Graphs and torch.compile are
+disabled for every method. This experiment compares decoding; prefill is excluded.
+
+Full KV uses the checkpoint's raw backbone without Beacons, keeps every token,
+and applies the checkpoint's RoPE to new keys once. Its weights are shared with
+the SlimKV model. All paths prefill with original-dimensional FA2 attention.
+The 128K case appends 128 canonical RoPE positions for decoding without changing
+existing tables or frequencies.
+
+Two measurements are saved separately:
+
+- **Attention GPU kernel time:** summed GPU kernel durations inside attention,
+  including QKV/output projections, KV reconstruction, RoPE, cache operations,
+  and latent mappings. Reconstruction and RoPE are also reported separately and
+  are already included in the total. Norm, MLP and LM head are excluded.
+- **End-to-end decode time:** synchronized wall time for all 128 model forwards
+  and argmax operations. Cache restoration, tokenization, prefill and profiler
+  overhead are excluded. Four repetitions follow one warmup, with alternating
+  method order. The table uses median times.
+
+Kernel timing uses a separate profiler pass and checks that instrumentation does
+not change predictions. Repeated runs must produce identical predictions for
+each method. This is a performance experiment, not a substitute for LongBench
+accuracy evaluation.
+
+`OUTPUT_DIR` defaults to `data/results/context_decode` and must be a new directory.
+It contains `results.json`, `summary.csv`, exact input IDs, continuation IDs, source
+and configuration hashes, and individual timings. Override `CONTEXT_LENGTHS`,
+`BEACON_RATIOS`, `REPETITIONS` or `PROMPT_FILE` as needed. The implementation is
+`tools/benchmark_context_decode.py`; it requires the Transformers 4.40 environment.
