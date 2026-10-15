@@ -133,6 +133,7 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 | 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
 | 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
 | 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
+| 256K | 35.85 | 61.63 | 21.05 | 35.06 | 12.44 |
 
 </div>
 
@@ -148,6 +149,7 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 | 64K | 9.44 | 17.24 | 6.57 | 10.10 | 4.17 |
 | 96K | 12.97 | 24.10 | 8.14 | 13.44 | 4.80 |
 | 128K | 16.50 | 31.19 | 9.69 | 16.84 | 5.32 |
+| 256K | — | — | — | — | — |
 
 </div>
 
@@ -164,10 +166,13 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 | 64K | 69.43 | 45.57 | 86.35 | 66.55 | 108.89 |
 | 96K | 55.64 | 34.96 | 75.94 | 54.89 | 101.89 |
 | 128K | 46.45 | 28.13 | 67.97 | 46.42 | 96.62 |
+| 256K | 27.89 | 16.23 | 47.51 | 28.52 | 80.41 |
 
 </div>
 
 </details>
+
+**256K note:** End-to-end values come from a separate capacity probe with four sequential runs per mode; the 32K–128K matrix alternates method order. Kernel profiling was not collected at 256K, shown as “—”. The probe extends position tables with unchanged RoPE frequencies beyond the checkpoint's native 128K configuration; it checks execution and numerical equivalence, without a 256K task-quality evaluation.
 
 All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [Decode speed](#decode-speed) for run commands, [installation](#1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
 
