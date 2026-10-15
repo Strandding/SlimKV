@@ -6,6 +6,7 @@
 <p align="center">
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/EMNLP%202026-Oral-8a2be2.svg" alt="EMNLP 2026 Oral"></a>
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/arXiv-2610.02953-b31b1b.svg" alt="arXiv:2610.02953"></a>
+  <a href="https://huggingface.co/collections/Zihant0513/slimkv"><img src="https://img.shields.io/badge/Hugging%20Face-Models-FFD21E?logo=huggingface" alt="Model checkpoints on Hugging Face"></a>
   <a href="https://github.com/Strandding/SlimKV/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Strandding/SlimKV/ci.yml?branch=master&amp;label=CI" alt="GitHub Actions CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="Apache License 2.0"></a>
 </p>
@@ -24,10 +25,13 @@
 <p align="center">
   <a href="https://arxiv.org/abs/2610.02953">Paper</a> ·
   <a href="https://github.com/Strandding/SlimKV">Code</a> ·
+  <a href="https://huggingface.co/collections/Zihant0513/slimkv">Models</a> ·
   <a href="docs/zh/README.md">中文</a>
 </p>
 
 ## News
+
+- **2026-10-15:** Model checkpoints are available in the [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv).
 
 - **2026-10-14:** [Inference](docs/quickstart.md), [training](docs/training.md), [evaluation](docs/evaluation.md) and [benchmarking](docs/benchmark.md) guides are available.
 - **2026-10-02:** The paper is available on [arXiv](https://arxiv.org/abs/2610.02953).
@@ -182,7 +186,7 @@ The model code uses Transformers 4.40.x, tested with 4.40.2. Eager inference doe
 
 ## Usage
 
-Model weights are not distributed with this repository. Use an existing SlimKV checkpoint or [train one](docs/training.md), including its weights, configuration and tokenizer.
+Download a checkpoint from the [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv) or [train one](docs/training.md). Include its weights, configuration and tokenizer.
 
 ```bash
 python -m main.infer \

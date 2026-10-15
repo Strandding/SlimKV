@@ -6,6 +6,7 @@
 <p align="center">
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/EMNLP%202026-Oral-8a2be2.svg" alt="EMNLP 2026 Oral"></a>
   <a href="https://arxiv.org/abs/2610.02953"><img src="https://img.shields.io/badge/arXiv-2610.02953-b31b1b.svg" alt="arXiv:2610.02953"></a>
+  <a href="https://huggingface.co/collections/Zihant0513/slimkv"><img src="https://img.shields.io/badge/Hugging%20Face-Models-FFD21E?logo=huggingface" alt="Model checkpoints on Hugging Face"></a>
   <a href="https://github.com/Strandding/SlimKV/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Strandding/SlimKV/ci.yml?branch=master&amp;label=CI" alt="GitHub Actions CI"></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="Apache License 2.0"></a>
 </p>
@@ -24,10 +25,13 @@
 <p align="center">
   <a href="https://arxiv.org/abs/2610.02953">论文</a> ·
   <a href="https://github.com/Strandding/SlimKV">代码</a> ·
+  <a href="https://huggingface.co/collections/Zihant0513/slimkv">模型</a> ·
   <a href="../../README.md">English</a>
 </p>
 
 ## 动态
+
+- **2026-10-15:** 模型权重已上传至 [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv)。
 
 - **2026-10-14:** 已提供[推理](quickstart.md)、[训练](training.md)、[评测](evaluation.md)和[性能测试](benchmark.md)指南。
 - **2026-10-02:** 论文公开于 [arXiv](https://arxiv.org/abs/2610.02953)。
@@ -182,7 +186,7 @@ python -m pip install -e .
 
 ## 使用
 
-本仓库不提供模型权重。使用已有 SlimKV checkpoint，或按[训练说明](training.md)自行训练。Checkpoint 需包含权重、配置和 tokenizer。
+从 [Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv) 下载 checkpoint，或按[训练说明](training.md)自行训练。Checkpoint 需包含权重、配置和 tokenizer。
 
 ```bash
 python -m main.infer \
