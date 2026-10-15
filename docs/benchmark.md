@@ -5,7 +5,7 @@ Use the tools below with the current model implementation. Run commands from the
 
 ## Before you start
 
-Follow the [README walkthrough](../README.md#quick-start) to install FA2, build the SM90 extension and download `Zihant0513/SlimKV-Llama3.1-8B-r4`. Run the commands below in that environment, with `MODEL_NAME_OR_PATH` and `SLIMKV_FA2_DECODE_EXTENSION_DIR` exported. The fixed-context runner generates synthetic tokens; LongBench files are needed only for fixture-based tools.
+Follow the [README walkthrough](../README.md#-quick-start) to install FA2, build the SM90 extension and download `Zihant0513/SlimKV-Llama3.1-8B-r4`. Run the commands below in that environment, with `MODEL_NAME_OR_PATH` and `SLIMKV_FA2_DECODE_EXTENSION_DIR` exported. The fixed-context runner generates synthetic tokens; LongBench files are needed only for fixture-based tools.
 
 For a smaller first check:
 

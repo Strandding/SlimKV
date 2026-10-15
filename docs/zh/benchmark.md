@@ -6,7 +6,7 @@
 
 ## 开始前
 
-先按 [README 的完整流程](README.md#快速开始)安装 FA2、构建 SM90 扩展并下载 `Zihant0513/SlimKV-Llama3.1-8B-r4`。在同一环境中导出 `MODEL_NAME_OR_PATH` 和 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，再运行下列命令。固定上下文测速会生成合成输入，仅基于 fixture 的工具需要 LongBench 文件。
+先按 [README 的完整流程](README.md#-快速开始)安装 FA2、构建 SM90 扩展并下载 `Zihant0513/SlimKV-Llama3.1-8B-r4`。在同一环境中导出 `MODEL_NAME_OR_PATH` 和 `SLIMKV_FA2_DECODE_EXTENSION_DIR`，再运行下列命令。固定上下文测速会生成合成输入，仅基于 fixture 的工具需要 LongBench 文件。
 
 首次可先运行一组32K输入：
 

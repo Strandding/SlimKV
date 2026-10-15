@@ -12,14 +12,14 @@
 </p>
 
 <p align="center">
-  <a href="#news">News</a> ·
+  <a href="#-news">📢 News</a> ·
   <a href="#overview">Overview</a> ·
   <a href="#method">Method</a> ·
   <a href="#results">Results</a> ·
-  <a href="#models">Models</a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#longbench-v1">LongBench-v1</a> ·
-  <a href="#decode-speed">Speed</a> ·
+  <a href="#-models">🤗 Models</a> ·
+  <a href="#-quick-start">🚀 Quick start</a> ·
+  <a href="#-longbench-v1">📊 LongBench-v1</a> ·
+  <a href="#-decode-speed">⚡ Speed</a> ·
   <a href="#citation">Citation</a>
 </p>
 
@@ -30,7 +30,9 @@
   <a href="docs/zh/README.md">Chinese</a>
 </p>
 
-## News
+<a id="news"></a>
+
+## 📢 News
 
 - **2026-10-15:** Llama-3.1-8B and Qwen2.5-14B checkpoints with 2×, 4× and 8× feature compression are available in the [🤗 Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv).
 - **2026-10-02:** The paper is available on [arXiv](https://arxiv.org/abs/2610.02953).
@@ -174,9 +176,11 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 
 **256K note:** End-to-end values come from a separate capacity probe with four sequential runs per mode; the 32K–128K matrix alternates method order. Kernel profiling was not collected at 256K, shown as “—”. The probe extends position tables with unchanged RoPE frequencies beyond the checkpoint's native 128K configuration; it checks execution and numerical equivalence, without a 256K task-quality evaluation.
 
-All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [Decode speed](#decode-speed) for run commands, [installation](#1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
+All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [Decode speed](#-decode-speed) for run commands, [installation](#1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
 
-## Models
+<a id="models"></a>
+
+## 🤗 Models
 
 <div align="center">
 
@@ -191,7 +195,9 @@ All methods receive identical synthetic inputs and Full KV continuation tokens. 
 
 The walkthrough below uses **Llama-3.1-8B-r4**. It includes the backbone, trained Beacon projections, configuration and tokenizer; no separate base-model download or weight merge is needed. Qwen uses the reconstruction path; see [backend support](docs/implementation_status.md).
 
-## Quick start
+<a id="quick-start"></a>
+
+## 🚀 Quick start
 
 Run all commands from the repository root in the same activated shell. The FA2 setup below targets a single **H20/H100-class SM90 GPU**, Python 3.11 or 3.12, a compatible NVIDIA driver and the **CUDA 12.9 development toolkit (`nvcc`)**. The r4 latent FA2 path needs the included width-320 extension. For other hardware or eager attention, see [installation](docs/installation.md).
 
@@ -239,7 +245,9 @@ python -m main.inference.infer \
 
 Use `--prompt_file /path/to/context.txt` for a UTF-8 context. CUDA defaults to BF16, original-dimension FA2 prefill and direct latent decode, with Graphs and optional decoder-tail compilation for eligible B1 calls. See [quick start](docs/quickstart.md) for the Python API and eager/reconstruction options.
 
-## LongBench-v1
+<a id="longbench-v1"></a>
+
+## 📊 LongBench-v1
 
 ### Download the data
 
@@ -274,7 +282,9 @@ The preset uses 14 English/code tasks, BF16 greedy decoding, a final chat-format
 
 Files are written under `data/results/longbench/<RESULT_DIR>/`: `scores.json` contains scores, `task_timings.csv` contains each subset's elapsed time, and `progress.json` tracks progress. Set `LOAD_RESULT=True` with the same configuration to resume completed subsets. See [evaluation](docs/evaluation.md) for task selection, output definitions and all backend options.
 
-## Decode speed
+<a id="decode-speed"></a>
+
+## ⚡ Decode speed
 
 No LongBench download is required: the runner constructs and saves synthetic input tokens. Use the checkpoint and extension exported above.
 

@@ -12,14 +12,14 @@
 </p>
 
 <p align="center">
-  <a href="#动态">动态</a> ·
+  <a href="#-动态">📢 动态</a> ·
   <a href="#概览">概览</a> ·
   <a href="#方法">方法</a> ·
   <a href="#结果">结果</a> ·
-  <a href="#模型">模型</a> ·
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#longbench-v1">LongBench-v1</a> ·
-  <a href="#decode-测速">测速</a> ·
+  <a href="#-模型">🤗 模型</a> ·
+  <a href="#-快速开始">🚀 快速开始</a> ·
+  <a href="#-longbench-v1">📊 LongBench-v1</a> ·
+  <a href="#-decode-测速">⚡ 测速</a> ·
   <a href="#引用">引用</a>
 </p>
 
@@ -30,7 +30,9 @@
   <a href="../../README.md">English</a>
 </p>
 
-## 动态
+<a id="动态"></a>
+
+## 📢 动态
 
 - **2026-10-15:** Llama-3.1-8B 与 Qwen2.5-14B 的2×、4×、8×特征压缩权重已发布至 [🤗 Hugging Face collection](https://huggingface.co/collections/Zihant0513/slimkv)。
 - **2026-10-02:** 论文公开于 [arXiv](https://arxiv.org/abs/2610.02953)。
@@ -174,9 +176,11 @@ Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2�
 
 **256K 表注：** 端到端数据来自单独的容量测试，逐模式执行四轮测量；32K–128K 使用交替顺序对照。256K 未采集 kernel profiling，以“—”表示。256K 沿用既有 RoPE 频率扩展位置表，超过权重原生128K配置；本次验证运行和优化前后数值等价，未评估256K任务精度。
 
-各方法使用相同的合成输入和 Full KV 后续 token，并在计时前对照各自原路径验证完整 logits 和最终 KV 逐位一致。运行命令与编译选项见下方 [Decode 测速](#decode-测速)和[安装步骤](#1-安装)，指标定义见[测速指南](benchmark.md)。
+各方法使用相同的合成输入和 Full KV 后续 token，并在计时前对照各自原路径验证完整 logits 和最终 KV 逐位一致。运行命令与编译选项见下方 [Decode 测速](#-decode-测速)和[安装步骤](#1-安装)，指标定义见[测速指南](benchmark.md)。
 
-## 模型
+<a id="模型"></a>
+
+## 🤗 模型
 
 <div align="center">
 
@@ -191,7 +195,9 @@ Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2�
 
 以下流程使用 **Llama-3.1-8B-r4**。下载内容包含基座、训练后的 Beacon 投影、配置和 tokenizer，无需另行下载或合并基座权重。Qwen 使用重建路径，详见[后端支持](implementation_status.md)。
 
-## 快速开始
+<a id="快速开始"></a>
+
+## 🚀 快速开始
 
 以下命令在同一个已激活环境的终端中，从仓库根目录执行。FA2 安装示例面向单张 **H20/H100 类 SM90 GPU**，使用 Python 3.11 或3.12、兼容的 NVIDIA 驱动及 **CUDA 12.9 开发工具链（`nvcc`）**。r4 的 latent FA2 路径需要仓库中的320维扩展。其他硬件及 eager 用法见[安装指南](installation.md)。
 
@@ -239,7 +245,9 @@ python -m main.inference.infer \
 
 长上下文通过 `--prompt_file /path/to/context.txt` 传入 UTF-8 文件。CUDA 默认使用 BF16、原始维度 FA2 prefill、免重建 latent decode，并为满足条件的 B1 调用启用 Graph 和可选 decoder-tail 编译。Python API、eager 和重建路径见[推理指南](quickstart.md)。
 
-## LongBench-v1
+<a id="longbench-v1"></a>
+
+## 📊 LongBench-v1
 
 ### 下载数据
 
@@ -274,7 +282,9 @@ BEACON_RATIO=8 RESULT_DIR=longbench-t8f4 \
 
 输出位于 `data/results/longbench/<RESULT_DIR>/`：`scores.json` 保存得分，`task_timings.csv` 保存每个子集的耗时，`progress.json` 保存进度。保持配置一致并设置 `LOAD_RESULT=True` 可以复用已完成子集。任务选择、输出定义和后端选项见[评测指南](evaluation.md)。
 
-## Decode 测速
+<a id="decode-测速"></a>
+
+## ⚡ Decode 测速
 
 测速无需下载 LongBench，脚本会构造并保存合成输入。使用前面下载的权重和已导出的扩展路径。
 
