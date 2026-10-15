@@ -117,3 +117,33 @@ EXECUTION_MODE=matched MODEL_NAME_OR_PATH="$MODEL_NAME_OR_PATH" \
 ### 选择 decode token 压缩
 
 默认使用 `DECODE_COMPRESS=True`。仅压缩 prompt 时，设置 `DECODE_COMPRESS=False` 运行同一测速脚本，Python 对应 `--no-beacon_decode_compress`。Prompt 的 token/feature 压缩配置不变；decode 只追加 raw KV，不再产生新 Beacon，Full KV 对照不变。关闭 decode 压缩后，优化 runner 也支持超过一个 Beacon 窗口的后续生成。每种方法都与相同策略的原路径校验。输出记录该开关，默认输出目录增加 `_raw_decode`。
+
+## 验证副本与长上下文显存
+
+优化测速会同时保留原路径的验证缓存和计时使用的 GPU 缓存。GPU 显存少于80 GiB 时，Full KV 在完成原路径数值验证后，自动将验证副本移到 CPU。计时使用的 KV 和所有 decode 计算仍在 GPU；缓存恢复与 CPU 传输在计时前完成。`REFERENCE_CACHE_ON_CPU=True` 或 `False` 可覆盖默认选择。
+
+72GB 卡上测256K时，逐路径执行，避免同时保留五组运行缓存。先测 Full KV 并保存后续 token：
+
+```bash
+export SPEED_ROOT="$PWD/data/results/speed-256k"
+CONTEXT_LENGTHS=262144 ROUTES=full_kv REFERENCE_CACHE_ON_CPU=True \
+OUTPUT_DIR="$SPEED_ROOT/full" \
+  bash scripts/benchmark/benchmark_context_decode.sh
+```
+
+再用完全相同的输入和后续 token 测压缩路径：
+
+```bash
+for ratio in 4 8; do
+  for route in reconstruct latent; do
+    CONTEXT_LENGTHS=262144 BEACON_RATIOS="$ratio" ROUTES="$route" \
+    REFERENCE_DIR="$SPEED_ROOT/full" \
+    OUTPUT_DIR="$SPEED_ROOT/${route}-t${ratio}" \
+      bash scripts/benchmark/benchmark_context_decode.sh
+  done
+done
+```
+
+各输出目录分别保存该路径的 `results.json` 和 `summary.csv`。复用前会核对 Full KV 结果已完成、checkpoint 配置一致，以及输入和后续 token 的哈希一致。各命令之间保持权重不变。所有路径统一 B1、BF16、FA2、128步 decode、整模型 Graph 和相同的可选编译设置；这里是分开测量，不是交替顺序对照。256K 的 CPU Full KV 验证缓存约需32 GiB 主机内存，此外还需正常模型加载所用内存。
+
+256K 超过该权重的原生128K配置。测速沿用既有 RoPE 频率扩展位置表，容量测试通过不代表已证明256K任务精度。

@@ -110,7 +110,8 @@ class OptimizedDecodeRuntime:
             capacity = (self.prefix + decode_steps + 127) // 128 * 128
             for k, v in zip(raw_cache.key_cache, raw_cache.value_cache):
                 shape = (*k.shape[:2], capacity, k.shape[-1])
-                self.layers.append({'k': k.new_empty(shape), 'v': v.new_empty(shape)})
+                self.layers.append({'k': k.new_empty(shape, device=model.device),
+                                    'v': v.new_empty(shape, device=model.device)})
         else:
             if memory.raw_activations[0][0] is not None or memory.window_beacon_activations[0][0] is not None:
                 raise ValueError('Optimized comparison requires a completed Beacon window.')

@@ -221,3 +221,33 @@ pass `--execution_mode optimized` for the optimized runner.
 ### Selecting decode token compression
 
 `DECODE_COMPRESS=True` is the default. For prompt-only token compression, run the same launcher with `DECODE_COMPRESS=False` (Python: `--no-beacon_decode_compress`). Prompt token/feature compression stays the same. During decode, SlimKV adds only raw KV and no new Beacons; Full KV is unchanged. The optimized runner also supports continuations longer than one Beacon window when decode compression is disabled. Each method is validated against its original path with the same policy. Results record this flag, and the default output directory gains `_raw_decode` when disabled.
+
+## Reference memory and longer contexts
+
+The optimized runner keeps a native validation cache in addition to the GPU cache used for timed decoding. On GPUs with less than 80 GiB, the Full KV validation copy moves to CPU automatically after native validation. Decode KV and every timed operation remain on GPU. Cache restoration and CPU transfers finish before timing. Set `REFERENCE_CACHE_ON_CPU=True` or `False` to override this choice.
+
+For 256K on a 72GB card, run one route at a time so the benchmark does not retain five runtime caches at once. First measure Full KV and save its continuation:
+
+```bash
+export SPEED_ROOT="$PWD/data/results/speed-256k"
+CONTEXT_LENGTHS=262144 ROUTES=full_kv REFERENCE_CACHE_ON_CPU=True \
+OUTPUT_DIR="$SPEED_ROOT/full" \
+  bash scripts/benchmark/benchmark_context_decode.sh
+```
+
+Then measure the compressed routes with exactly those input and continuation tokens:
+
+```bash
+for ratio in 4 8; do
+  for route in reconstruct latent; do
+    CONTEXT_LENGTHS=262144 BEACON_RATIOS="$ratio" ROUTES="$route" \
+    REFERENCE_DIR="$SPEED_ROOT/full" \
+    OUTPUT_DIR="$SPEED_ROOT/${route}-t${ratio}" \
+      bash scripts/benchmark/benchmark_context_decode.sh
+  done
+done
+```
+
+Each output directory contains that route's `results.json` and `summary.csv`. The runner verifies the completed Full KV reference, checkpoint configuration and input/continuation hashes before reusing it. Keep the checkpoint unchanged between commands. All routes use B1, BF16, FA2, 128 decode steps, whole-model Graphs and the same optional compilation setting. These separate runs are not an interleaved comparison. The CPU Full KV reference at 256K needs approximately 32 GiB of host memory, in addition to normal model-loading memory.
+
+256K exceeds this checkpoint's native 128K configuration. The runner extends the existing position tables without changing RoPE frequencies; a successful capacity test does not establish 256K task quality.

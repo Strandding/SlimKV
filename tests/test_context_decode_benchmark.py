@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import torch
 from transformers.cache_utils import DynamicCache
 from tools.benchmark.benchmark_context_decode import (AppendCache, full_backbone, extend_rope_tables,
-    cloned_memory, scope_times, synthetic_ids, kernel_profiler, measure_prefill, ATTENTION, RECONSTRUCTION, ROPE)
+    cloned_memory, scope_times, synthetic_ids, kernel_profiler, measure_prefill, reference_tokens, ATTENTION, RECONSTRUCTION, ROPE)
 from test_llama_reconstruction_cache import make_model
 
 
@@ -101,6 +101,49 @@ class ContextDecodeTest(unittest.TestCase):
         result = scope_times(events, 1)
         self.assertAlmostEqual(result[ATTENTION], .01)
         self.assertAlmostEqual(result['fa2_core'], .01)
+
+    def test_partial_routes_require_the_same_completed_full_reference(self):
+        import hashlib
+        import json
+        from pathlib import Path
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ids = torch.arange(8)[None]
+            tokens = torch.tensor([[3, 4, 5, 6]])
+            torch.save(tokens, root / 'decode_inputs_8.pt')
+            source = {'complete': True, 'metadata': {'checkpoint_config_sha256': 'same'},
+                'contexts': [{'input_tokens': 8, 'summaries': {'full_kv': {}},
+                    'input_sha256': hashlib.sha256(ids.numpy().tobytes()).hexdigest(),
+                    'decode_input_sha256': hashlib.sha256(tokens.numpy().tobytes()).hexdigest()}]}
+            (root / 'results.json').write_text(json.dumps(source))
+            self.assertTrue(torch.equal(reference_tokens(root, 8, 2, ids, 'same'), tokens[:, :2]))
+            with self.assertRaisesRegex(ValueError, 'same checkpoint'):
+                reference_tokens(root, 8, 2, ids, 'different')
+            with self.assertRaisesRegex(ValueError, 'input tokens'):
+                reference_tokens(root, 8, 2, ids + 1, 'same')
+            torch.save(tokens + 1, root / 'decode_inputs_8.pt')
+            with self.assertRaisesRegex(ValueError, 'checksum'):
+                reference_tokens(root, 8, 2, ids, 'same')
+            source['complete'] = False
+            (root / 'results.json').write_text(json.dumps(source))
+            with self.assertRaisesRegex(ValueError, 'completed Full KV'):
+                reference_tokens(root, 8, 2, ids, 'same')
+
+    def test_cpu_oracle_rejects_a_native_decode_or_missing_teacher(self):
+        import os
+        from pathlib import Path
+        import subprocess
+        import sys
+        command = [sys.executable, '-m', 'tools.benchmark.benchmark_context_decode',
+                   '--model_name_or_path', 'checkpoint', '--output_dir', 'unused']
+        root = Path(__file__).resolve().parents[1]
+        for flags, message in [(['--reference_cache_on_cpu'], 'requires --execution_mode optimized'),
+                               (['--routes', 'latent'], 'require --reference_dir')]:
+            run = subprocess.run(command + flags, cwd=root, capture_output=True, text=True)
+            self.assertNotEqual(run.returncode, 0)
+            self.assertIn(message, run.stderr)
+            self.assertNotIn('CUDA and FlashAttention', run.stderr)
 
     def test_prefill_warmup_finishes_before_the_measurement_clock(self):
         from unittest.mock import patch

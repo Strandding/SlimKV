@@ -13,6 +13,16 @@ execution_mode="${EXECUTION_MODE:-optimized}"
 read -r -a lengths <<< "${CONTEXT_LENGTHS:-32768 65536 98304 131072}"
 read -r -a ratios <<< "${BEACON_RATIOS:-4 8}"
 optional=()
+if [[ -n "${ROUTES:-}" ]]; then
+  read -r -a routes <<< "${ROUTES}"
+  optional+=(--routes "${routes[@]}")
+fi
+case "${REFERENCE_CACHE_ON_CPU:-auto}" in
+  auto) ;;
+  True) optional+=(--reference_cache_on_cpu) ;;
+  False) optional+=(--no-reference_cache_on_cpu) ;;
+  *) echo "ERROR: REFERENCE_CACHE_ON_CPU must be auto, True or False." >&2; exit 2 ;;
+esac
 decode_suffix=""
 if [[ "${DECODE_COMPRESS:-True}" == "False" ]]; then
   optional+=(--no-beacon_decode_compress)

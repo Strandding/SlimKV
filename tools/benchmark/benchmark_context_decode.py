@@ -294,6 +294,8 @@ def validate_runtime_cache(runtime, reference):
     bitwise = True
     def compare(left, right):
         nonlocal maximum, bitwise
+        if left.device != right.device:
+            left, right = left.cpu(), right.cpu()
         if not torch.equal(left, right):
             bitwise = False
             maximum = max(maximum, float((left.float()-right.float()).abs().max()))
@@ -337,6 +339,27 @@ def measure_prefill(forward, warmup):
     return output, time.perf_counter() - start
 
 
+def reference_tokens(reference_dir, length, decode_steps, ids_cpu, config_sha256):
+    """Verify a completed Full KV run before reusing its teacher tokens."""
+    source = json.loads((reference_dir / 'results.json').read_text())
+    if not source.get('complete') or source['metadata']['checkpoint_config_sha256'] != config_sha256:
+        raise ValueError('Reference must be a completed Full KV run with the same checkpoint config.')
+    contexts = [row for row in source['contexts'] if row['input_tokens'] == length]
+    if len(contexts) != 1 or 'full_kv' not in contexts[0]['summaries']:
+        raise ValueError('Reference is missing the requested Full KV context.')
+    context = contexts[0]
+    actual_sha = hashlib.sha256(ids_cpu[:, :length].numpy().tobytes()).hexdigest()
+    if context['input_sha256'] != actual_sha:
+        raise ValueError('Reference input tokens do not match.')
+    tokens = torch.load(reference_dir / f'decode_inputs_{length}.pt',
+                        map_location='cpu', weights_only=True)
+    if tokens.dtype != torch.long or tokens.ndim != 2 or tokens.shape[0] != 1 or tokens.shape[1] < decode_steps:
+        raise ValueError('Reference continuation does not cover the requested decode steps.')
+    if hashlib.sha256(tokens.numpy().tobytes()).hexdigest() != context['decode_input_sha256']:
+        raise ValueError('Reference continuation checksum does not match.')
+    return tokens[:, :decode_steps]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--model_name_or_path', required=True)
@@ -357,9 +380,21 @@ def main():
     parser.add_argument('--beacon_decode_compress', action=argparse.BooleanOptionalAction, default=True,
                         help='Continue token compression after prefill; False keeps all new raw KV.')
     parser.add_argument('--reference_dir', type=Path)
+    parser.add_argument('--routes', nargs='+', choices=['full_kv', 'reconstruct', 'latent'],
+                        default=['full_kv', 'reconstruct', 'latent'],
+                        help='Compare selected routes. Compressed-only runs require a completed Full KV reference.')
+    parser.add_argument('--reference_cache_on_cpu', action=argparse.BooleanOptionalAction, default=None,
+                        help='Keep the Full KV validation copy on CPU after native validation. '
+                             'All measured decode KV and computation remain on GPU.')
     args = parser.parse_args()
     if min(args.context_lengths + args.beacon_ratios + [args.decode_steps, args.repetitions, args.warmup, args.prefill_chunk_size]) < 1:
         parser.error('All lengths, ratios and repetition counts must be positive.')
+    if len(args.routes) != len(set(args.routes)):
+        parser.error('--routes must not contain duplicates.')
+    if 'full_kv' not in args.routes and args.reference_dir is None:
+        parser.error('Compressed-only routes require --reference_dir from a completed Full KV run.')
+    if args.reference_cache_on_cpu and args.execution_mode != 'optimized':
+        parser.error('--reference_cache_on_cpu requires --execution_mode optimized.')
     if args.prefill_warmup < 1:
         parser.error('--prefill_warmup must be at least 1 to exclude first-call compilation.')
     import transformers
@@ -371,6 +406,9 @@ def main():
         parser.error('Exact decoder-tail compilation requires Torch 2.11; otherwise use --no-compile_tail.')
     if not torch.cuda.is_available():
         parser.error('CUDA and FlashAttention 2 are required.')
+    if args.reference_cache_on_cpu is None:
+        args.reference_cache_on_cpu = (args.execution_mode == 'optimized' and 'full_kv' in args.routes
+                                      and torch.cuda.get_device_properties(0).total_memory < 80 * 1024**3)
     outdir = Path(args.output_dir)
     outdir.mkdir(parents=True, exist_ok=False)
     torch.set_num_threads(8)
@@ -416,6 +454,7 @@ def main():
         'prefill_scope': 'One synchronized full-prefill wall-time measurement per route after untimed full-prefill warmup; excludes model loading, tokenization, first-call compilation and decode. Full KV processes fixed-size chunks; SlimKV uses its Beacon windows.',
         'end_to_end_scope': 'Synchronized host wall time for all decode forwards and argmax; excludes prefill, first prefill prediction, cache restore, profiler, tokenization and file IO.',
         'context_unit': 'Exact prompt token count; K=1024. At 128K, append 128 canonical RoPE entries without changing existing frequencies/tables.',
+        'reference_storage': 'CPU Full KV validation copy; all measured decode KV stays on GPU' if args.reference_cache_on_cpu and 'full_kv' in args.routes else 'GPU',
         'prefill': 'Original-dimensional FA2 for all methods; Full KV uses chunked causal prefill and retains all raw tokens.',
     }, 'contexts': []}
     if args.execution_mode == 'optimized':
@@ -426,27 +465,34 @@ def main():
     save = lambda: atomic_json(outdir/'results.json', result)
     save()
 
+    modes = (['full_kv'] if 'full_kv' in args.routes else []) + [
+        f'{backend}_t{ratio}' for ratio in args.beacon_ratios
+        for backend in ['reconstruct', 'latent'] if backend in args.routes]
     with torch.inference_mode():
         for length in args.context_lengths:
             ids = ids_cpu[:, :length].cuda()
             positions = torch.arange(length + args.decode_steps, device='cuda')[None]
-            cache = AppendCache(len(raw.layers), length + args.decode_steps)
-            def raw_prefill():
-                cache.rewind(0)
-                for start in range(0, length, args.prefill_chunk_size):
-                    end = min(start + args.prefill_chunk_size, length)
-                    output = raw(input_ids=ids[:, start:end], past_key_values=cache,
-                                 position_ids=positions[:, start:end], cache_position=positions[0, start:end], use_cache=True)
-                return model.lm_head(output.last_hidden_state[:, -1:]).float()
+            cache, first = None, None
+            prefill_timings = {}
+            if 'full_kv' in args.routes:
+                cache = AppendCache(len(raw.layers), length + args.decode_steps)
+                def raw_prefill():
+                    cache.rewind(0)
+                    for start in range(0, length, args.prefill_chunk_size):
+                        end = min(start + args.prefill_chunk_size, length)
+                        output = raw(input_ids=ids[:, start:end], past_key_values=cache,
+                                     position_ids=positions[:, start:end], cache_position=positions[0, start:end], use_cache=True)
+                    return model.lm_head(output.last_hidden_state[:, -1:]).float()
 
-            output, elapsed = measure_prefill(raw_prefill, args.prefill_warmup)
-            prefill_timings = {'full_kv': {'seconds': elapsed, 'input_tokens_per_second': length / elapsed}}
-            first = output.argmax(-1)
-            del output
+                output, elapsed = measure_prefill(raw_prefill, args.prefill_warmup)
+                prefill_timings['full_kv'] = {'seconds': elapsed, 'input_tokens_per_second': length / elapsed}
+                first = output.argmax(-1)
+                del output
             snapshots = {}
-            modes = ['full_kv'] + [f'{backend}_t{ratio}' for ratio in args.beacon_ratios for backend in ['reconstruct', 'latent']]
             for ratio in args.beacon_ratios:
                 for backend in ['reconstruct', 'latent']:
+                    if backend not in args.routes:
+                        continue
                     model.config.beacon_ratio = [ratio]
                     model.config.beacon_decode_backend = backend
                     def compressed_prefill():
@@ -498,19 +544,24 @@ def main():
                 return logits[:, -1].argmax(-1, keepdim=True)
 
             # Full KV supplies exactly the same 128 input tokens to every timed route.
-            restore('full_kv')
-            token = first
-            forced = []
-            for index in range(args.decode_steps):
-                forced.append(token)
-                token = step('full_kv', token, index)
-            forced = torch.cat(forced, dim=1)
-            if args.reference_dir:
-                saved = torch.load(args.reference_dir/f'decode_inputs_{length}.pt', map_location='cpu', weights_only=True)
-                saved = saved[:, :args.decode_steps]
-                if not torch.equal(forced.cpu(), saved):
-                    raise RuntimeError('Full KV continuation differs from the first experiment.')
-                forced = saved.cuda()
+            if 'full_kv' in args.routes:
+                restore('full_kv')
+                token = first
+                forced = []
+                for index in range(args.decode_steps):
+                    forced.append(token)
+                    token = step('full_kv', token, index)
+                forced = torch.cat(forced, dim=1)
+                if args.reference_dir:
+                    saved = torch.load(args.reference_dir/f'decode_inputs_{length}.pt', map_location='cpu', weights_only=True)
+                    saved = saved[:, :args.decode_steps]
+                    if not torch.equal(forced.cpu(), saved):
+                        raise RuntimeError('Full KV continuation differs from the first experiment.')
+                    forced = saved.cuda()
+            else:
+                forced = reference_tokens(args.reference_dir, length, args.decode_steps, ids_cpu,
+                                          result['metadata']['checkpoint_config_sha256']).cuda()
+                context['teacher_reference'] = str(args.reference_dir.resolve())
             torch.save(forced.cpu(), outdir/f'decode_inputs_{length}.pt')
             context['decode_input_sha256'] = hashlib.sha256(forced.cpu().numpy().tobytes()).hexdigest()
 
@@ -532,6 +583,10 @@ def main():
                                           for index in range(args.decode_steps)], dim=1)
                     if mode == 'full_kv':
                         cache.rewind(length)
+                        if args.reference_cache_on_cpu:
+                            cache.key_cache = [tensor.cpu() for tensor in cache.key_cache]
+                            cache.value_cache = [tensor.cpu() for tensor in cache.value_cache]
+                            torch.cuda.empty_cache()
                     runtime = OptimizedDecodeRuntime(model, 'full_kv' if mode == 'full_kv' else mode.split('_t')[0],
                                                      args.decode_steps, memory=snapshots.get(mode),
                                                      raw_cache=cache if mode == 'full_kv' else None,
@@ -653,8 +708,8 @@ def main():
                     'prefill_input_tokens_per_second': context['prefill'][mode]['input_tokens_per_second']}
                 print('KERNEL_TIMING', length, mode, context['summaries'][mode], flush=True)
                 save()
-            baseline = context['summaries']['full_kv']
-            for row in context['summaries'].values():
+            baseline = context['summaries'].get('full_kv')
+            for row in context['summaries'].values() if baseline else []:
                 row['attention_speedup'] = baseline['attention_kernel_ms_per_token']/row['attention_kernel_ms_per_token']
                 row['end_to_end_speedup'] = baseline['end_to_end_ms_per_token']/row['end_to_end_ms_per_token']
             save()
