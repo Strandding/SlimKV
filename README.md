@@ -91,7 +91,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu129
-python -m pip install -e . "huggingface_hub[cli]>=0.34,<1" ninja packaging
+python -m pip install -e . "huggingface_hub[cli]>=0.34,<1" ninja packaging wheel setuptools
 MAX_JOBS=2 python -m pip install flash-attn==2.8.3 --no-build-isolation
 
 git clone --depth 1 --branch v2.8.3 \

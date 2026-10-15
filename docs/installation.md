@@ -42,7 +42,7 @@ One tested FA2 runtime uses Torch **2.11.0+cu129**, Transformers **4.40.2**, Fla
 Install `flash-attn==2.8.3` after installing a compatible Torch/CUDA toolchain. Source installation needs `ninja`, `packaging`, CUDA development headers and substantial RAM:
 
 ```bash
-python -m pip install ninja packaging
+python -m pip install ninja packaging wheel setuptools
 python -m pip install flash-attn==2.8.3 --no-build-isolation
 python -c 'import torch, flash_attn; print(torch.__version__, torch.version.cuda, flash_attn.__version__)'
 ```
@@ -66,7 +66,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu130
-python -m pip install -e . "huggingface_hub[cli]>=0.34,<1" ninja packaging
+python -m pip install -e . "huggingface_hub[cli]>=0.34,<1" ninja packaging wheel setuptools
 FLASH_ATTENTION_FORCE_BUILD=TRUE FLASH_ATTN_CUDA_ARCHS=120 MAX_JOBS=4 \
   python -m pip install flash-attn==2.8.3 --no-build-isolation
 

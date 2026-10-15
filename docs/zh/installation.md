@@ -36,7 +36,7 @@ python -m unittest discover -s tests -v
 一组已验证的 FA2 运行配置为 Torch 2.11.0+cu129、Transformers 4.40.2、FlashAttention 2.8.3、Triton 3.6.0、CUDA toolkit 12.9。请选择匹配 GPU 和驱动的 Torch/CUDA 构建。
 
 ```bash
-python -m pip install ninja packaging
+python -m pip install ninja packaging wheel setuptools
 python -m pip install flash-attn==2.8.3 --no-build-isolation
 python -c 'import torch, flash_attn; print(torch.__version__, torch.version.cuda, flash_attn.__version__)'
 ```
@@ -58,7 +58,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu130
-python -m pip install -e . "huggingface_hub[cli]>=0.34,<1" ninja packaging
+python -m pip install -e . "huggingface_hub[cli]>=0.34,<1" ninja packaging wheel setuptools
 FLASH_ATTENTION_FORCE_BUILD=TRUE FLASH_ATTN_CUDA_ARCHS=120 MAX_JOBS=4 \
   python -m pip install flash-attn==2.8.3 --no-build-isolation
 
