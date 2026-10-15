@@ -251,17 +251,17 @@ Files are written under `data/results/longbench/<RESULT_DIR>/`: `scores.json` co
 
 Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA2)**. Every method uses the same preallocation policy, whole-model CUDA Graphs and `torch.compile` decoder-tail compilation, with PyTorch 2.11.0+cu129 and FlashAttention 2.8.3. Full KV uses the same checkpoint's raw backbone, Recon rebuilds Beacon K/V at every step, and SlimKV uses direct latent attention.
 
-**End-to-end decode time (ms/token, lower is better)**
+**End-to-end throughput (tokens/s, higher is better)**
 
 <div align="center">
 
 | Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
-| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
-| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
-| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
-| 256K | 35.85 | 61.63 | 21.05 | 35.06 | 12.44 |
+| 32K | 92.50 | 65.28 | 101.38 | 82.60 | 115.89 |
+| 64K | 69.43 | 45.57 | 86.35 | 66.55 | 108.89 |
+| 96K | 55.64 | 34.96 | 75.94 | 54.89 | 101.89 |
+| 128K | 46.45 | 28.13 | 67.97 | 46.42 | 96.62 |
+| 256K | 27.89 | 16.23 | 47.51 | 28.52 | 80.41 |
 
 </div>
 
@@ -284,17 +284,17 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 <p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2. Kernel times come from a separate uncaptured profiling pass, including QKV/output projections, cache operations, per-step KV reconstruction and RoPE, and excluding Norm, MLP and the LM head.</em></p>
 
 <details>
-<summary>End-to-end throughput (tokens/s, higher is better)</summary>
+<summary>End-to-end decode time (ms/token, lower is better)</summary>
 
 <div align="center">
 
 | Context | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| 32K | 92.50 | 65.28 | 101.38 | 82.60 | 115.89 |
-| 64K | 69.43 | 45.57 | 86.35 | 66.55 | 108.89 |
-| 96K | 55.64 | 34.96 | 75.94 | 54.89 | 101.89 |
-| 128K | 46.45 | 28.13 | 67.97 | 46.42 | 96.62 |
-| 256K | 27.89 | 16.23 | 47.51 | 28.52 | 80.41 |
+| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
+| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
+| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
+| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
+| 256K | 35.85 | 61.63 | 21.05 | 35.06 | 12.44 |
 
 </div>
 

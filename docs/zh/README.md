@@ -251,17 +251,17 @@ BEACON_RATIO=8 RESULT_DIR=longbench-t8f4 \
 
 Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2）**。所有方法使用相同的预分配策略、整模型 CUDA Graph 和 `torch.compile` decoder-tail 编译；软件环境为 PyTorch 2.11.0+cu129、FlashAttention 2.8.3。Full KV 使用同一 checkpoint 的原始基座，Recon 每一步重建 Beacon K/V，SlimKV 直接进行 latent-space attention。
 
-**端到端 decode 耗时（ms/token，越低越好）**
+**端到端吞吐量（tokens/s，越高越好）**
 
 <div align="center">
 
 | 输入 | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
-| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
-| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
-| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
-| 256K | 35.85 | 61.63 | 21.05 | 35.06 | 12.44 |
+| 32K | 92.50 | 65.28 | 101.38 | 82.60 | 115.89 |
+| 64K | 69.43 | 45.57 | 86.35 | 66.55 | 108.89 |
+| 96K | 55.64 | 34.96 | 75.94 | 54.89 | 101.89 |
+| 128K | 46.45 | 28.13 | 67.97 | 46.42 | 96.62 |
+| 256K | 27.89 | 16.23 | 47.51 | 28.52 | 80.41 |
 
 </div>
 
@@ -284,17 +284,17 @@ Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2�
 <p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2。Kernel 数据来自独立的非 Graph profiling，包含 QKV/输出投影、缓存操作、每步 KV 重建及 RoPE，不含 Norm、MLP 和 LM head。</em></p>
 
 <details>
-<summary>端到端吞吐量（tokens/s，越高越好）</summary>
+<summary>端到端 decode 耗时（ms/token，越低越好）</summary>
 
 <div align="center">
 
 | 输入 | Full KV | Recon t4f4 | SlimKV t4f4 | Recon t8f4 | SlimKV t8f4 |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| 32K | 92.50 | 65.28 | 101.38 | 82.60 | 115.89 |
-| 64K | 69.43 | 45.57 | 86.35 | 66.55 | 108.89 |
-| 96K | 55.64 | 34.96 | 75.94 | 54.89 | 101.89 |
-| 128K | 46.45 | 28.13 | 67.97 | 46.42 | 96.62 |
-| 256K | 27.89 | 16.23 | 47.51 | 28.52 | 80.41 |
+| 32K | 10.81 | 15.32 | 9.86 | 12.11 | 8.63 |
+| 64K | 14.40 | 21.95 | 11.58 | 15.03 | 9.18 |
+| 96K | 17.97 | 28.61 | 13.17 | 18.22 | 9.81 |
+| 128K | 21.53 | 35.55 | 14.71 | 21.54 | 10.35 |
+| 256K | 35.85 | 61.63 | 21.05 | 35.06 | 12.44 |
 
 </div>
 
