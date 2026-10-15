@@ -31,17 +31,17 @@ python -m tools.data.prepare_longbench \
 
 `tools.benchmark.benchmark_reconstruction` 比较 full/full_compact/latent，用 eager、beacon_ratio8、decode_tokens64、warmup1、rounds2、perf_sample_indices0 2。Full_compact 仅在 harness 克隆首次 sink view 释放多余 backing storage，不改注意力数学。
 
-[扩展构建命令](../benchmark.md#building-the-width-320-extension) 基于 FA2 v2.8.3/CUTLASS，只编 BF16 SM90 forward。静态解码支持 raw KV 的128维和 latent KV 的200–256/320维；普通解码在≤256维使用标准 FA2。较大 rank 临时补到320，持久缓存保留真实 rank。
+[扩展构建命令](../benchmark.md#building-the-width-320-extension) 基于 FA2 v2.8.3/CUTLASS，只编 BF16 SM90 forward。静态解码支持 raw KV 的128维和 latent KV 的200–256/320维；普通解码在≤256维使用标准 FA2。较大 rank 补到320进行计算，导出的 Beacon 缓存视图保留真实 K/V rank。静态解码让这些视图直接复用补齐后的 FA2 缓冲区，padding 和预留容量均计入实际 GPU 显存。
 
 ## Prefill 索引与 RoPE 融合
 
-Llama 默认开启 `--beacon_prefill_fast True`。推理时，对使用 latent 缓存、无 padding 的 interleave FA2 窗口，在层间共享 token 索引，并跳过完整窗口结束时不再保留的 raw KV 拷贝。BF16 Q/K 的 RoPE 操作合并到一个 Triton kernel，Beacon K 保持不旋转。每次乘法仍先舍入为 BF16 再做加法，与原操作一致。投影矩阵形状、权重、秩、注意力 scale 和 mask 保持不变，prefill 注意力仍在原始特征维度计算。
+Llama 默认开启 `--beacon_prefill_fast True`。推理时，对使用 latent 缓存、无 padding 的 interleave FA2 窗口，在层间共享 token 索引，并跳过完整窗口结束时不再保留的 raw KV 拷贝。BF16 Q/K 的 RoPE 操作合并到一个 Triton kernel，Beacon K 保持不旋转。每次乘法仍先舍入为 BF16 再做加法，与原操作一致。投影矩阵形状、权重、秩、注意力 scale 和 mask 保持不变，prefill 注意力仍在原始特征维度计算。符合条件的 latent prefill 将重建的历史和当前 K/V 一次拼入工作区，避免再次复制完整历史。
 
 训练、带 padding 的输入和不支持的配置使用原路径。不支持的 RoPE kernel 也回退到原 RoPE 操作。在 `main.evaluation.eval_longbench` 中传入 `--beacon_prefill_fast False`，或设置 `model.config.beacon_prefill_fast = False`，可关闭上述优化进行对照。首次符合条件的调用会编译 Triton kernel。
 
 ## B1 解码 Graph
 
-重新构建扩展后，`--beacon_decode_graph True` 会对符合条件的 B1 单 token latent FA2 解码启用整模型 Graph，包括插入 Beacon 的步骤。KV 使用固定地址的缓冲区原位追加。较大 batch 和诊断调用使用普通路径。设置 `--beacon_decode_graph_full False` 可保留原来的局部层 Graph。
+重新构建扩展后，`--beacon_decode_graph True` 会对符合条件的 B1 单 token latent FA2 解码启用整模型 Graph，包括插入 Beacon 的步骤。KV 使用固定地址的缓冲区原位追加，真实 rank 的 Beacon 视图与 FA2 共用存储，每个新 Beacon K/V 只写入一次。较大 batch 和诊断调用使用普通路径。设置 `--beacon_decode_graph_full False` 可保留原来的局部层 Graph。
 
 插入 Beacon 时，将 raw token 与 Beacon 的两个 query 表示为共享 KV 存储的两条单 query 序列。两者的有效 KV 长度相差一个位置，raw query 仍不可见新插入的 Beacon。FA2 可以分别打包 GQA heads，提高 KV 复用率。split 数与原双 query 调用一致，以保留 softmax 的归约顺序。持久缓存的秩和内容不变。
 

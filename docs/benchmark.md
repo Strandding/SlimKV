@@ -63,17 +63,17 @@ python -m tools.validation.validate_fa2_decode \
   --output data/results/fa2-kernel-validation.json
 ```
 
-The build manifest includes Torch/CUDA, upstream FA2/CUTLASS commits and source/binary SHA256. The extension supports width 128 for raw KV and widths 200–256/320 for static latent decode. Ordinary decode uses standard FA2 at widths ≤256. Larger actual ranks are temporarily padded to 320 for computation. Persistent cache stores actual ranks, with no padding.
+The build manifest includes Torch/CUDA, upstream FA2/CUTLASS commits and source/binary SHA256. The extension supports width 128 for raw KV and widths 200–256/320 for static latent decode. Ordinary decode uses standard FA2 at widths ≤256. Larger actual ranks are temporarily padded to 320 for computation. Exported Beacon cache views retain the actual K/V ranks. Static decode backs these views with its padded FA2 buffers; padding and unused capacity contribute to physical GPU memory.
 
 ## Prefill indexing and rotary fusion
 
-`--beacon_prefill_fast True` is the default for Llama. During inference, unpadded interleaved FA2 windows with a latent cache share token indices across layers and skip raw-cache copies at completed windows. BF16 Q/K rotary operations use one Triton kernel while leaving Beacon K unrotated. Multiplications still round to BF16 before addition, matching the original operations. Projection shapes, weights, ranks, attention scale and masks stay the same. Attention itself runs in the original feature dimensions.
+`--beacon_prefill_fast True` is the default for Llama. During inference, unpadded interleaved FA2 windows with a latent cache share token indices across layers and skip raw-cache copies at completed windows. BF16 Q/K rotary operations use one Triton kernel while leaving Beacon K unrotated. Multiplications still round to BF16 before addition, matching the original operations. Projection shapes, weights, ranks, attention scale and masks stay the same. Attention itself runs in the original feature dimensions. Eligible latent prefills join reconstructed history and current K/V in one workspace, avoiding a second full-prefix copy.
 
 Training, padded inputs and unsupported configurations use the existing path. Unsupported rotary kernels also fall back to the existing rotary operations. For a direct comparison, pass `--beacon_prefill_fast False` to `main.evaluation.eval_longbench`, or set `model.config.beacon_prefill_fast = False`. The first eligible call compiles the Triton kernel.
 
 ## B1 decode graphs
 
-With the rebuilt extension, `--beacon_decode_graph True` also enables whole-model graphs for eligible B1 single-token latent FA2 decode, including steps that insert a Beacon. KV buffers use fixed addresses and append in place. Larger batches and diagnostic calls use the ordinary path. Set `--beacon_decode_graph_full False` to retain only the layer graphs.
+With the rebuilt extension, `--beacon_decode_graph True` also enables whole-model graphs for eligible B1 single-token latent FA2 decode, including steps that insert a Beacon. KV buffers use fixed addresses and append in place. Real-rank Beacon views share the FA2 storage, so each new Beacon K/V is written once. Larger batches and diagnostic calls use the ordinary path. Set `--beacon_decode_graph_full False` to retain only the layer graphs.
 
 On Beacon insertion steps, the raw-token and Beacon queries use two single-query sequences with shared KV storage. Their valid lengths differ by one, preserving the raw query's exclusion of the new Beacon. FA2 packs each query's GQA heads for better KV reuse. The split count stays the same as the original two-query call to preserve its softmax reduction order. Persistent ranks and cache contents are unchanged.
 

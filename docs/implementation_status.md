@@ -12,7 +12,7 @@ The table below describes the available cache and attention paths. Existing `bea
 | Llama3, latent cache + `latent` decode strategy | Global low-rank features | Original-dimension prefill; direct Beacon decode uses eager or FA2 according to `attn_impl` | Eager works on CPU/GPU, including unequal K/V ranks; same aligned-batch requirements |
 | Llama3 training, `full`, incompatible `auto`; Qwen2 | Full-dimensional K/V | Standard attention | Low-rank training code and conversion available; no Qwen latent-cache backend |
 
-`auto` stores latent K/V only for supported inference configurations; `full` forces the full cache; explicit `latent` rejects incompatible configurations. Training retains the existing full-dimensional computation/cache and gradients. Raw-token tail and sink K/V stay full-dimensional in every latent path. Temporary width padding for FA2 is not persistent cache padding.
+`auto` stores latent K/V only for supported inference configurations; `full` forces the full cache; explicit `latent` rejects incompatible configurations. Training retains the existing full-dimensional computation/cache and gradients. Raw-token tail and sink K/V stay full-dimensional in every latent path. Cache views expose actual ranks. Static decode shares their backing storage with padded FA2 buffers, whose padding and reserved capacity count toward physical GPU memory.
 
 ## Latent cache and direct decode requirements
 
@@ -20,9 +20,9 @@ Latent cache: interleave insertion, window=stride, one-window encoding, positive
 
 Eligible direct latent decode accepts one new raw token per sequence, with one additional Beacon query on insertion steps. Equal-length, unpadded dense batches share the insertion schedule but have independent token/KV rows. Multi-raw-token calls use the reconstruction path. Padding is explicitly rejected for direct latent decode. This is not variable-length continuous batching.
 
-Ranks are global and coupled across KV heads: cached shapes are `[B,1,N,R]`. FA2 ranks above 256 use the custom BF16 SM90 extension, with temporary padding to width 320. Eager computes directly at the actual K/V ranks without padding or a width-320 limit. Raw attention uses the original head dimension and scale; for Llama-3.1-8B these are 128 and `1/sqrt(128)`. K/V rank lists are independent.
+Ranks are global and coupled across KV heads: cached shapes are `[B,1,N,R]`. FA2 ranks above 256 use the custom BF16 SM90 extension, with width-320 FA2 buffers. Eager computes directly at the actual K/V ranks without padding or a width-320 limit. Raw attention uses the original head dimension and scale; for Llama-3.1-8B these are 128 and `1/sqrt(128)`. K/V rank lists are independent.
 
-`beacon_decode_fast=True` is the default for eligible FA2 decode and retains GPU token bookkeeping. `beacon_decode_graph=False` is the default; opt-in partial Graph captures input norm and post-attention norm/MLP/residual segments, separately for Q1/Q2 and batch shapes. Attention and dynamic KV updates remain eager. CPU/gradient and diagnostics fall back; dtype/device changes clear Graph caches.
+`beacon_decode_fast=True` retains GPU token bookkeeping for eligible FA2 decode. The Python API defaults to `beacon_decode_graph=False`; CUDA inference and LongBench presets enable whole-model B1 Graphs with append-only KV, including Beacon insertion steps. Real-rank Beacon views share the padded FA2 buffers. Setting `beacon_decode_graph_full=False` keeps partial norm/MLP Graphs. Unsupported calls use the ordinary path, and dtype/device changes clear Graph caches.
 
 Floor-constrained equal-energy rank allocation and residual budget completion are available in `main.conversion.convert_kv_lowrank`. K/V budgets are independent and ranks align to the KV head count. See [automatic initialization](training.md#automatic-equal-energy-allocation).
 
