@@ -13,11 +13,15 @@
 </p>
 
 <p align="center">
+  <a href="#-news">📢 News</a> ·
+  <a href="#-overview">🔎 Overview</a> ·
   <a href="#-method">🧠 Method</a> ·
+  <a href="#-models">🤗 Models</a> ·
   <a href="#-quick-start">🚀 Quick start</a> ·
   <a href="#-evaluation">📊 Evaluation</a> ·
   <a href="#-training-and-other-tools">🔧 Training</a> ·
-  <a href="#-citation">📝 Citation</a>
+  <a href="#-citation">📝 Citation</a> ·
+  <a href="#-acknowledgements-and-license">📜 License</a>
 </p>
 
 <a id="news"></a>
@@ -78,7 +82,7 @@ Run all commands from the repository root in the same activated shell. The FA2 s
 
 <a id="1-install"></a>
 
-### 🔧 1. Install
+### 1. Install
 
 ```bash
 git clone https://github.com/Strandding/SlimKV.git
@@ -103,7 +107,7 @@ The `tools.build_fa2_decode` command above compiles the SM90 BF16 CUDA extension
 
 <a id="2-download-the-checkpoint"></a>
 
-### 📥 2. Download the checkpoint
+### 2. Download the checkpoint
 
 ```bash
 export MODEL_NAME_OR_PATH="$PWD/models/SlimKV-Llama3.1-8B-r4"
@@ -115,7 +119,7 @@ Keep all downloaded weight shards, the shard index, config and tokenizer togethe
 
 <a id="3-generate-a-response"></a>
 
-### 💬 3. Generate a response
+### 3. Generate a response
 
 ```bash
 python -m main.inference.infer \
@@ -136,7 +140,7 @@ LongBench accuracy is reported from the paper. Decoding measurements below use N
 
 <a id="longbench-v1"></a>
 
-### 🏆 LongBench-v1
+### LongBench-v1
 
 <a id="longbench-average-scores"></a>
 
@@ -144,7 +148,7 @@ LongBench accuracy is reported from the paper. Decoding measurements below use N
 
 <a id="16-compression"></a>
 
-#### 🔹 16× compression
+#### 16× compression
 
 <div align="center">
 
@@ -163,7 +167,7 @@ LongBench accuracy is reported from the paper. Decoding measurements below use N
 
 <a id="32-compression"></a>
 
-#### 🔹 32× compression
+#### 32× compression
 
 <div align="center">
 
@@ -183,7 +187,7 @@ LongBench accuracy is reported from the paper. Decoding measurements below use N
 Averages from Table 2. Full KV is the uncompressed reference. Bold compressed scores mark the best result for each backbone and ratio.
 
 <details>
-<summary>📚 Additional results at 4× / 8× compression</summary>
+<summary>Additional results at 4× / 8× compression</summary>
 
 At lower compression ratios, SlimKV-f2 retains over 96% of the Full KV LongBench score. Averages from Table 4:
 
@@ -202,7 +206,7 @@ At lower compression ratios, SlimKV-f2 retains over 96% of the Full KV LongBench
 
 <a id="download-the-data"></a>
 
-#### 📥 Download the data
+#### Download the data
 
 ```bash
 export EVAL_DATA="$PWD/data/datasets/longbench"
@@ -213,7 +217,7 @@ The downloader fetches the official v1 archive and extracts the selected JSONL t
 
 <a id="check-the-workflow-with-four-samples"></a>
 
-#### 🧪 Check the workflow with four samples
+#### Check the workflow with four samples
 
 ```bash
 TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 BATCH_SIZE=1 \
@@ -225,7 +229,7 @@ This evaluates the first two samples of each selected task. It checks the full e
 
 <a id="run-t4f4-or-t8f4"></a>
 
-#### 🔬 Run t4f4 or t8f4
+#### Run t4f4 or t8f4
 
 ```bash
 BEACON_RATIO=4 RESULT_DIR=longbench-t4f4 \
@@ -241,7 +245,7 @@ Files are written under `data/results/longbench/<RESULT_DIR>/`: `scores.json` co
 
 <a id="decode-speed"></a>
 
-### ⚡ Decode speed
+### Decode speed
 
 <a id="h20-decoding-with-flash-attention-2"></a>
 
@@ -280,7 +284,7 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 <p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2. Kernel times come from a separate uncaptured profiling pass, including QKV/output projections, cache operations, per-step KV reconstruction and RoPE, and excluding Norm, MLP and the LM head.</em></p>
 
 <details>
-<summary>📈 End-to-end throughput (tokens/s, higher is better)</summary>
+<summary>End-to-end throughput (tokens/s, higher is better)</summary>
 
 <div align="center">
 
@@ -298,9 +302,9 @@ Llama-3.1-8B-r4 on one **NVIDIA H20**, with **B1, BF16 and Flash Attention 2 (FA
 
 **256K note:** End-to-end values come from a separate capacity probe with four sequential runs per mode; the 32K–128K matrix alternates method order. Kernel profiling was not collected at 256K, shown as “—”. The probe extends position tables with unchanged RoPE frequencies beyond the checkpoint's native 128K configuration; it checks execution and numerical equivalence, without a 256K task-quality evaluation.
 
-All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [benchmark command](#-run-the-speed-benchmark) for run commands, [installation](#-1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
+All methods receive identical synthetic inputs and Full KV continuation tokens. Each optimized path must match its reference logits and final KV bitwise before timing. See [benchmark command](#run-the-speed-benchmark) for run commands, [installation](#1-install) for compilation, and [benchmarking](docs/benchmark.md) for metric definitions.
 
-#### 🚀 Run the speed benchmark
+#### Run the speed benchmark
 
 No LongBench download is required: the runner constructs and saves synthetic input tokens. Use the checkpoint and extension exported above.
 

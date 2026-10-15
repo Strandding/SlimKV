@@ -13,11 +13,15 @@
 </p>
 
 <p align="center">
+  <a href="#-动态">📢 动态</a> ·
+  <a href="#-概览">🔎 概览</a> ·
   <a href="#-方法">🧠 方法</a> ·
+  <a href="#-模型">🤗 模型</a> ·
   <a href="#-快速开始">🚀 快速开始</a> ·
   <a href="#-评测">📊 评测</a> ·
-  <a href="#-训练与其他工具">🔧 训练</a> ·
-  <a href="#-引用">📝 引用</a>
+  <a href="#-训练与其他工具">🔧 训练与工具</a> ·
+  <a href="#-引用">📝 引用</a> ·
+  <a href="#-致谢与许可">📜 许可</a>
 </p>
 
 <a id="动态"></a>
@@ -78,7 +82,7 @@ Prefill 在原始特征维度计算 attention，将完成的窗口存为压缩 B
 
 <a id="1-安装"></a>
 
-### 🔧 1. 安装
+### 1. 安装
 
 ```bash
 git clone https://github.com/Strandding/SlimKV.git
@@ -103,7 +107,7 @@ export SLIMKV_FA2_DECODE_EXTENSION_DIR="$PWD/.cache/fa2_decode_320"
 
 <a id="2-下载权重"></a>
 
-### 📥 2. 下载权重
+### 2. 下载权重
 
 ```bash
 export MODEL_NAME_OR_PATH="$PWD/models/SlimKV-Llama3.1-8B-r4"
@@ -115,7 +119,7 @@ hf download Zihant0513/SlimKV-Llama3.1-8B-r4 \
 
 <a id="3-生成一条回答"></a>
 
-### 💬 3. 生成一条回答
+### 3. 生成一条回答
 
 ```bash
 python -m main.inference.infer \
@@ -136,7 +140,7 @@ LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与�
 
 <a id="longbench-v1"></a>
 
-### 🏆 LongBench-v1
+### LongBench-v1
 
 <a id="longbench-平均分"></a>
 
@@ -144,7 +148,7 @@ LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与�
 
 <a id="16-压缩"></a>
 
-#### 🔹 16× 压缩
+#### 16× 压缩
 
 <div align="center">
 
@@ -163,7 +167,7 @@ LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与�
 
 <a id="32-压缩"></a>
 
-#### 🔹 32× 压缩
+#### 32× 压缩
 
 <div align="center">
 
@@ -183,7 +187,7 @@ LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与�
 平均分来自论文 Table 2，Full KV 为未压缩基线；压缩结果中的粗体标出各模型和压缩比下的最佳分数。
 
 <details>
-<summary>📚 4× / 8× 压缩的补充结果</summary>
+<summary>4× / 8× 压缩的补充结果</summary>
 
 在较低压缩比下，SlimKV-f2 保留超过96%的 Full KV LongBench 得分。以下是 Table 4 的平均分。
 
@@ -202,7 +206,7 @@ LongBench 精度沿用论文数据，下面的速度测试使用 NVIDIA H20 与�
 
 <a id="下载数据"></a>
 
-#### 📥 下载数据
+#### 下载数据
 
 ```bash
 export EVAL_DATA="$PWD/data/datasets/longbench"
@@ -213,7 +217,7 @@ python -m tools.data.download_longbench --output_dir "$EVAL_DATA"
 
 <a id="先用四条样本检查流程"></a>
 
-#### 🧪 先用四条样本检查流程
+#### 先用四条样本检查流程
 
 ```bash
 TASKS="qasper hotpotqa" MAX_SAMPLES_PER_TASK=2 BATCH_SIZE=1 \
@@ -225,7 +229,7 @@ RESULT_DIR=quickstart-t4f4 \
 
 <a id="运行-t4f4-或-t8f4"></a>
 
-#### 🔬 运行 t4f4 或 t8f4
+#### 运行 t4f4 或 t8f4
 
 ```bash
 BEACON_RATIO=4 RESULT_DIR=longbench-t4f4 \
@@ -241,7 +245,7 @@ BEACON_RATIO=8 RESULT_DIR=longbench-t8f4 \
 
 <a id="decode-测速"></a>
 
-### ⚡ Decode 测速
+### Decode 测速
 
 <a id="h20flash-attention-2-解码性能"></a>
 
@@ -280,7 +284,7 @@ Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2�
 <p align="center"><em>NVIDIA H20 · BF16 · B1 · Flash Attention 2。Kernel 数据来自独立的非 Graph profiling，包含 QKV/输出投影、缓存操作、每步 KV 重建及 RoPE，不含 Norm、MLP 和 LM head。</em></p>
 
 <details>
-<summary>📈 端到端吞吐量（tokens/s，越高越好）</summary>
+<summary>端到端吞吐量（tokens/s，越高越好）</summary>
 
 <div align="center">
 
@@ -298,9 +302,9 @@ Llama-3.1-8B-r4，单张 **NVIDIA H20**，**B1、BF16、Flash Attention 2（FA2�
 
 **256K 表注：** 端到端数据来自单独的容量测试，逐模式执行四轮测量；32K–128K 使用交替顺序对照。256K 未采集 kernel profiling，以“—”表示。256K 沿用既有 RoPE 频率扩展位置表，超过权重原生128K配置；本次验证运行和优化前后数值等价，未评估256K任务精度。
 
-各方法使用相同的合成输入和 Full KV 后续 token，并在计时前对照各自原路径验证完整 logits 和最终 KV 逐位一致。运行命令与编译选项见下方 [测速命令](#-运行测速)和[安装步骤](#-1-安装)，指标定义见[测速指南](benchmark.md)。
+各方法使用相同的合成输入和 Full KV 后续 token，并在计时前对照各自原路径验证完整 logits 和最终 KV 逐位一致。运行命令与编译选项见下方 [测速命令](#运行测速)和[安装步骤](#1-安装)，指标定义见[测速指南](benchmark.md)。
 
-#### 🚀 运行测速
+#### 运行测速
 
 测速无需下载 LongBench，脚本会构造并保存合成输入。使用前面下载的权重和已导出的扩展路径。
 
